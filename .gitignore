@@ -1,0 +1,9 @@
+data/raw/
+data/derived/
+.venv/
+__pycache__/
+*.pyc
+web/node_modules/
+web/dist/
+web/public/tiles-synthetic/
+.DS_Store
