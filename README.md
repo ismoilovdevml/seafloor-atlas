@@ -71,6 +71,19 @@ Comparing the two TID grids with the same ocean mask:
 * The largest gain is the **Arabian Sea and Gulf of Oman** (10–30° N, 50–70° E), which matches the official note that ROPME Sea Area coverage rose from 6.4 % to 20.5 %.
 * Red includes older surveys that were newly shared with GEBCO, not only new expeditions. The viewer has this as the "New in GEBCO 2026" layer.
 
+### 5. Whose waters are mapped
+
+![Measured share by EEZ and by ocean](figures/fig6_regions.png)
+
+| | Measured |
+|---|---|
+| National waters (all EEZs, 139.6 M km²) | **38.0 %** |
+| High seas (outside every EEZ, 221.1 M km², 61 % of the ocean) | **26.4 %** |
+| Best: Baltic Sea / Mediterranean / North Atlantic | 84.1 % / 59.3 % / 47.4 % |
+| Worst: Indian Ocean / South China and Eastern Archipelagic Seas | 20.5 % / 19.2 % |
+
+Western European EEZs are almost fully surveyed (France 99.9 %, Ireland 97.7 %, Portugal 97.2 %). Several large EEZs in South and East Asia are under 7 % in this public grid. That is what has been *shared with GEBCO*, not necessarily what has been surveyed. Full tables, method and caveats: [docs/regions.md](docs/regions.md).
+
 ## What it is useful for
 
 * **Science and education:** see plate tectonics directly. Mid-ocean ridges, trenches, fracture zones and hotspot seamount chains are all visible on one globe.
@@ -107,6 +120,7 @@ pipeline/fetch_data.sh                    # inputs (~470 MB, needs GDAL)
 .venv/bin/python pipeline/change.py       # 2025 -> 2026 comparison (needs the 2025 TID grid)
 .venv/bin/python pipeline/tiles.py --only new2026
 .venv/bin/python pipeline/figures.py      # README figures
+.venv/bin/python pipeline/regions.py      # per-ocean and per-EEZ tables + fig6 (fetches Marine Regions)
 .venv/bin/python -m pytest tests          # encoding tests
 cd web && npm ci && npm run dev           # viewer at http://localhost:5173
 ```
@@ -116,10 +130,12 @@ cd web && npm ci && npm run dev           # viewer at http://localhost:5173
 * The web map uses the 1′ grid (~1.85 km), so it shows features a few km across, not the full 15″ (~460 m) detail.
 * The depth axis of figure 3 uses the 1′ cell mean, which smooths narrow trenches (Challenger Deep reads −10,900 m at 1′ vs −10,927 m at 15″).
 * Even "measured" cells are a 460 m average. A single ship track crossing a cell marks it as measured.
+* The ocean mask (TID ≠ 0 and below sea level) also includes the Caspian Sea and lake beds below sea level (Dead Sea, deep parts of Baikal and the Great Lakes), about 0.15 % of the ocean area. The regional tables exclude the Caspian.
 
 ## Data and licences
 
 * GEBCO Compilation Group (2026) **GEBCO_2026 Grid**, doi:[10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa](https://doi.org/10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa). Open Government Licence v3.
 * **IHO-IOC GEBCO Gazetteer of Undersea Feature Names**, www.gebco.net.
+* Flanders Marine Institute: Global Oceans and Seas v1 (doi:10.14284/542), Maritime Boundaries / EEZ v12 (doi:10.14284/632), High Seas v2 (doi:10.14284/696). CC BY 4.0.
 * Bird, P. (2003) An updated digital model of plate boundaries, *G³* 4(3), 1027. Via [fraxen/tectonicplates](https://github.com/fraxen/tectonicplates), ODC-By 1.0.
 * Code: MIT. Prior work and how this differs: [docs/prior-work.md](docs/prior-work.md).
