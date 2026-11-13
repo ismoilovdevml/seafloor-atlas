@@ -19,7 +19,7 @@ if [ ! -f "$G/gebco_2026_tid.tif" ]; then
   for i in $(seq 1 30); do curl -fL -C - --max-time 900 -o "$G/gebco_2026_tid.zip" "$U" && break; sleep 3; done
   (cd "$G" && unzip -o -q gebco_2026_tid.zip)
   gdal_translate -co COMPRESS=DEFLATE -co TILED=YES -co BLOCKXSIZE=512 -co BLOCKYSIZE=512 \
-    "$G/gebco_2026_tid.nc" "$G/gebco_2026_tid.tif"
+    "$G/GEBCO_2026_TID.nc" "$G/gebco_2026_tid.tif"
 fi
 
 # GEBCO_2025 TID grid, for the 2025 -> 2026 comparison (pipeline/change.py), 98 MB zip
@@ -29,7 +29,7 @@ if [ ! -f "$G25/gebco_2025_tid.tif" ]; then
   for i in $(seq 1 30); do curl -fL -C - --max-time 900 -o "$G25/gebco_2025_tid.zip" "$U" && break; sleep 3; done
   (cd "$G25" && unzip -o -q gebco_2025_tid.zip)
   gdal_translate -co COMPRESS=DEFLATE -co TILED=YES -co BLOCKXSIZE=512 -co BLOCKYSIZE=512 \
-    "$G25/gebco_2025_tid.nc" "$G25/gebco_2025_tid.tif"
+    "$G25/GEBCO_2025_TID.nc" "$G25/gebco_2025_tid.tif"
 fi
 
 # PB2002 plate boundaries (Bird 2003), ODC-By 1.0

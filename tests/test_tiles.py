@@ -45,3 +45,23 @@ def test_new_layer_alpha():
     assert v[0, 0, 3] == 0 and v[0, 1, 3] == 0      # nothing new -> transparent
     assert 80 < v[0, 2, 3] < 255                    # thin line still visible
     assert v[0, 3, 3] == 255
+
+
+def test_blend_poles_makes_edge_rows_constant():
+    from tiles import blend_poles, row_latitudes
+    rng = np.random.default_rng(1)
+    a = rng.uniform(-5000, -1000, size=(512, 64)).astype(np.float32)
+    a[300, :5] = np.nan
+    blend_poles(a, -3175.0, 2585.0)
+    assert np.ptp(a[0]) < 1.0 and abs(a[0].mean() + 3175) < 1.0      # north edge row = cap
+    assert np.ptp(a[-1]) < 1.0 and abs(a[-1].mean() - 2585) < 1.0    # south edge row = cap
+    lat = row_latitudes(512)
+    mid = np.abs(lat) < 80
+    assert np.isnan(a[300, :5]).all()                                  # untouched away from the poles
+
+
+def test_blend_poles_nan_cap_clears_edge():
+    from tiles import blend_poles
+    a = np.full((512, 8), 0.4, dtype=np.float32)
+    blend_poles(a, float("nan"), 0.2)
+    assert np.isnan(a[0]).all() and abs(a[-1].mean() - 0.2) < 1e-3

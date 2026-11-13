@@ -27,6 +27,20 @@
   "no_longer_measured_km2": 2512740.9855485847,
   "net_km2": 4052638.269075066
  },
+ "polarCaps": {
+  "dem": [
+   -3175.443,
+   2585.018
+  ],
+  "coverage": [
+   0.186,
+   null
+  ],
+  "new2026": [
+   null,
+   null
+  ]
+ },
  "tiles": {
   "dem": 1365,
   "coverage": 1365,

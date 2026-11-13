@@ -74,6 +74,68 @@ def warp_to_merc(src_path: Path, size: int, dtype, src_nodata, transform_values=
     return dst
 
 
+MERC_LAT = 85.0511287798066  # Web Mercator tiles end here
+BLEND_FROM = 82.0            # start of the fade into the polar cap
+
+
+def polar_caps(src_path: Path, src_nodata, transform_values=None) -> tuple[float, float]:
+    """Area-weighted mean of the source grid beyond +-MERC_LAT (north, south). NaN when most of the cap is NaN.
+
+    MapLibre's globe draws the area beyond the last tile row by stretching that row to the pole, which
+    turns any variation along it into a radial fan. Making the last rows equal to the real cap mean
+    turns the fan into a smooth, flat cap with the correct average depth.
+    """
+    with rasterio.open(src_path) as src:
+        a = src.read(1).astype(np.float64)
+        if src_nodata is not None and not (isinstance(src_nodata, float) and np.isnan(src_nodata)):
+            a[a == src_nodata] = np.nan
+        if transform_values is not None:
+            a = transform_values(a)
+        lat = src.transform.f + (np.arange(src.height) + 0.5) * src.transform.e
+    out = []
+    for m in (lat > MERC_LAT, lat < -MERC_LAT):
+        v = a[m]
+        w = np.broadcast_to(np.cos(np.radians(lat[m]))[:, None], v.shape)
+        ok = ~np.isnan(v)
+        if w[ok].sum() < 0.5 * w.sum():
+            out.append(float("nan"))
+        else:
+            out.append(float((v[ok] * w[ok]).sum() / w[ok].sum()))
+    return out[0], out[1]
+
+
+def row_latitudes(size: int) -> np.ndarray:
+    y = (np.arange(size) + 0.5) / size          # 0 = north edge
+    return np.degrees(np.arctan(np.sinh(np.pi * (1 - 2 * y))))
+
+
+def blend_poles(a: np.ndarray, north: float, south: float, lat: np.ndarray | None = None,
+                edge_rows: tuple[bool, bool] = (True, True)) -> np.ndarray:
+    """Fade the rows poleward of BLEND_FROM into the cap value (in place). NaN cap = fade into NaN.
+
+    `lat` = latitude of each row (default: a full-globe Mercator array). For a band cut out of a larger
+    grid, pass its row latitudes and say which of its ends are the true north/south edges of the map.
+    """
+    lat = row_latitudes(a.shape[0]) if lat is None else lat
+    t = np.clip((np.abs(lat) - BLEND_FROM) / (MERC_LAT - BLEND_FROM), 0, 1)
+    w = t * t * (3 - 2 * t)  # smoothstep
+    # the rows MapLibre stretches to the pole must be exactly the cap (also after 2x2 means)
+    if edge_rows[0]:
+        w[:2] = 1.0
+    if edge_rows[1]:
+        w[-2:] = 1.0
+    for rows, cap in ((lat > BLEND_FROM, north), (lat < -BLEND_FROM, south)):
+        for r in np.nonzero(rows)[0]:
+            if np.isnan(cap):
+                if w[r] >= 0.5:
+                    a[r] = np.nan
+            else:
+                # NaN (e.g. land in the coverage layer) stays NaN until the cap takes over
+                row = np.where(np.isnan(a[r]), cap if w[r] >= 0.5 else np.nan, a[r])
+                a[r] = (1 - w[r]) * row + w[r] * cap
+    return a
+
+
 def down2(a: np.ndarray) -> np.ndarray:
     """2x2 NaN-aware mean."""
     h, w = a.shape
@@ -117,21 +179,29 @@ def main() -> None:
     args = ap.parse_args()
     size = args.tile * 2 ** args.maxzoom
 
+    caps: dict[str, tuple[float, float]] = {}
     count = lambda d: sum(1 for _ in (args.out / d).rglob("*.webp")) if (args.out / d).exists() else 0
     if args.only in ("dem", "all"):
         dem = warp_to_merc(args.elev, size, np.float32, src_nodata=-32767)
         assert not np.isnan(dem).any(), "DEM has holes after warp"
+        caps["dem"] = polar_caps(args.elev, -32767)
+        blend_poles(dem, *caps["dem"])
         write_pyramid(dem, args.out / "dem", args.maxzoom, args.tile, lambda b: terrarium(np.rint(b)))  # integer metres: GEBCO is integer, and B=0 compresses 2.3x better
         del dem
     if args.only in ("coverage", "all"):
         # coverage: 0 = land -> NaN, 1..255 -> fraction
-        cov = warp_to_merc(args.coverage, size, np.float32, src_nodata=np.nan,
-                           transform_values=lambda a: np.where(a == 0, np.nan, (a - 1.0) / 254.0))
+        tv = lambda a: np.where(a == 0, np.nan, (a - 1.0) / 254.0)
+        cov = warp_to_merc(args.coverage, size, np.float32, src_nodata=np.nan, transform_values=tv)
+        caps["coverage"] = polar_caps(args.coverage, None, tv)
+        blend_poles(cov, *caps["coverage"])
         write_pyramid(cov, args.out / "coverage", args.maxzoom, args.tile, veil)
         del cov
     if args.only in ("new2026", "all") and args.new2026.exists():
-        nw = warp_to_merc(args.new2026, size, np.float32, src_nodata=np.nan,
-                          transform_values=lambda a: np.where(a == 0, np.nan, a / 255.0))
+        tv = lambda a: np.where(a == 0, np.nan, a / 255.0)
+        nw = warp_to_merc(args.new2026, size, np.float32, src_nodata=np.nan, transform_values=tv)
+        # sparse layer: only a few cells are new, so fade the cap to "nothing new"
+        caps["new2026"] = (float("nan"), float("nan"))
+        blend_poles(nw, *caps["new2026"])
         write_pyramid(nw, args.out / "new2026", args.maxzoom, args.tile, new_layer)
         del nw
     n_dem, n_cov = count("dem"), count("coverage")
@@ -155,6 +225,7 @@ def main() -> None:
         "change2025to2026": None if change is None else {
             k: change[k] for k in ("measured_2025_frac", "measured_2026_frac", "newly_measured_km2",
                                    "no_longer_measured_km2", "net_km2")},
+        "polarCaps": {k: [None if np.isnan(v) else round(v, 3) for v in vals] for k, vals in caps.items()},
         "tiles": {"dem": n_dem, "coverage": n_cov, "new2026": count("new2026")},
     }
     (args.out / "meta.json").write_text(json.dumps(meta, indent=1))
