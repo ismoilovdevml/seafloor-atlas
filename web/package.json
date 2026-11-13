@@ -1,0 +1,28 @@
+{
+  "name": "seafloor-atlas-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "synth": "node scripts/make_synthetic_tiles.mjs",
+    "verify:stories": "node scripts/verify_stories.mjs",
+    "capture": "node scripts/capture_views.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/atkinson-hyperlegible-next": "5.3.0",
+    "@fontsource-variable/newsreader": "5.3.0",
+    "maplibre-gl": "6.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "playwright-core": "1.64.1",
+    "typescript": "6.0.3",
+    "vite": "8.3.8",
+    "vitest": "5.0.5"
+  }
+}

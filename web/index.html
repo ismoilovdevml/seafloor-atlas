@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="description" content="An interactive globe of the whole ocean floor from GEBCO 2026, showing how much of it ships have directly measured." />
+  <title>Seafloor Atlas</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23374f8a'/%3E%3Cpath d='M1 18c5-2 8 3 15 1s9-6 15-3v4a15 15 0 0 1-30 0z' fill='%23140a22'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <div id="map" aria-label="Globe of the seafloor. Drag to rotate, scroll or pinch to zoom." role="application"></div>
+
+  <div class="ui" id="ui" data-tab="stories">
+    <header class="masthead">
+      <h1>Seafloor Atlas</h1>
+      <p class="lede">The shape of the whole ocean floor from GEBCO 2026, and how little of it ships have actually measured.</p>
+      <div class="search" role="search">
+        <label class="sr-only" for="search-input">Find an undersea feature</label>
+        <input id="search-input" type="search" placeholder="Find a trench, ridge, seamount…" autocomplete="off" spellcheck="false"
+               role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list" />
+        <ul id="search-results" class="search-results" role="listbox" hidden></ul>
+      </div>
+    </header>
+
+    <div class="tabs" role="tablist" aria-label="Panels">
+      <button role="tab" id="tab-stories" aria-controls="stories" aria-selected="true" data-tab="stories">Guided views</button>
+      <button role="tab" id="tab-layers" aria-controls="layers" aria-selected="false" data-tab="layers">Layers</button>
+    </div>
+
+    <section class="panel stories" id="stories" role="tabpanel" aria-labelledby="tab-stories">
+      <h2>Guided views</h2>
+      <ul class="story-list" id="story-list"></ul>
+    </section>
+
+    <section class="panel layers" id="layers" role="tabpanel" aria-labelledby="tab-layers">
+      <h2 class="sr-only-desktop">Layers</h2>
+
+      <div class="layer">
+        <label class="switch-row"><input type="checkbox" role="switch" id="t-veil" /> <span>What's actually measured</span></label>
+        <div class="layer-legend" id="veil-legend">
+          <p class="measured-stat" id="measured-stat">Loading coverage statistics…</p>
+          <div class="veil-key" aria-hidden="true">
+            <span class="veil-chip clear"></span><span>surveyed directly (mostly ship sonar)</span>
+            <span class="veil-chip dim"></span><span>estimated (gravity or interpolation)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="layer">
+        <label class="switch-row"><input type="checkbox" role="switch" id="t-plates" /> <span>Plate boundaries</span></label>
+        <ul class="plate-key" id="plate-key"></ul>
+      </div>
+
+      <div class="layer">
+        <label class="switch-row"><input type="checkbox" role="switch" id="t-features" checked /> <span>Named features</span></label>
+      </div>
+
+      <div class="layer exag">
+        <div class="exag-head">
+          <label for="exag">Vertical exaggeration</label>
+          <output id="exag-out" for="exag">×40</output>
+        </div>
+        <input type="range" id="exag" min="1" max="80" step="1" value="40" />
+        <label class="check-row"><input type="checkbox" id="exag-auto" checked /> <span>Adjust with zoom</span></label>
+      </div>
+
+      <button class="tool" id="profile-btn" aria-pressed="false">Draw a depth profile</button>
+
+      <figure class="depth-legend" aria-labelledby="depth-legend-cap">
+        <figcaption id="depth-legend-cap">Depth below sea level</figcaption>
+        <div class="ramp" id="ramp"></div>
+        <p class="ramp-note">Steps are closer near the surface, where shelves and canyons sit.</p>
+      </figure>
+
+    </section>
+
+    <div class="readout" id="readout" aria-live="polite">
+      <span class="hint" id="readout-hint">Point at the seafloor to read its depth.</span>
+      <dl class="readout-grid" id="readout-grid" hidden>
+        <div><dt>Depth</dt><dd id="r-depth"></dd></div>
+        <div><dt>Measured by ship</dt><dd id="r-meas"></dd></div>
+        <div><dt>Latitude</dt><dd id="r-lat"></dd></div>
+        <div><dt>Longitude</dt><dd id="r-lon"></dd></div>
+      </dl>
+    </div>
+
+    <article class="card story-card" id="story-card" hidden aria-live="polite">
+      <button class="close" aria-label="Close" data-close="story-card">×</button>
+      <h2 id="story-title"></h2>
+      <p id="story-blurb"></p>
+      <button class="text-btn" id="story-veil" hidden>Show what's measured here</button>
+    </article>
+
+    <article class="card feature-card" id="feature-card" hidden aria-live="polite">
+      <button class="close" aria-label="Close" data-close="feature-card">×</button>
+      <p class="kind" id="f-kind"></p>
+      <h2 id="f-name"></h2>
+      <p class="f-depth" id="f-depth"></p>
+      <p id="f-blurb"></p>
+      <p class="f-source" id="f-source"></p>
+    </article>
+
+    <section class="profile" id="profile" hidden aria-labelledby="profile-title">
+      <header class="profile-head">
+        <h2 id="profile-title">Depth profile</h2>
+        <p class="profile-status" id="profile-status">Click a start point on the globe.</p>
+        <dl class="profile-stats" id="profile-stats" hidden>
+          <div><dt>Length</dt><dd id="p-len"></dd></div>
+          <div><dt>Deepest</dt><dd id="p-min"></dd></div>
+          <div><dt>Measured along line</dt><dd id="p-meas"></dd></div>
+        </dl>
+        <button class="close" id="profile-close" aria-label="Close depth profile">×</button>
+      </header>
+      <div class="chart" id="profile-chart"></div>
+    </section>
+
+    <footer class="credits">
+      <details>
+        <summary>Data sources</summary>
+        <div class="credits-body" id="credits-body"></div>
+      </details>
+    </footer>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

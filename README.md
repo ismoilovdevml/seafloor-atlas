@@ -4,6 +4,24 @@ A map of the whole Earth's ocean floor, built from the open **GEBCO_2026** grid.
 
 ![The seafloor of the whole Earth](figures/fig1_seafloor.png)
 
+## Interactive globe
+
+**Open it: https://ismoilovdevml.github.io/seafloor-atlas/**
+
+![Seafloor Atlas viewer](web/screenshots/desktop-1-globe.png)
+
+* Rotate and zoom the whole seafloor in 3D (depth exaggerated so trenches and ridges are visible from space).
+* **What's actually measured:** switch it on and the estimated seafloor goes dark, so you see only what ships have surveyed.
+* **Depth profile:** click two points and get the depth along the line (here: across Challenger Deep, 227 km, deepest −10,721 m).
+* **Guided views:** 11 places such as Challenger Deep, the Hawaiian–Emperor bend, the Mid-Atlantic Ridge and the MH370 search area.
+* **Search** 5,412 named undersea features; **plate boundaries** with spreading rates.
+
+| Measured vs estimated | Depth profile across the Mariana Trench |
+|---|---|
+| ![coverage](web/screenshots/desktop-2-coverage.png) | ![profile](web/screenshots/desktop-5-profile-mariana.png) |
+
+Runs in the browser with no server and no tracking. Built with MapLibre GL; code in [web/](web/).
+
 ## Key numbers
 
 | | |
@@ -74,6 +92,7 @@ pipeline/fetch_data.sh                    # inputs (~370 MB, needs GDAL)
 .venv/bin/python pipeline/plates.py       # plate boundaries
 .venv/bin/python pipeline/figures.py      # README figures
 .venv/bin/python -m pytest tests          # encoding tests
+cd web && npm ci && npm run dev           # viewer at http://localhost:5173
 ```
 
 ## Limits

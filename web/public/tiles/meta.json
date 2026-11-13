@@ -1,0 +1,27 @@
+{
+ "version": "GEBCO_2026",
+ "tileSize": 512,
+ "minzoom": 0,
+ "maxzoom": 5,
+ "encoding": "terrarium",
+ "veilMax": 230,
+ "veilColor": "#0b1424",
+ "sourceResolutionArcsec": 60,
+ "citation": "GEBCO Compilation Group (2026) GEBCO 2026 Grid",
+ "doi": "10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa",
+ "licence": "Open Government Licence v3 (attribution required)",
+ "stats": {
+  "measured_fraction_area": 0.30810193736474295,
+  "measured_fraction_cells": 0.30254220423175643,
+  "ocean_fraction_of_earth": 0.7091127897264629,
+  "group_fraction": {
+   "direct": 0.30810193736474295,
+   "indirect": 0.6754917549292151,
+   "unknown": 0.01640630770604193
+  }
+ },
+ "tiles": {
+  "dem": 1365,
+  "coverage": 1365
+ }
+}

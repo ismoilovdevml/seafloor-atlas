@@ -1,0 +1,55 @@
+name: Deploy viewer to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: Install dwebp (story-centre depth check decodes real tiles)
+        run: sudo apt-get update -q && sudo apt-get install -y -q webp
+      - run: npm test
+      - run: npm run build
+      - name: Check that tiles made it into the build
+        run: |
+          test -f dist/tiles/meta.json
+          echo "dem tiles: $(find dist/tiles/dem -name '*.webp' | wc -l)"
+          echo "coverage tiles: $(find dist/tiles/coverage -name '*.webp' | wc -l)"
+          du -sh dist
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

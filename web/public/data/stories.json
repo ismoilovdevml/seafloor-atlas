@@ -1,0 +1,146 @@
+[
+ {
+  "id": "challenger-deep",
+  "title": "Challenger Deep",
+  "blurb": "The deepest known point of the ocean, almost 11 km down, at the southern end of the Mariana Trench where the Pacific Plate bends and sinks beneath the Mariana Plate.",
+  "center": [
+   142.59167,
+   11.37333
+  ],
+  "zoom": 5.6,
+  "pitch": 62,
+  "bearing": -25,
+  "exaggeration": 9
+ },
+ {
+  "id": "mid-atlantic-iceland",
+  "title": "Mid-Atlantic Ridge and Iceland",
+  "blurb": "A mountain range down the middle of the Atlantic where North America and Eurasia pull apart by about 2 cm a year. At Iceland a mantle hotspot under the ridge pushes it above sea level.",
+  "center": [
+   -25.0,
+   63.0
+  ],
+  "zoom": 3.4,
+  "pitch": 55,
+  "bearing": 20,
+  "exaggeration": 30
+ },
+ {
+  "id": "hawaii-emperor-bend",
+  "title": "The Hawaiian–Emperor bend",
+  "blurb": "A 6,000 km trail of volcanoes made as the Pacific Plate drifted over the Hawaiian hotspot. The sharp bend, about 47 million years old, records a change in how the plate or the plume moved.",
+  "center": [
+   173.0,
+   32.167
+  ],
+  "zoom": 3.1,
+  "pitch": 45,
+  "bearing": -30,
+  "exaggeration": 30
+ },
+ {
+  "id": "east-pacific-rise",
+  "title": "East Pacific Rise",
+  "blurb": "The fastest-spreading major ridge: near 30° S the Pacific and Nazca plates part at about 15 cm a year, so the rise is broad and smooth instead of a deep rift valley.",
+  "center": [
+   -113.675,
+   -20.0
+  ],
+  "zoom": 3.6,
+  "pitch": 50,
+  "bearing": 15,
+  "exaggeration": 30
+ },
+ {
+  "id": "tonga-kermadec",
+  "title": "Tonga–Kermadec Trench",
+  "blurb": "The second-deepest trench, with Horizon Deep near 10.8 km. At its northern end the plates converge at up to 24 cm a year, the fastest anywhere on Earth.",
+  "center": [
+   -174.72667,
+   -23.25833
+  ],
+  "zoom": 4.4,
+  "pitch": 60,
+  "bearing": 35,
+  "exaggeration": 15
+ },
+ {
+  "id": "bahamas",
+  "title": "Bahama Banks and the Great Bahama Canyon",
+  "blurb": "Flat limestone platforms only a few metres deep, cut by the Tongue of the Ocean and the Great Bahama Canyon, whose walls drop more than 4 km to the abyssal plain.",
+  "center": [
+   -76.994,
+   25.823
+  ],
+  "zoom": 5.6,
+  "pitch": 55,
+  "bearing": -20,
+  "exaggeration": 6
+ },
+ {
+  "id": "monterey-canyon",
+  "title": "Monterey Canyon",
+  "blurb": "A submarine canyon as deep as the Grand Canyon that starts a few hundred metres off the California coast. At 1 arc-minute only its larger bends are visible; ships have mapped it at metre scale.",
+  "center": [
+   -122.083,
+   36.667
+  ],
+  "zoom": 7.2,
+  "pitch": 55,
+  "bearing": 40,
+  "exaggeration": 4
+ },
+ {
+  "id": "drake-passage",
+  "title": "Drake Passage",
+  "blurb": "The 800 km gap between South America and Antarctica. The Antarctic Circumpolar Current, the largest current on Earth, squeezes through it over the rough Shackleton and West Scotia ridges.",
+  "center": [
+   -63.0,
+   -58.0
+  ],
+  "zoom": 3.9,
+  "pitch": 45,
+  "bearing": 0,
+  "exaggeration": 25
+ },
+ {
+  "id": "gakkel-ridge",
+  "title": "Gakkel Ridge",
+  "blurb": "The slowest-spreading ridge on Earth, under 1.5 cm a year, running beneath the Arctic sea ice. Its rift valley is deep and its volcanism patchy, because so little magma reaches the surface.",
+  "center": [
+   4.44,
+   84.74
+  ],
+  "zoom": 4.0,
+  "pitch": 45,
+  "bearing": -30,
+  "exaggeration": 20
+ },
+ {
+  "id": "romanche",
+  "title": "Romanche Fracture Zone",
+  "blurb": "At the equator a single transform fault shifts the Mid-Atlantic Ridge about 950 km sideways. The valley along it reaches close to 7.8 km in Vema Deep, deeper than most of the Atlantic.",
+  "center": [
+   -18.542,
+   -0.242
+  ],
+  "zoom": 4.6,
+  "pitch": 50,
+  "bearing": 0,
+  "exaggeration": 15
+ },
+ {
+  "id": "mh370-search",
+  "title": "Measured vs. estimated: the MH370 search",
+  "blurb": "Between 2014 and 2017 the search for flight MH370 mapped a 120,000 km² swath of this remote seafloor in detail. Turn on “What's actually measured” to see that swath against surroundings that are only estimated from satellite gravity.",
+  "center": [
+   93.0,
+   -36.0
+  ],
+  "zoom": 4.8,
+  "pitch": 40,
+  "bearing": 25,
+  "exaggeration": 12,
+  "veil": true
+ }
+]
