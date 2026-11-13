@@ -9,6 +9,9 @@ export interface Meta {
   veilMax: number; veilColor: string; sourceResolutionArcsec: number;
   citation: string; doi: string; licence?: string;
   stats?: Record<string, unknown>;
+  change2025to2026?: { measured_2025_frac: number; measured_2026_frac: number; newly_measured_km2: number;
+    no_longer_measured_km2: number; net_km2: number } | null;
+  tiles?: Record<string, number>;
 }
 
 export const LABEL_FONT = 'Atkinson Label';
@@ -74,6 +77,7 @@ export function buildStyle(tilesBase: string, dataBase: string, meta: Meta): Sty
       'dem-terrain': dem,
       'dem-relief': { ...dem },
       veil: { type: 'raster', tiles: [`${tiles}coverage/{z}/{x}/{y}.webp`], tileSize: meta.tileSize, minzoom: meta.minzoom, maxzoom: meta.maxzoom },
+      new2026: { type: 'raster', tiles: [`${tiles}new2026/{z}/{x}/{y}.webp`], tileSize: meta.tileSize, minzoom: meta.minzoom, maxzoom: meta.maxzoom },
       plates: { type: 'geojson', data: abs(`${dataBase}/plates.geojson`) },
       features: { type: 'geojson', data: abs(`${dataBase}/features.geojson`) },
       profile: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
@@ -95,6 +99,7 @@ export function buildStyle(tilesBase: string, dataBase: string, meta: Meta): Sty
         } as never,
       },
       { id: 'veil', type: 'raster', source: 'veil', layout: { visibility: 'none' }, paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } },
+      { id: 'new2026', type: 'raster', source: 'new2026', layout: { visibility: 'none' }, paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } },
       {
         id: 'plates', type: 'line', source: 'plates', layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
         paint: {

@@ -20,8 +20,16 @@
    "unknown": 0.01640630770604193
   }
  },
+ "change2025to2026": {
+  "measured_2025_frac": 0.2968447797512128,
+  "measured_2026_frac": 0.3080473992222625,
+  "newly_measured_km2": 6565379.254623686,
+  "no_longer_measured_km2": 2512740.9855485847,
+  "net_km2": 4052638.269075066
+ },
  "tiles": {
   "dem": 1365,
-  "coverage": 1365
+  "coverage": 1365,
+  "new2026": 1365
  }
 }

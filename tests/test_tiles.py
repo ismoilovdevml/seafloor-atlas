@@ -37,3 +37,11 @@ def test_down2_nan_aware():
     a = np.array([[1, np.nan], [3, np.nan]], dtype=np.float32)
     assert down2(a)[0, 0] == 2.0
     assert np.isnan(down2(np.full((2, 2), np.nan, dtype=np.float32))[0, 0])
+
+
+def test_new_layer_alpha():
+    from tiles import new_layer
+    v = new_layer(np.array([[np.nan, 0.0, 0.1, 1.0]], dtype=np.float32))
+    assert v[0, 0, 3] == 0 and v[0, 1, 3] == 0      # nothing new -> transparent
+    assert 80 < v[0, 2, 3] < 255                    # thin line still visible
+    assert v[0, 3, 3] == 255

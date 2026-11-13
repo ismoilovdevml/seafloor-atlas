@@ -92,6 +92,18 @@ function setPlates(on: boolean) { tPlates.checked = on; setVisible('plates', on)
 tVeil.addEventListener('change', () => setVeil(tVeil.checked));
 tPlates.addEventListener('change', () => setPlates(tPlates.checked));
 tFeatures.addEventListener('change', () => setVisible(FEATURE_LAYERS, tFeatures.checked));
+// newly measured between the GEBCO_2025 and GEBCO_2026 grids (pipeline/change.py); hidden if not built
+const tNew = $<HTMLInputElement>('t-new');
+const change = meta.change2025to2026;
+function setNew(on: boolean) { tNew.checked = on; setVisible('new2026', on); }
+tNew.addEventListener('change', () => setNew(tNew.checked));
+if (change && (meta.tiles?.new2026 ?? 0) > 0) {
+  const mkm = (km2: number) => (km2 / 1e6).toFixed(1);
+  $('new-stat').innerHTML = `<strong>${mkm(change.newly_measured_km2)} million km²</strong> of seafloor are newly counted as directly measured `
+    + `in the 2026 grid (new surveys and older ones newly shared; measured share ${(100 * change.measured_2025_frac).toFixed(1)}% → ${(100 * change.measured_2026_frac).toFixed(1)}%).`;
+} else {
+  $('new-layer').hidden = true;
+}
 setPlates(false);
 
 // measured statistic (meta.stats.measured_fraction_area, area-weighted, TID 10-17)
@@ -356,9 +368,17 @@ document.querySelectorAll<HTMLButtonElement>('.tabs button').forEach((b) => b.ad
 }));
 
 // ---------- deep link ----------
-const m = /story=([\w-]+)/.exec(location.hash);
-const linked = m && stories.find((s) => s.id === m[1]);
+function storyFromHash() {
+  const m = /story=([\w-]+)/.exec(location.hash);
+  return m ? stories.find((s) => s.id === m[1]) : undefined;
+}
+const linked = storyFromHash();
 if (linked) playStory(linked, true);
+// a pasted or edited #story= link in an already open tab does not reload the page
+window.addEventListener('hashchange', () => {
+  const s = storyFromHash();
+  if (s && s.id !== currentStory?.id) playStory(s);
+});
 
 // ---------- test/capture hooks ----------
 function idle(): Promise<void> { return new Promise((res) => { if (map.loaded() && map.areTilesLoaded()) map.once('idle', () => res()); else map.once('idle', () => res()); map.triggerRepaint(); }); }
@@ -366,7 +386,7 @@ Object.assign(window, {
   __seafloor: {
     map, meta, synthetic, idle,
     playStory: (id: string, instant = true) => { const s = stories.find((x) => x.id === id); if (s) playStory(s, instant); return !!s; },
-    setVeil, setPlates,
+    setVeil, setPlates, setNew,
     profile: async (a: [number, number], b: [number, number]) => { setProfiling(true); profileA = a; return runProfile(a, b); },
     hoverChart: (frac: number) => { const svg = $('profile-chart').querySelector('svg')!; const r = svg.getBoundingClientRect(); svg.dispatchEvent(new PointerEvent('pointermove', { clientX: r.left + 60 + frac * (r.width - 72), clientY: r.top + 40 })); },
     readout,

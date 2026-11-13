@@ -57,6 +57,20 @@ The dark lines are single ship tracks. The solid dark areas are full multibeam s
 
 The 25–35° N and 50–65° N bands are about **50–55 %** measured (busy shipping lanes, Europe, North America, Japan). The 40–50° S band, under the Southern Ocean's storms, is only **19–20 %**. Multibeam sonar alone accounts for 26.4 % of the ocean; satellite-gravity prediction (code 40) covers 56.7 %.
 
+### 4. What changed in one year (GEBCO_2025 → GEBCO_2026)
+
+![Newly measured seafloor in GEBCO_2026](figures/fig5_new_in_2026.png)
+
+Comparing the two TID grids with the same ocean mask:
+
+| | GEBCO_2025 | GEBCO_2026 |
+|---|---|---|
+| Directly measured | 29.7 % (107.4 M km²) | 30.8 % (111.4 M km²) |
+
+* **6.6 M km²** became "directly measured" (63 % of it was satellite-gravity estimate in 2025), **2.5 M km²** went the other way (re-coded, mostly back to code 40). **Net +4.1 M km²**, close to the official "+5 M km² in a year".
+* The largest gain is the **Arabian Sea and Gulf of Oman** (10–30° N, 50–70° E), which matches the official note that ROPME Sea Area coverage rose from 6.4 % to 20.5 %.
+* Red includes older surveys that were newly shared with GEBCO, not only new expeditions. The viewer has this as the "New in GEBCO 2026" layer.
+
 ## What it is useful for
 
 * **Science and education:** see plate tectonics directly. Mid-ocean ridges, trenches, fracture zones and hotspot seamount chains are all visible on one globe.
@@ -85,11 +99,13 @@ PB2002 plate boundaries (Bird 2003) ───────┴─ pipeline/plates.
 
 ```bash
 uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r pyproject.toml
-pipeline/fetch_data.sh                    # inputs (~370 MB, needs GDAL)
+pipeline/fetch_data.sh                    # inputs (~470 MB, needs GDAL)
 .venv/bin/python pipeline/coverage.py     # stats + coverage grid   (~1 min)
 .venv/bin/python pipeline/tiles.py        # web tiles              (~10 min)
 .venv/bin/python pipeline/features.py     # undersea feature names
 .venv/bin/python pipeline/plates.py       # plate boundaries
+.venv/bin/python pipeline/change.py       # 2025 -> 2026 comparison (needs the 2025 TID grid)
+.venv/bin/python pipeline/tiles.py --only new2026
 .venv/bin/python pipeline/figures.py      # README figures
 .venv/bin/python -m pytest tests          # encoding tests
 cd web && npm ci && npm run dev           # viewer at http://localhost:5173

@@ -22,6 +22,16 @@ if [ ! -f "$G/gebco_2026_tid.tif" ]; then
     "$G/gebco_2026_tid.nc" "$G/gebco_2026_tid.tif"
 fi
 
+# GEBCO_2025 TID grid, for the 2025 -> 2026 comparison (pipeline/change.py), 98 MB zip
+G25=data/raw/gebco_2025; mkdir -p "$G25"
+if [ ! -f "$G25/gebco_2025_tid.tif" ]; then
+  U="https://dap.ceda.ac.uk/bodc/gebco/global/gebco_2025/type_identifier_grid/netcdf/gebco_2025_tid.zip?download=1"
+  for i in $(seq 1 30); do curl -fL -C - --max-time 900 -o "$G25/gebco_2025_tid.zip" "$U" && break; sleep 3; done
+  (cd "$G25" && unzip -o -q gebco_2025_tid.zip)
+  gdal_translate -co COMPRESS=DEFLATE -co TILED=YES -co BLOCKXSIZE=512 -co BLOCKYSIZE=512 \
+    "$G25/gebco_2025_tid.nc" "$G25/gebco_2025_tid.tif"
+fi
+
 # PB2002 plate boundaries (Bird 2003), ODC-By 1.0
 for f in PB2002_steps.json PB2002_plates.json; do
   [ -f "$P/$f" ] || curl -fL -o "$P/$f" "https://raw.githubusercontent.com/fraxen/tectonicplates/master/GeoJSON/$f"

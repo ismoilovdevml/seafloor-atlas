@@ -182,6 +182,43 @@ def fig4(stats: dict) -> None:
     plt.close(fig)
 
 
+def fig5(z: np.ndarray) -> None:
+    """Newly measured seafloor between the GEBCO_2025 and GEBCO_2026 grids (needs pipeline/change.py)."""
+    npz = ROOT / "data/derived/new_measured_4arcmin.npz"
+    js = ROOT / "data/derived/change_2025_2026.json"
+    if not (npz.exists() and js.exists()):
+        return
+    d = np.load(npz)
+    ch = json.loads(js.read_text())
+    fig = plt.figure(figsize=(12, 6.4))
+    ax = globe_axes(fig)
+    base = np.full(z.shape + (3,), 0.88)
+    base[z >= 0] = 0.97
+    m25 = d["m25"][: z.shape[0], : z.shape[1]]
+    base[(z < 0) & (m25 > 0.25)] = 0.70  # already measured in 2025
+    ax.imshow(base, extent=[-180, 180, -90, 90], transform=ccrs.PlateCarree(), origin="upper",
+              regrid_shape=(1800, 3600))
+    new = d["new"][: z.shape[0], : z.shape[1]]
+    # dilate 1 px so thin new survey lines stay visible at this scale
+    big = np.maximum.reduce([np.roll(np.roll(new, i, 0), j, 1) for i in (-1, 0, 1) for j in (-1, 0, 1)])
+    m = np.ma.masked_where(big < 0.02, big)
+    ax.imshow(m, extent=[-180, 180, -90, 90], transform=ccrs.PlateCarree(), origin="upper",
+              cmap=ListedColormap(["#e4572e"]), vmin=0, vmax=1, regrid_shape=(2400, 4800), interpolation="nearest")
+    new_m = ch["newly_measured_km2"] / 1e6
+    net = ch["net_km2"] / 1e6
+    ax.set_title(f"New in GEBCO_2026: {new_m:.1f} million km\u00b2 newly counted as directly measured (red)",
+                 fontsize=13)
+    fig.text(0.5, 0.06,
+             f"Measured share {100 * ch['measured_2025_frac']:.1f}% (2025 grid) \u2192 {100 * ch['measured_2026_frac']:.1f}% (2026 grid), "
+             f"net +{net:.1f} million km\u00b2 ({ch['no_longer_measured_km2'] / 1e6:.1f} M km\u00b2 went the other way). "
+             "Red includes older surveys newly contributed. Dark grey = measured in 2025.",
+             ha="center", fontsize=9, color="0.25")
+    fig.text(0.5, 0.01, CITE + " and GEBCO_2025 (doi:10.5285/37c52e96-24ea-67ce-e063-7086abc05f29), TID grids",
+             ha="center", fontsize=7, color="0.35")
+    fig.savefig(FIG / "fig5_new_in_2026.png")
+    plt.close(fig)
+
+
 def main() -> None:
     FIG.mkdir(exist_ok=True)
     stats = json.loads(STATS.read_text())
@@ -190,6 +227,7 @@ def main() -> None:
     fig2(z, frac, stats)
     fig3(stats)
     fig4(stats)
+    fig5(z)
     print("figures written:", sorted(p.name for p in FIG.glob("*.png")))
 
 

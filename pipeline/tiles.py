@@ -48,6 +48,18 @@ def veil(f: np.ndarray) -> np.ndarray:
     return out
 
 
+NEW_RGB = (0xE4, 0x57, 0x2E)
+
+
+def new_layer(f: np.ndarray) -> np.ndarray:
+    """share of a pixel newly measured in GEBCO_2026 (NaN = none) -> red RGBA; thin survey lines stay visible."""
+    out = np.zeros(f.shape + (4,), dtype=np.uint8)
+    out[..., 0], out[..., 1], out[..., 2] = NEW_RGB
+    g = np.nan_to_num(f)
+    out[..., 3] = np.where(g > 0, np.rint(80 + 175 * np.clip(3 * g, 0, 1)), 0).astype(np.uint8)
+    return out
+
+
 def warp_to_merc(src_path: Path, size: int, dtype, src_nodata, transform_values=None) -> np.ndarray:
     dst = np.full((size, size), np.nan, dtype=np.float32)
     with rasterio.open(src_path) as src:
@@ -99,7 +111,9 @@ def main() -> None:
     ap.add_argument("--maxzoom", type=int, default=5)
     ap.add_argument("--tile", type=int, default=512)
     ap.add_argument("--source-arcsec", type=int, default=60)
-    ap.add_argument("--only", choices=["dem", "coverage", "all"], default="all")
+    ap.add_argument("--only", choices=["dem", "coverage", "new2026", "all"], default="all")
+    ap.add_argument("--new2026", type=Path, default=ROOT / "data/derived/new2026_1arcmin.tif")
+    ap.add_argument("--change", type=Path, default=ROOT / "data/derived/change_2025_2026.json")
     args = ap.parse_args()
     size = args.tile * 2 ** args.maxzoom
 
@@ -115,7 +129,13 @@ def main() -> None:
                            transform_values=lambda a: np.where(a == 0, np.nan, (a - 1.0) / 254.0))
         write_pyramid(cov, args.out / "coverage", args.maxzoom, args.tile, veil)
         del cov
+    if args.only in ("new2026", "all") and args.new2026.exists():
+        nw = warp_to_merc(args.new2026, size, np.float32, src_nodata=np.nan,
+                          transform_values=lambda a: np.where(a == 0, np.nan, a / 255.0))
+        write_pyramid(nw, args.out / "new2026", args.maxzoom, args.tile, new_layer)
+        del nw
     n_dem, n_cov = count("dem"), count("coverage")
+    change = json.loads(args.change.read_text()) if args.change.exists() else None
 
     stats = json.loads(args.stats.read_text()) if args.stats.exists() else {}
     meta = {
@@ -132,7 +152,10 @@ def main() -> None:
         "licence": "Open Government Licence v3 (attribution required)",
         "stats": {k: stats.get(k) for k in ("measured_fraction_area", "measured_fraction_cells",
                                             "ocean_fraction_of_earth", "group_fraction")},
-        "tiles": {"dem": n_dem, "coverage": n_cov},
+        "change2025to2026": None if change is None else {
+            k: change[k] for k in ("measured_2025_frac", "measured_2026_frac", "newly_measured_km2",
+                                   "no_longer_measured_km2", "net_km2")},
+        "tiles": {"dem": n_dem, "coverage": n_cov, "new2026": count("new2026")},
     }
     (args.out / "meta.json").write_text(json.dumps(meta, indent=1))
     print(json.dumps(meta, indent=1))
