@@ -75,7 +75,9 @@ def warp_to_merc(src_path: Path, size: int, dtype, src_nodata, transform_values=
 
 
 MERC_LAT = 85.0511287798066  # Web Mercator tiles end here
-BLEND_FROM = 82.0            # start of the fade into the polar cap
+BLEND_FROM = 84.8            # start of the fade into the polar cap (keeps real Arctic data such as the Gakkel Ridge, 84.7 N)
+EXACT_FROM = 84.92           # poleward of this the value IS the cap: 64 rows at z5, so the outermost
+                             # rows stay exact after the 2x2 means down to z0 (else hillshade draws faint spokes)
 
 
 def polar_caps(src_path: Path, src_nodata, transform_values=None) -> tuple[float, float]:
@@ -117,8 +119,8 @@ def blend_poles(a: np.ndarray, north: float, south: float, lat: np.ndarray | Non
     grid, pass its row latitudes and say which of its ends are the true north/south edges of the map.
     """
     lat = row_latitudes(a.shape[0]) if lat is None else lat
-    t = np.clip((np.abs(lat) - BLEND_FROM) / (MERC_LAT - BLEND_FROM), 0, 1)
-    w = t * t * (3 - 2 * t)  # smoothstep
+    t = np.clip((np.abs(lat) - BLEND_FROM) / (EXACT_FROM - BLEND_FROM), 0, 1)
+    w = t * t * (3 - 2 * t)  # smoothstep, = 1 from EXACT_FROM to the edge
     # the rows MapLibre stretches to the pole must be exactly the cap (also after 2x2 means)
     if edge_rows[0]:
         w[:2] = 1.0

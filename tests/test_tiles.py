@@ -65,3 +65,15 @@ def test_blend_poles_nan_cap_clears_edge():
     a = np.full((512, 8), 0.4, dtype=np.float32)
     blend_poles(a, float("nan"), 0.2)
     assert np.isnan(a[0]).all() and abs(a[-1].mean() - 0.2) < 1e-3
+
+
+def test_blend_poles_leaves_real_arctic_data_alone():
+    # regression: an 82 deg band once flattened the Gakkel Ridge rift (84.7 N) towards the cap mean
+    from tiles import BLEND_FROM, blend_poles, row_latitudes
+    a = np.full((16384, 4), -5300.0, dtype=np.float32)
+    blend_poles(a, -3175.0, 2585.0)
+    lat = row_latitudes(16384)
+    assert np.all(a[np.abs(lat) < BLEND_FROM] == -5300.0)
+    assert abs(a[0].mean() + 3175) < 1e-3
+    # 64 outermost rows exact -> top 2 rows of every lower zoom (2x2 means down to z0) are exact too
+    assert np.all(a[:64] == -3175.0) and np.all(a[-64:] == 2585.0)
