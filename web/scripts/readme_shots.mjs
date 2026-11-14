@@ -1,10 +1,10 @@
 // Regenerate the README screenshots from a running site (live or `vite preview`).
-// usage: node scripts/readme_shots.mjs [baseUrl=https://ismoilovdevml.github.io/seafloor-atlas/] [outdir=../docs/img]
+// usage: node scripts/readme_shots.mjs [baseUrl=https://ismoilovdevml.github.io/seafloor-atlas/] [outdir=../docs/img] [only=name,name]
 // Writes PNGs at 2x; pipeline/readme_images.py (or any converter) turns them into small JPEGs for the README.
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
 
-const [,, base = 'https://ismoilovdevml.github.io/seafloor-atlas/', outdir = '../docs/img'] = process.argv;
+const [,, base = 'https://ismoilovdevml.github.io/seafloor-atlas/', outdir = '../docs/img', only = ''] = process.argv;
 mkdirSync(outdir, { recursive: true });
 const SHOTS = [
   { name: 'hero', hash: '', cam: { center: [-160, 5], zoom: 1.95, pitch: 0, bearing: 0 } },
@@ -20,7 +20,7 @@ const SHOTS = [
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
 const problems = [];
-for (const s of SHOTS) {
+for (const s of SHOTS.filter((x) => !only || only.split(',').includes(x.name))) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 });
   page.on('pageerror', (e) => problems.push(`${s.name}: ${e.message}`));
   await page.goto(base + s.hash, { waitUntil: 'networkidle', timeout: 120000 });

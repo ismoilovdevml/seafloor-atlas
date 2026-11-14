@@ -1,153 +1,144 @@
 # Seafloor Atlas
 
-A map of the whole Earth's ocean floor, built from the open **GEBCO_2026** grid. It also shows **which parts of the seafloor were actually measured by ships** and which were only estimated from satellites.
+An interactive 3D globe of the whole ocean floor, built from open data. It shows the shape of the seafloor, **how much of it has actually been measured**, how sure we are of the rest, the water above it, the life in it and what people have built on it.
 
-![The seafloor of the whole Earth](figures/fig1_seafloor.png)
+**Open it: https://ismoilovdevml.github.io/seafloor-atlas/** (runs in the browser, no server, no tracking)
 
-## Interactive globe
+![Seafloor Atlas](docs/img/hero.jpg)
 
-**Open it: https://ismoilovdevml.github.io/seafloor-atlas/**
+## What you can do
 
-![Seafloor Atlas viewer](web/screenshots/desktop-1-globe.png)
-
-* Rotate and zoom the whole seafloor in 3D (depth exaggerated so trenches and ridges are visible from space).
-* **What's actually measured:** switch it on and the estimated seafloor goes dark, so you see only what ships have surveyed.
-* **Depth profile:** click two points and get the depth along the line (here: across Challenger Deep, 227 km, deepest −10,721 m).
-* **Guided views:** 11 places such as Challenger Deep, the Hawaiian–Emperor bend, the Mid-Atlantic Ridge and the MH370 search area.
-* **Search** 5,412 named undersea features; **plate boundaries** with spreading rates.
-* **Ocean water:** temperature, salinity and potential density (TEOS-10) from the surface to 5,000 m, a month-by-month surface-temperature animation, and a water-column chart (T, S, σ₀ vs depth) wherever you click ([salinity at 1,000 m: the Mediterranean outflow](web/screenshots/water-2-salinity-1000m-mediterranean.png)). Data: World Ocean Atlas 2023, 1991–2020 normal (Locarnini et al. 2024, doi:10.25923/54bh-1613; Reagan et al. 2024, doi:10.25923/70qt-9574), open NOAA data.
-* **Human activity at sea:** switch on internet cables (with landing points), shipping traffic density, shipwrecks, oil and gas platforms, subsea pipelines and offshore wind farms; click any of them for a card (the Titanic wreck, the MAREA cable, Troll A, Nord Stream 1, Hornsea 1, ...). Data: TeleGeography cable map snapshot 2022-11-14 (CC BY-NC-SA 3.0), World Bank / IMF shipping density (CC BY 4.0), Wikidata (CC0), © OpenStreetMap contributors (ODbL); details in [docs/data-contract.md](docs/data-contract.md) ([cables](web/screenshots/infra-1-cables-global.png), [North Sea](web/screenshots/infra-2-north-sea.png)).
-* **Change sea level** from −6,000 m to +100 m, with an animation and presets: at the ice-age −120 m, Beringia, Sundaland, Sahul and Doggerland are dry land and Earth has **21.8 million km²** more land than today; at +70 m (about all land ice melted) it has **15.8 million km²** less. Areas are computed from the 1′ grid (`pipeline/hypsometry.py`; today 148.2 million km², 29.0 % of Earth, ice surfaces counted as land).
-
-| Measured vs estimated | Depth profile across the Mariana Trench |
+| | |
 |---|---|
-| ![coverage](web/screenshots/desktop-2-coverage.png) | ![profile](web/screenshots/desktop-5-profile-mariana.png) |
+| ![measured](docs/img/measured.jpg) **What's actually measured.** Switch it on: only seafloor surveyed by ships stays bright, the satellite estimate goes dark. | ![detail](docs/img/detail-z7.jpg) **Zoom to 460 m detail.** Zoom 6–7 stream the full 15″ GEBCO grid (Mid-Atlantic Ridge fracture zone shown). |
+| ![profile](docs/img/profile.jpg) **Depth profile.** Click two points; the line across Challenger Deep reaches −10,918 m. | ![sea level](docs/img/sea-ice-age.jpg) **Change sea level.** At −120 m (last ice age) Sundaland and Sahul are dry land: 21.8 million km² more land. |
+| ![water](docs/img/ocean-water.jpg) **Ocean water.** Temperature, salinity and density from the surface to 5 km, monthly animation, water-column chart where you click. | ![cables](docs/img/cables.jpg) **Human activity.** Internet cables, shipping traffic, shipwrecks, oil and gas platforms, pipelines, wind farms. |
+| ![north sea](docs/img/north-sea.jpg) **Click anything** for a card: the Titanic wreck, the MAREA cable, Troll A, Nord Stream 1, Hornsea 1. | ![shipping](docs/img/shipping.jpg) **Shipping density** from AIS 2015–2021: the world's sea lanes. |
 
-| Sea level −120 m (last ice age): Beringia is dry land | Sea level +70 m (all land ice melted): Bengal delta flooded |
-|---|---|
-| ![-120 m](web/screenshots/sea-2-lgm-beringia.png) | ![+70 m](web/screenshots/sea-8-plus70-bangladesh.png) |
-
-Runs in the browser with no server and no tracking. Built with MapLibre GL; code in [web/](web/).
+Also: 11 guided views, search over 5,412 named undersea features, cables and wrecks (⌘K), plate boundaries, model disagreement, prediction confidence, seal soundings and marine life (AquaMaps model, sampling-corrected diversity, data gaps), deep links for every view (`#story=`, `#sea=`, `#water=`, `#layers=`).
 
 ## Key numbers
 
 | | |
 |---|---|
 | Ocean area | **361.7 million km²** (70.9 % of Earth) |
-| Directly measured (ship sonar, lidar, …) | **30.8 %** = 111.4 million km² |
-| Estimated from satellite gravity | **56.7 %** |
-| Interpolated or other indirect | **10.8 %** |
-| Source unknown | **1.6 %** |
-| Deepest point on the grid | **Challenger Deep, −10,927 m** (15″ grid) |
+| Seafloor directly measured (ship sonar, lidar, …) | **30.8 %** (official Seabed 2030 figure: 28.7 %, stricter rule) |
+| Measured in GEBCO_2025 → GEBCO_2026 | 29.7 % → 30.8 %, **+4.1 million km²** in a year |
+| National waters (EEZs) vs high seas measured | **38.0 %** vs **26.4 %** |
+| 14 deepest places: median error of the 15″ grid vs published surveys | **10 m** (354 m on a 10 km grid) |
+| Ocean volume, mean depth | **1.338 billion km³**, **3,702 m** (Charette & Smith 2010: 1.332, 3,682) |
+| Where two global seafloor models disagree (unmeasured, > 1 km deep) | median **60 m**, 35 % of the area > 100 m |
+| Seal dives deeper than the chart allows (Southern Ocean) | **2.2 %** of 4.5 million dives |
+| Ocean area with no species record at all (~39 × 20 km cells) | **45 %** |
 
-All numbers are computed in this repo from the GEBCO_2026 Type Identifier (TID) grid, weighted by real area on the sphere. The official Seabed 2030 figure for GEBCO_2026 is **28.7 %**. Ours is 2.1 points higher because we count every 15″ cell (~460 m) with a direct measurement, while Seabed 2030 also requires a depth-dependent minimum resolution ("mapped to modern standards").
+All numbers are computed in this repository from the data listed below, area-weighted on the sphere.
 
 ## What the data shows
 
-### 1. Less than a third of the seafloor has been measured
+### Less than a third of the seafloor has been measured
 
 ![Measured vs predicted seafloor](figures/fig2_measured.png)
 
-The dark lines are single ship tracks. The solid dark areas are full multibeam surveys: around Japan, the North Atlantic, the US coasts, Australia and New Zealand. Everything in light grey has never been touched by a sonar. Its depth comes from small bumps in sea-surface gravity measured by satellites, which only resolve features of a few kilometres.
+Dark lines are single ship tracks; solid areas are full multibeam surveys. Everything grey has never been reached by sonar: its depth is predicted from tiny bumps in sea-surface gravity measured by satellites, which resolve only features a few kilometres across.
 
-### 2. The deepest places are the best known, the "average" seafloor is the least known
+### The deepest places are the best known; the average seafloor is the least known
 
 ![Depth distribution and coverage by depth](figures/fig3_depth.png)
 
-* Most of the ocean floor (74 %) lies between 3 and 6 km deep. Only **28 %** of that range is measured. The 4–5 km abyssal plains are the worst at **26.7 %**.
-* The trenches below 7 km are **94 %** measured, because expeditions target them.
-* Continental shelves (0–250 m) are **31 %** measured in this grid. Many national shelf surveys are not shared publicly.
+74 % of the ocean floor lies 3–6 km deep and only 28 % of that is measured (26.7 % at 4–5 km). Trenches below 7 km are 94 % measured because expeditions target them.
 
-### 3. The north is mapped, the Southern Hemisphere is not
+### The deepest places, checked against published surveys
 
-![Coverage by latitude and by data source](figures/fig4_latitude_sources.png)
+![Deepest places](figures/fig9_trenches.png)
 
-The 25–35° N and 50–65° N bands are about **50–55 %** measured (busy shipping lanes, Europe, North America, Japan). The 40–50° S band, under the Southern Ocean's storms, is only **19–20 %**. Multibeam sonar alone accounts for 26.4 % of the ocean; satellite-gravity prediction (code 40) covers 56.7 %.
+At 15″ the grid's deepest cell is within 10 m of the published depth at most of the 14 deepest places (Challenger Deep 10,927 vs 10,935 m). The large misses are where the source gives no position (Emden Deep, Japan Trench) or where the deepest cell was never measured (Cayman Trough). Table: [docs/trenches.md](docs/trenches.md).
 
-### 4. What changed in one year (GEBCO_2025 → GEBCO_2026)
+### The north is mapped, the south is not; one year of progress
 
-![Newly measured seafloor in GEBCO_2026](figures/fig5_new_in_2026.png)
+| By latitude and source | New in GEBCO_2026 |
+|---|---|
+| ![latitude](figures/fig4_latitude_sources.png) | ![new](figures/fig5_new_in_2026.png) |
 
-Comparing the two TID grids with the same ocean mask:
+25–35° N and 50–65° N are about half measured; 40–50° S only 19–20 %. Between the 2025 and 2026 grids 6.6 million km² became "measured" and 2.5 million km² were re-coded the other way; the biggest gain is the Arabian Sea, matching the official ROPME report (6.4 % → 20.5 %).
 
-| | GEBCO_2025 | GEBCO_2026 |
-|---|---|---|
-| Directly measured | 29.7 % (107.4 M km²) | 30.8 % (111.4 M km²) |
-
-* **6.6 M km²** became "directly measured" (63 % of it was satellite-gravity estimate in 2025), **2.5 M km²** went the other way (re-coded, mostly back to code 40). **Net +4.1 M km²**, close to the official "+5 M km² in a year".
-* The largest gain is the **Arabian Sea and Gulf of Oman** (10–30° N, 50–70° E), which matches the official note that ROPME Sea Area coverage rose from 6.4 % to 20.5 %.
-* Red includes older surveys that were newly shared with GEBCO, not only new expeditions. The viewer has this as the "New in GEBCO 2026" layer.
-
-### 5. Whose waters are mapped
+### Whose waters are mapped
 
 ![Measured share by EEZ and by ocean](figures/fig6_regions.png)
 
-| | Measured |
+Western European EEZs are almost fully surveyed (France 99.9 %, Ireland 97.7 %); the Indian Ocean is the least measured ocean (20.5 %). This is what has been shared with GEBCO, not necessarily all that has been surveyed. Tables: [docs/regions.md](docs/regions.md).
+
+### How sure is the depth where nobody measured?
+
+| Two models disagree | Seals find deeper water |
 |---|---|
-| National waters (all EEZs, 139.6 M km²) | **38.0 %** |
-| High seas (outside every EEZ, 221.1 M km², 61 % of the ocean) | **26.4 %** |
-| Best: Baltic Sea / Mediterranean / North Atlantic | 84.1 % / 59.3 % / 47.4 % |
-| Worst: Indian Ocean / South China and Eastern Archipelagic Seas | 20.5 % / 19.2 % |
+| ![disagreement](figures/fig7_model_disagreement.png) | ![seals](figures/fig8_seals.png) |
 
-Western European EEZs are almost fully surveyed (France 99.9 %, Ireland 97.7 %, Portugal 97.2 %). Several large EEZs in South and East Asia are under 7 % in this public grid. That is what has been *shared with GEBCO*, not necessarily what has been surveyed. Full tables, method and caveats: [docs/regions.md](docs/regions.md).
+Where ships never went, GEBCO and an independent gravity + deep-learning model (AUST_2026_BAT) differ by a median of 60 m, and by more than 100 m over a third of that area. In the Southern Ocean, 97,933 seal dives went more than 20 m deeper than the chart allows even after allowing for position error, mostly on the Antarctic shelf.
 
-## What it is useful for
+### Where life is, and where nobody has looked
 
-* **Science and education:** see plate tectonics directly. Mid-ocean ridges, trenches, fracture zones and hotspot seamount chains are all visible on one globe.
-* **Planning surveys:** the coverage layer shows where a ship's transit would add new data (grey areas).
-* **Tsunami, cable and pipeline context:** seafloor slope and depth along any route, via the depth-profile tool in the viewer.
-* **Fisheries and habitat:** seamounts, canyons and shelf edges are where marine life concentrates.
-* **Honest maps:** any "seafloor map" you see online shows the same picture, but rarely says that ~70 % of it is an estimate. This one does.
+![Marine life](figures/fig10_obis.png)
+
+Raw species counts mostly show where scientists sampled (records vs species ρ = 0.77). Corrected for sampling (ES50) and in the AquaMaps model, the Coral Triangle comes first while the North Sea drops from first to fifth. 45 % of the ocean has no species record at all at ~40 km resolution.
 
 ## How it is built
 
 ```
-GEBCO_2026 elevation (15″, 1′ overview)  ─┐
-GEBCO_2026 TID grid (15″, official CEDA)  ─┼─ pipeline/coverage.py ── stats.json + coverage grid
-                                           │
-                                           ├─ pipeline/tiles.py ───── web tiles (Terrarium DEM + coverage veil)
-GEBCO Gazetteer (5,412 names) ─────────────┼─ pipeline/features.py ── features.geojson
-PB2002 plate boundaries (Bird 2003) ───────┴─ pipeline/plates.py ──── plates.geojson
-                                              pipeline/figures.py ─── figures/*.png
+GEBCO_2026 elevation 15″ + TID ──► coverage.py, tiles.py (z0-5, Pages) ──┐
+                                 └► tiles_hires.py (z6-7) ─► Hugging Face ─┤
+GEBCO_2025 TID ──► change.py                                                │
+WOA23 (NOAA) ──► woa.py ─► ocean water grids                                ├─► web/ (MapLibre GL globe)
+AUST_2026_BAT, SO-ABBA, SWOT confidence ──► disagree.py, seals.py, uncertainty.py
+OBIS, speciesgrids, AquaMaps ──► obis.py                                    │
+World Bank AIS, Wikidata, TeleGeography, OpenStreetMap ──► shipping.py, wrecks.py, cables.py, offshore.py
+Gazetteer, PB2002, Marine Regions ──► features.py, plates.py, regions.py ──┘
 ```
 
-* **Elevation** comes from a Cloud-Optimised GeoTIFF mirror of the official grid (Source Cooperative), so only the 1′ level (~140 MB) needs to be downloaded instead of 7.5 GB. `pipeline/verify_mirror.py` checks the mirror against the official GEBCO server cell by cell at 6 sites (Challenger Deep, Mid-Atlantic Ridge, Hawaii, SE Indian Ocean, North Sea, Himalaya). Result: **all 6 windows identical** for elevation and TID; the 1′ level is the mean of each 4 × 4 block of 15″ cells (max difference 0.8 m, rounding).
-* **"Measured"** = TID codes 10–17 (single beam, multibeam, seismic, soundings, lidar, optical). **"Ocean"** = TID ≠ 0 *and* elevation below sea level. Without the elevation test, the Antarctic ice sheet (2.7 % of Earth) would count as ocean.
-* **Tiles:** Web Mercator, 512 px, lossless WebP, depth as Terrarium RGB in whole metres. Zoom 0–5 (1′ source) are static files on GitHub Pages; zoom 6–7 (15″ source, 1.8 GB + 0.2 GB) are PMTiles archives on Hugging Face, read with HTTP range requests (`pipeline/tiles_hires.py`, `pipeline/publish_hires.py`). Checked: Challenger Deep reads −10,922 m at zoom 7 (official 15″ grid −10,927 m) vs −10,675 m at zoom 5; zoom-6 tiles averaged down agree with the zoom-5 tiles to a median of 1–2 m. See [docs/data-contract.md](docs/data-contract.md).
+* **"Measured"** = GEBCO type codes 10–17 (sonar, lidar, soundings). **"Ocean"** = type ≠ 0 and below sea level.
+* **Checks:** the COG mirror used for speed is identical to the official GEBCO server at 6 test sites; Challenger Deep reads −10,922 m at zoom 7 (official −10,927 m); the headline percentages are reproduced by two independent scripts; the viewer is tested in headless Chrome (90 checks: every layer, story, tool, deep link, phone layout, no console errors).
+* **Tiles:** Web Mercator 512 px lossless WebP (depth as Terrarium RGB). Zoom 0–5 on GitHub Pages; zoom 6–7 as PMTiles on [Hugging Face](https://huggingface.co/datasets/ismoilovdev/seafloor-atlas-tiles), read with HTTP range requests. Formats: [docs/data-contract.md](docs/data-contract.md). Prior work and how this differs: [docs/prior-work.md](docs/prior-work.md).
 
 ## Run it
 
 ```bash
 uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r pyproject.toml
-pipeline/fetch_data.sh                    # inputs (~470 MB, needs GDAL)
-.venv/bin/python pipeline/coverage.py     # stats + coverage grid   (~1 min)
-.venv/bin/python pipeline/tiles.py        # web tiles              (~10 min)
-.venv/bin/python pipeline/tiles_hires.py  # zoom 6-7 PMTiles from the 15" grid (~70 min, 4.6 GB input)
-.venv/bin/python pipeline/publish_hires.py # upload to Hugging Face, pin URLs in meta.json
-.venv/bin/python pipeline/features.py     # undersea feature names
-.venv/bin/python pipeline/plates.py       # plate boundaries
-.venv/bin/python pipeline/hypsometry.py   # land area vs sea level for the viewer (~5 s)
-.venv/bin/python pipeline/woa.py          # ocean water layer: WOA23 subsets over OPeNDAP (194 MB, ~6 min) + TEOS-10 density
-.venv/bin/python pipeline/change.py       # 2025 -> 2026 comparison (needs the 2025 TID grid)
-.venv/bin/python pipeline/tiles.py --only new2026
-.venv/bin/python pipeline/figures.py      # README figures
-.venv/bin/python pipeline/regions.py      # per-ocean and per-EEZ tables + fig6 (fetches Marine Regions)
-.venv/bin/python -m pytest tests          # encoding tests
-cd web && npm ci && npm run dev           # viewer at http://localhost:5173
+pipeline/fetch_data.sh                       # GEBCO, TID, plates (needs GDAL)
+.venv/bin/python pipeline/coverage.py        # measured-share statistics
+.venv/bin/python pipeline/tiles.py           # web tiles z0-5 (~10 min)
+.venv/bin/python pipeline/figures.py         # README figures
+.venv/bin/python -m pytest tests             # pipeline tests
+cd web && npm ci && npm run dev              # viewer at http://localhost:5173
+node scripts/qa.mjs http://localhost:4173/ qa-out     # browser QA against `npm run preview`
+node scripts/readme_shots.mjs <url> ../docs/img       # regenerate the README screenshots
 ```
+
+Every other layer has its own script in `pipeline/` (one per data source, each documented at the top).
 
 ## Limits
 
-* Zoom 0–5 comes from the 1′ grid (~1.85 km). Zoom 6–7 comes from the full 15″ grid (~460 m) and is streamed from [Hugging Face](https://huggingface.co/datasets/ismoilovdev/seafloor-atlas-tiles) as PMTiles. Away from ship surveys the real detail is still only a few km (satellite gravity), so zooming in there shows smooth terrain.
-* Beyond 85.05° N/S (outside Web Mercator) the globe shows a flat cap at the mean depth of the polar grid.
-* The depth axis of figure 3 uses the 1′ cell mean, which smooths narrow trenches (Challenger Deep reads −10,900 m at 1′ vs −10,927 m at 15″).
-* Even "measured" cells are a 460 m average. A single ship track crossing a cell marks it as measured.
-* The ocean mask (TID ≠ 0 and below sea level) also includes the Caspian Sea and lake beds below sea level (Dead Sea, deep parts of Baikal and the Great Lakes), about 0.15 % of the ocean area. The regional tables exclude the Caspian.
+* Away from ship surveys the real detail is a few km (satellite gravity), so zooming in there shows smooth terrain.
+* Beyond 85.05° N/S (outside Web Mercator) the globe shows a flat cap at the mean polar depth.
+* "Measured" cells are 460 m averages; one ship track through a cell counts it as measured.
+* Cables are a 2022 snapshot (the open data is no longer updated); shipwrecks in Wikidata are mostly UK/Irish records; species records reflect sampling effort.
+* The ocean mask includes the Caspian Sea and lake beds below sea level (~0.15 % of the area); regional tables exclude the Caspian.
 
 ## Data and licences
 
-* GEBCO Compilation Group (2026) **GEBCO_2026 Grid**, doi:[10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa](https://doi.org/10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa). Open Government Licence v3.
-* **IHO-IOC GEBCO Gazetteer of Undersea Feature Names**, www.gebco.net.
-* Flanders Marine Institute: Global Oceans and Seas v1 (doi:10.14284/542), Maritime Boundaries / EEZ v12 (doi:10.14284/632), High Seas v2 (doi:10.14284/696). CC BY 4.0.
-* Bird, P. (2003) An updated digital model of plate boundaries, *G³* 4(3), 1027. Via [fraxen/tectonicplates](https://github.com/fraxen/tectonicplates), ODC-By 1.0.
-* Code: MIT. Prior work and how this differs: [docs/prior-work.md](docs/prior-work.md).
+| Data | Source | Licence |
+|---|---|---|
+| Seafloor elevation and type grid | GEBCO Compilation Group (2026) GEBCO_2026 Grid, [doi:10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa](https://doi.org/10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa) | OGL v3 |
+| Undersea feature names | IHO-IOC GEBCO Gazetteer of Undersea Feature Names | cite |
+| Plate boundaries | Bird (2003) PB2002, via fraxen/tectonicplates | ODC-By 1.0 |
+| Oceans, EEZs, high seas | Flanders Marine Institute, Marine Regions (doi:10.14284/542, 10.14284/632, 10.14284/696) | CC BY 4.0 |
+| Ocean water | World Ocean Atlas 2023, Locarnini et al. 2024 (doi:10.25923/54bh-1613), Reagan et al. 2024 (doi:10.25923/70qt-9574) | open (NOAA) |
+| Deepest-place reference depths | Hotham (2026), [doi:10.5281/zenodo.23850291](https://doi.org/10.5281/zenodo.23850291) | CC BY 4.0 |
+| Second seafloor model | Yuan & Yang (2026) AUST_2026_BAT, [doi:10.5281/zenodo.22711109](https://doi.org/10.5281/zenodo.22711109) | CC BY 4.0 |
+| Seal dives | Hindell, McMahon, Jonsen et al. (2026) SO-ABBA, [doi:10.5281/zenodo.19121676](https://doi.org/10.5281/zenodo.19121676) | CC BY 4.0 |
+| Prediction confidence | Nilsson, Phrampus et al. (2025), [doi:10.5281/zenodo.17673974](https://doi.org/10.5281/zenodo.17673974) | CC BY 4.0 |
+| Marine life | OBIS (2026) www.obis.org; OBIS speciesgrids (OBIS + GBIF); AquaMaps 10/2019 (Kaschner et al. 2019, aquamaps.org) | cite; CC BY-NC 4.0; CC BY-NC 3.0 |
+| Shipping density | World Bank / IMF (Cerdeiro, Komaromi, Liu & Saeed 2020) | CC BY 4.0 |
+| Shipwrecks | Wikidata | CC0 |
+| Submarine cables | TeleGeography Submarine Cable Map, snapshot 2022-11-14 | CC BY-NC-SA 3.0 |
+| Platforms, pipelines, wind farms | © OpenStreetMap contributors | ODbL |
+
+Code: MIT. Some data layers are non-commercial (NC); the site is non-commercial.

@@ -8,7 +8,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 
 const [,, base = 'http://localhost:4173/', outdir = 'qa-out'] = process.argv;
 mkdirSync(outdir, { recursive: true });
-const checks = [], problems = [], poles = {};
+const checks = [], poles = {};
+let problems = [];
+const recovered = new Set();
 const ok = (name, pass, detail = '') => { checks.push({ name, pass: !!pass, detail }); console.log(`${pass ? 'PASS' : 'FAIL'}  ${name}${detail ? '  — ' + detail : ''}`); };
 const KNOWN_WARNING = /calculateFogMatrix is not supported on globe projection/;
 
@@ -16,9 +18,14 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true, args:
 async function session(name, viewport, opts = {}) {
   const mobile = viewport.width < 600;
   const page = await browser.newPage({ viewport, isMobile: mobile, hasTouch: mobile, deviceScaleFactor: opts.dpr ?? 1 });
-  page.on('console', (m) => { if ((m.type() === 'error' || m.type() === 'warning') && !KNOWN_WARNING.test(m.text())) problems.push(`[${name}] [${m.type()}] ${m.text()}`); });
-  page.on('pageerror', (e) => problems.push(`[${name}] [pageerror] ${e.message}`));
-  page.on('response', (r) => { if (r.status() >= 400) problems.push(`[${name}] [http ${r.status()}] ${r.url()}`); });
+  // A 5xx that the viewer retried successfully (tilesource.ts backoff) is not a failure: such entries carry
+  // their URL and are dropped at the end if a later 2xx for the same URL arrived.
+  page.on('console', (m) => { if ((m.type() === 'error' || m.type() === 'warning') && !KNOWN_WARNING.test(m.text())) problems.push({ text: `[${name}] [${m.type()}] ${m.text()}`, url: /status of 5\d\d/.test(m.text()) ? m.location()?.url : undefined }); });
+  page.on('pageerror', (e) => problems.push({ text: `[${name}] [pageerror] ${e.message}` }));
+  page.on('response', (r) => {
+    if (r.status() >= 400) problems.push({ text: `[${name}] [http ${r.status()}] ${r.url()}`, url: r.status() >= 500 ? r.url() : undefined });
+    else if (r.status() < 300) recovered.add(r.url());
+  });
   opts.onPage?.(page);
   await page.goto(base + (opts.query ?? ''));
   await page.waitForFunction(() => window.__seafloor, null, { timeout: 60000 });
@@ -553,7 +560,9 @@ for (const [w, h] of [[1440, 900], [1280, 720], [1920, 1080]]) {
 }
 
 await browser.close();
-ok('no console errors / failed requests', problems.length === 0, problems.slice(0, 8).join(' | '));
+const retried = problems.filter((p) => p.url && recovered.has(p.url)).length;
+problems = problems.filter((p) => !(p.url && recovered.has(p.url))).map((p) => p.text);
+ok('no console errors / failed requests', problems.length === 0, problems.length ? problems.slice(0, 8).join(' | ') : (retried ? `${retried} transient 5xx recovered by retry` : ''));
 writeFileSync(`${outdir}/summary.json`, JSON.stringify({ base, checks, problems, poles }, null, 1));
 const failed = checks.filter((c) => !c.pass);
 console.log(`\n${checks.length - failed.length}/${checks.length} checks passed`);
