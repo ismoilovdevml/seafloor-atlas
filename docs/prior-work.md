@@ -26,6 +26,16 @@ COG mirrors of GEBCO_2026 exist on Source Cooperative (ausantarctic/gebco, giswq
 | GMRT MapTool | Custom maps / grids of GMRT | Desktop-style tool, not a globe |
 | Google Earth ocean | Global relief from SRTM15+/GEBCO | Closed, does not say what is measured |
 
+## Found on Zenodo (searched 2026-11-14)
+
+| Record | What it is | How it is used here |
+|---|---|---|
+| Hotham (2026), *How Deep Is the Sea?*, [doi:10.5281/zenodo.23850291](https://doi.org/10.5281/zenodo.23850291), CC BY 4.0 | Closest prior work: depth statistics, trenches and an interactive map from AWS Terrain Tiles at ~10 km | Its table of 14 published deepest depths is the reference for [docs/trenches.md](trenches.md); at 15″ our median error is 10 m vs 354 m on the 10 km grid |
+| Yuan & Yang (2026), AUST_2026_BAT, [doi:10.5281/zenodo.22711109](https://doi.org/10.5281/zenodo.22711109), CC BY 4.0 | Independent 1′ gravity + deep-learning bathymetry model | Model-disagreement layer: where AUST and GEBCO differ in unmeasured areas |
+| Hindell, McMahon, Jonsen et al. (2026), SO-ABBA, [doi:10.5281/zenodo.19121676](https://doi.org/10.5281/zenodo.19121676), CC BY 4.0 | 4.5 million seal dives measuring Southern Ocean depth | Seal layer: where seals dived deeper than the chart says |
+| Phrampus (2026), global bathymetry with calibrated uncertainty, [doi:10.5281/zenodo.24085730](https://doi.org/10.5281/zenodo.24085730) | SWOT + deep learning, with uncertainty | Files restricted (HTTP 403) at the time of writing; to add when open |
+| Zhang, Feng & An (2026), GravBathy-Diff, [doi:10.5281/zenodo.21736786](https://doi.org/10.5281/zenodo.21736786) | Paired SRTM15+ / multibeam training data | Not used; relevant for future super-resolution work |
+
 ## What is new here
 
 1. A 3D globe of the whole seafloor (MapLibre globe + terrain, own tiles, no third-party basemap) where **every pixel tells you whether a ship actually measured it** (continuous measured fraction, not just a class colour).
