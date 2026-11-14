@@ -16,8 +16,8 @@
       <h1>Seafloor Atlas</h1>
       <p class="lede">The shape of the whole ocean floor from GEBCO 2026, and how little of it ships have actually measured.</p>
       <div class="search" role="search">
-        <label class="sr-only" for="search-input">Find an undersea feature</label>
-        <input id="search-input" type="search" placeholder="Find a trench, ridge, seamount…" autocomplete="off" spellcheck="false"
+        <label class="sr-only" for="search-input">Find an undersea feature, cable or shipwreck</label>
+        <input id="search-input" type="search" placeholder="Find a trench, seamount, cable, wreck…" autocomplete="off" spellcheck="false"
                role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list" />
         <ul id="search-results" class="search-results" role="listbox" hidden></ul>
       </div>
@@ -66,6 +66,54 @@
         <label class="switch-row"><input type="checkbox" role="switch" id="t-features" checked /> <span>Named features</span></label>
       </div>
 
+      <section class="layer-group" aria-labelledby="hum-title">
+        <h3 class="group-title" id="hum-title">Human activity at sea</h3>
+        <div class="layer ov" id="ov-cables">
+          <label class="switch-row"><input type="checkbox" role="switch" id="t-cables" aria-controls="ovl-cables" /> <span>Internet cables</span></label>
+          <div class="ov-legend" id="ovl-cables" hidden>
+            <ul class="ov-key" id="ovk-cables"></ul>
+            <label class="check-row"><input type="checkbox" id="t-landing" checked /> <span>Landing points</span></label>
+            <p class="ov-note" id="ovn-cables"></p>
+          </div>
+        </div>
+        <div class="layer ov" id="ov-shipping">
+          <label class="switch-row"><input type="checkbox" role="switch" id="t-shipping" aria-controls="ovl-shipping" /> <span>Shipping traffic</span></label>
+          <div class="ov-legend" id="ovl-shipping" hidden>
+            <ul class="ov-key" id="ovk-shipping"></ul>
+            <p class="ov-note" id="ovn-shipping"></p>
+          </div>
+        </div>
+        <div class="layer ov" id="ov-wrecks">
+          <label class="switch-row"><input type="checkbox" role="switch" id="t-wrecks" aria-controls="ovl-wrecks" /> <span>Shipwrecks</span></label>
+          <div class="ov-legend" id="ovl-wrecks" hidden>
+            <ul class="ov-key" id="ovk-wrecks"></ul>
+            <label class="check-row"><input type="checkbox" id="t-wrecks-all" /> <span id="t-wrecks-all-label">Show all records</span></label>
+            <p class="ov-note" id="ovn-wrecks"></p>
+          </div>
+        </div>
+        <div class="layer ov" id="ov-platforms">
+          <label class="switch-row"><input type="checkbox" role="switch" id="t-platforms" aria-controls="ovl-platforms" /> <span>Oil &amp; gas platforms</span></label>
+          <div class="ov-legend" id="ovl-platforms" hidden>
+            <ul class="ov-key" id="ovk-platforms"></ul>
+            <p class="ov-note" id="ovn-platforms"></p>
+          </div>
+        </div>
+        <div class="layer ov" id="ov-pipelines">
+          <label class="switch-row"><input type="checkbox" role="switch" id="t-pipelines" aria-controls="ovl-pipelines" /> <span>Subsea pipelines</span></label>
+          <div class="ov-legend" id="ovl-pipelines" hidden>
+            <ul class="ov-key" id="ovk-pipelines"></ul>
+            <p class="ov-note" id="ovn-pipelines"></p>
+          </div>
+        </div>
+        <div class="layer ov" id="ov-wind">
+          <label class="switch-row"><input type="checkbox" role="switch" id="t-wind" aria-controls="ovl-wind" /> <span>Offshore wind farms</span></label>
+          <div class="ov-legend" id="ovl-wind" hidden>
+            <ul class="ov-key" id="ovk-wind"></ul>
+            <p class="ov-note" id="ovn-wind"></p>
+          </div>
+        </div>
+      </section>
+
       <div class="layer exag">
         <div class="exag-head">
           <label for="exag">Vertical exaggeration</label>
@@ -106,10 +154,13 @@
 
     <article class="card feature-card" id="feature-card" hidden aria-live="polite">
       <button class="close" aria-label="Close" data-close="feature-card">×</button>
+      <figure class="f-photo" id="f-photo" hidden><img id="f-img" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" /><figcaption id="f-img-cap"></figcaption></figure>
       <p class="kind" id="f-kind"></p>
       <h2 id="f-name"></h2>
       <p class="f-depth" id="f-depth"></p>
+      <dl class="f-facts" id="f-facts" hidden></dl>
       <p id="f-blurb"></p>
+      <p class="f-links" id="f-links" hidden></p>
       <p class="f-source" id="f-source"></p>
     </article>
 
@@ -122,6 +173,7 @@
           <div><dt>Deepest</dt><dd id="p-min"></dd></div>
           <div><dt>Measured along line</dt><dd id="p-meas"></dd></div>
         </dl>
+        <button class="min-btn" id="profile-min" aria-expanded="true" aria-controls="profile" aria-label="Minimise depth profile"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M5 7.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <button class="close" id="profile-close" aria-label="Close depth profile">×</button>
       </header>
       <div class="chart" id="profile-chart"></div>
@@ -132,6 +184,7 @@
         <h2 id="sea-title">Sea level</h2>
         <output class="sea-value" id="sea-out" for="sea-range">0 m</output>
         <p class="sea-stat" id="sea-stat"></p>
+        <button class="min-btn" id="sea-min" aria-expanded="true" aria-controls="sea" aria-label="Minimise sea level"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M5 7.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <button class="close" id="sea-close" aria-label="Close and return to today's sea level">×</button>
       </header>
       <div class="sea-control">
@@ -150,10 +203,12 @@
       <p class="sea-foot">Land areas are computed from the GEBCO 2026 1′ grid (cell means). Ice sheets count as land at their surface height, and today’s terrain is simply flooded or drained: no rebound of the crust, ice loading or sediment change, so past and future coastlines are approximate.</p>
     </section>
 
-    <section class="water" id="water" hidden aria-labelledby="water-title">
+    <section class="water" id="water" hidden aria-labelledby="water-title" data-col="empty">
       <header class="water-head">
         <h2 id="water-title">Ocean water</h2>
         <p class="water-sub" id="water-sub">World Ocean Atlas 2023, average of 1991–2020</p>
+        <p class="water-sum" id="water-sum" aria-live="polite"></p>
+        <button class="min-btn" id="water-min" aria-expanded="true" aria-controls="water" aria-label="Minimise ocean water"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M5 7.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <button class="close" id="water-close" aria-label="Close ocean water">×</button>
       </header>
       <div class="water-body">
@@ -188,7 +243,7 @@
             <h3 id="wc-title">Water column</h3>
             <p class="wc-where" id="wc-where"></p>
           </div>
-          <p class="wc-empty" id="wc-empty">Click the ocean to see how temperature, salinity and density change from the surface to the seafloor there.</p>
+          <p class="wc-empty" id="wc-empty">Click the ocean to see its water column: temperature, salinity and density from the surface to the seafloor.</p>
           <div class="chart wc-chart" id="wc-chart" hidden></div>
         </div>
       </div>

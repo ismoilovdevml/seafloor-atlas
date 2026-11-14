@@ -19,6 +19,7 @@ const SIZE = 2048;
 const OPACITY = 0.9;
 const SECONDS_PER_MONTH = 0.9;
 const TITLES: Record<WaterVar, string> = { t: 'Temperature', s: 'Salinity', d: 'Density' };
+const EMPTY_HINT = 'Click the ocean to see its water column: temperature, salinity and density from the surface to the seafloor.';
 
 export interface WaterHost {
   map: MlMap;
@@ -138,6 +139,11 @@ export class WaterUI {
     if (this.added) this.host.map.setLayoutProperty('water', 'visibility', 'none');
     this.host.underlay(false);
     this.host.map.getSource<import('maplibre-gl').GeoJSONSource>('water-point')?.setData({ type: 'FeatureCollection', features: [] });
+    // next time the panel opens compact, with the one-line hint instead of the column chart
+    this.colPoint = null;
+    $('water').dataset.col = 'empty';
+    $('wc-empty').hidden = false; $('wc-chart').hidden = true; $('wc-where').textContent = '';
+    $('wc-empty').textContent = EMPTY_HINT;
     if (writeHash) this.writeHash();
     this.host.onChange();
     this.host.layout();
@@ -189,6 +195,9 @@ export class WaterUI {
     const dtext = this.depth === 0 ? 'surface' : `${this.depth.toLocaleString('en-US')} m`;
     di.setAttribute('aria-valuetext', dtext);
     $('water-depth-out').textContent = this.depth === 0 ? 'Surface' : `${this.depth.toLocaleString('en-US')} m`;
+    // one-line state for the minimised header
+    const mShown = this.monthly ? (this.playing ? Math.round(this.monthPos) % 12 + 1 : this.month) : 0;
+    $('water-sum').textContent = `${TITLES[this.v]} · ${this.depth === 0 ? 'Surface' : `${this.depth.toLocaleString('en-US')} m`}${mShown ? ` · ${MONTH_LONG[mShown - 1]}` : ''}`;
     // months: surface temperature only
     const mOn = this.monthly;
     $('water-months').setAttribute('aria-disabled', String(!mOn));
@@ -360,7 +369,9 @@ export class WaterUI {
       $('wc-title').textContent = 'Water column';
       $('wc-where').textContent = `${fmtPlace(lon, lat)}: no ocean data in the 1° grid here.`;
       $('wc-empty').hidden = false; $('wc-chart').hidden = true;
+      $('water').dataset.col = 'empty';
       $('wc-empty').textContent = 'This point is land, or too close to the coast for the 1° water-column grid. Click open water.';
+      this.host.layout();
       pt?.setData({ type: 'FeatureCollection', features: [] });
       return null;
     }
@@ -372,12 +383,14 @@ export class WaterUI {
     const drop = th ? `. Temperature falls fastest at ${Math.round(th.depth)} m (marked)` : '';
     $('wc-where').textContent = `${moved ? 'nearest 1° ocean cell, ' : '1° cell at '}${fmtPlace(col.lon, col.lat)}, data to ${bottom.toLocaleString('en-US')} m${sea}${drop}`;
     $('wc-empty').hidden = true; $('wc-chart').hidden = false;
+    $('water').dataset.col = 'shown';
     const panels: PanelSpec[] = (['t', 's', 'd'] as WaterVar[]).map((v) => ({
       v, title: v === 'd' ? 'σ₀' : TITLES[v], short: v === 't' ? 'T' : v === 's' ? 'S' : 'σ₀', units: this.man.variables[v].units, decimals: v === 't' ? 2 : 3,
       scale: this.man.variables[v].range,
     }));
     this.chart.set(col, panels, this.depth);
     if (window.innerWidth < 760) $('wc-chart').scrollIntoView({ block: 'nearest' });
+    this.host.layout();
     pt?.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [lon, lat] } }] });
     return { lon: col.lon, lat: col.lat, moved, bottom, levels: col.depth.length, surface: { t: col.t[0], s: col.s[0], d: col.d[0] }, series: this.chart.seriesCount() };
   }

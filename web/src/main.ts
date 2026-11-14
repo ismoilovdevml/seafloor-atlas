@@ -15,7 +15,10 @@ import {
   type Hypsometry,
 } from './sealevel';
 import { formatDepth, formatLat, formatLon, greatCircle, haversineKm, profileZoom, unwrapPath } from './geo';
+import { diskCoverage, fitRadius, freeRect, globeDisk, inside, isGlobeScale, zoomForRadius, type Rect } from './layout';
 import { WaterUI } from './water-ui';
+import { OverlayUI } from './overlay-ui';
+import { ATTRIBUTION, hashWithLayers, layersFromHash, normName, searchRank, type CardModel, type LayerState, type SearchEntry } from './overlays';
 
 maplibregl.setWorkerUrl(workerUrl);
 
@@ -58,9 +61,19 @@ function autoExaggeration(z: number): number {
   return AUTO_EXAG[AUTO_EXAG.length - 1][1];
 }
 
+// Sharp rasters on high-density screens: our tiles are 512 px; declared as 256 px tiles on a 2x screen MapLibre
+// picks one zoom level higher and draws each tile pixel to one device pixel instead of stretching it 2x.
+// The files, their zoom levels (z0-5 static, z6-7 PMTiles) and the sampler (which reads the files at their real
+// 512 px) are unchanged. ?tilesize=512|256 forces either (QA compares the two).
+const forcedTile = Number(params.get('tilesize'));
+const rasterTileSize = forcedTile === 256 || forcedTile === 512 ? forcedTile : window.devicePixelRatio >= 1.5 ? meta.tileSize / 2 : meta.tileSize;
+const forcedTerrain = Number(params.get('terraintile'));
+// the terrain mesh stays at the files' 512 px: same sharpness on a 2x screen (mesh resolution only), 9 fewer
+// requests and 2.2 MB less at the first view (measured, see README)
+const terrainTileSize = forcedTerrain === 256 || forcedTerrain === 512 ? forcedTerrain : meta.tileSize;
 const map = new maplibregl.Map({
   container: 'map',
-  style: buildStyle(tilesBase, dataBase, meta),
+  style: buildStyle(tilesBase, dataBase, meta, { tileSize: rasterTileSize, terrainTileSize }),
   center: [-150, 8],
   zoom: window.innerWidth < 760 ? 0.75 : 2.05,
   pitch: 0,
@@ -116,6 +129,13 @@ if (change && (meta.tiles?.new2026 ?? 0) > 0) {
 }
 setPlates(false);
 
+// human-activity overlays (cables, shipping, wrecks, platforms, pipelines, wind); off by default, #layers= deep link
+function writeLayersHash(st: LayerState) {
+  const h = hashWithLayers(location.hash, st);
+  if (h !== location.hash && !(h === '' && location.hash === '')) history.replaceState(null, '', h || location.pathname + location.search);
+}
+const overlays = new OverlayUI({ map, dataBase, shippingLegend: 'tiles/shipping/legend.json', onChange: writeLayersHash });
+
 // measured statistic (meta.stats.measured_fraction_area, area-weighted, TID 10-17)
 const mfRaw = meta.stats?.measured_fraction_area;
 const mf = typeof mfRaw === 'number' ? mfRaw : NaN;
@@ -144,6 +164,13 @@ $('plate-key').innerHTML = (Object.keys(PLATE_STYLE) as (keyof typeof PLATE_STYL
     <p><strong>Bathymetry</strong>: ${meta.citation}${synthetic ? '' : ''}, <a href="https://doi.org/${doi}" target="_blank" rel="noopener">doi:${doi}</a>. ${meta.licence ?? 'Open Government Licence v3'}: <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/" target="_blank" rel="noopener">OGL v3</a>. Shown at ${meta.sourceResolutionArcsec / 60} arc-minute resolution. “Measured” = GEBCO type identifier 10–17 (direct survey).</p>
     <p><strong>Plate boundaries</strong>: Bird, P. (2003) An updated digital model of plate boundaries, <em>G³</em> 4(3), 1027, <a href="https://doi.org/10.1029/2001GC000252" target="_blank" rel="noopener">doi:10.1029/2001GC000252</a> (PB2002), ODC-By 1.0.</p>
     <p><strong>Ocean water</strong>: World Ocean Atlas 2023, 1991–2020 climate normal, objectively analysed means (NOAA NCEI). Temperature: Locarnini et al. (2024), NOAA Atlas NESDIS 89, <a href="https://doi.org/10.25923/54bh-1613" target="_blank" rel="noopener">doi:10.25923/54bh-1613</a>. Salinity: Reagan et al. (2024), NOAA Atlas NESDIS 90, <a href="https://doi.org/10.25923/70qt-9574" target="_blank" rel="noopener">doi:10.25923/70qt-9574</a>. Potential density computed here with TEOS-10 (gsw). Colour maps: cmocean (Thyng et al. 2016).</p>
+    <p><strong>Human activity at sea</strong> (each layer under its own licence):</p>
+    <ul class="credits-list">
+      <li>${ATTRIBUTION.cables}. Non-commercial use only; adaptations under the same licence. Only this 2022 snapshot is used.</li>
+      <li>${ATTRIBUTION.shipping}, <a href="https://datacatalog.worldbank.org/search/dataset/0037580" target="_blank" rel="noopener">dataset 0037580</a>.</li>
+      <li>${ATTRIBUTION.wrecks}. Photos from Wikimedia Commons, loaded only when a wreck card opens.</li>
+      <li>Offshore platforms, subsea pipelines and offshore wind farms: ${ATTRIBUTION.osm.replace('OpenStreetMap', '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>')}.</li>
+    </ul>
     <p>Rendered with <a href="https://maplibre.org" target="_blank" rel="noopener">MapLibre GL JS</a>.${synthetic ? ' <strong>These are synthetic development tiles, not real data.</strong>' : ''}</p>`;
 }
 
@@ -152,12 +179,46 @@ function show(id: string, on: boolean) { $(id).hidden = !on; }
 document.querySelectorAll<HTMLButtonElement>('[data-close]').forEach((b) => b.addEventListener('click', () => {
   show(b.dataset.close!, false);
   if (b.dataset.close === 'story-card') markStory(null);
+  if (b.dataset.close === 'feature-card') overlays.clearHighlight();
 }));
+/** Clears the parts of the feature card that only overlay cards use. */
+function resetCard() {
+  $('f-facts').hidden = true; $('f-facts').replaceChildren();
+  $('f-links').hidden = true; $('f-links').replaceChildren();
+  $('f-photo').hidden = true; $<HTMLImageElement>('f-img').removeAttribute('src');
+}
+/** Overlay card: all text goes in through textContent (the data comes from third-party registries). */
+function showCard(c: CardModel) {
+  show('story-card', false);
+  resetCard();
+  $('f-kind').textContent = c.kind;
+  $('f-name').textContent = c.name;
+  $('f-depth').textContent = c.lead;
+  if (c.facts.length) {
+    $('f-facts').replaceChildren(...c.facts.flatMap(([k, v]) => { const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = k; dd.textContent = v; return [dt, dd]; }));
+    $('f-facts').hidden = false;
+  }
+  $('f-blurb').textContent = c.note ?? '';
+  if (c.links.length) {
+    $('f-links').replaceChildren(...c.links.map((l) => { const a = document.createElement('a'); a.href = l.href; a.textContent = l.label; a.target = '_blank'; a.rel = 'noopener'; return a; }));
+    $('f-links').hidden = false;
+  }
+  if (c.image) {
+    const img = $<HTMLImageElement>('f-img');
+    img.onerror = () => { $('f-photo').hidden = true; };
+    img.alt = c.image.alt; img.src = c.image.src;
+    $('f-img-cap').textContent = c.image.credit;
+    $('f-photo').hidden = false;
+  }
+  $('f-source').textContent = `Source: ${c.source}`;
+  show('feature-card', true);
+}
 
 const KIND_LABEL: Record<string, string> = {};
 function kindLabel(k: string) { return KIND_LABEL[k] ?? (k ? k[0].toUpperCase() + k.slice(1).replace(/_/g, ' ') : ''); }
 function showFeature(p: FeatureProps) {
   show('story-card', false);
+  resetCard(); overlays.clearHighlight();
   $('f-kind').textContent = kindLabel(p.kind);
   $('f-name').textContent = p.name;
   $('f-depth').textContent = Number.isFinite(Number(p.depth_m)) ? `${formatDepth(Number(p.depth_m))} in the GEBCO 2026 grid` : '';
@@ -167,6 +228,7 @@ function showFeature(p: FeatureProps) {
 }
 function showPlate(p: Record<string, unknown>) {
   show('story-card', false);
+  resetCard(); overlays.clearHighlight();
   const t = String(p.type);
   const style = t === 'ridge' || t === 'rift' ? PLATE_STYLE.ridge : t === 'subduction' || t === 'trench' ? PLATE_STYLE.subduction : t === 'transform' ? PLATE_STYLE.transform : PLATE_STYLE.convergent;
   $('f-kind').textContent = t === 'rift' ? 'Continental rift' : style.label;
@@ -204,7 +266,7 @@ function playStory(s: Story, instant = false) {
   if (window.innerWidth < 760) setTab('none');
   updatePadding();
   if (instant || reduce) map.jumpTo(cam); else map.flyTo({ ...cam, duration: 5200, curve: 1.6, essential: true });
-  history.replaceState(null, '', `#story=${s.id}`);
+  history.replaceState(null, '', hashWithLayers(`#story=${s.id}`, overlays.state));
 }
 storyList.addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-story]');
@@ -216,29 +278,69 @@ $('story-veil').addEventListener('click', () => { setVeil(true); $('story-veil')
 // ---------- features + search ----------
 const featureData = await getJSON<GeoJSON.FeatureCollection<GeoJSON.Point, FeatureProps>>(`${dataBase}/features.geojson`);
 const features = featureData?.features ?? [];
-const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const esc = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const input = $<HTMLInputElement>('search-input'), results = $<HTMLUListElement>('search-results');
-let hits: typeof features = [], active = -1;
+// one index over gazetteer names plus, once loaded, cable names and notable wreck names (marked by kind)
+let searchIndex: SearchEntry[] = features.map((f, i) => ({ name: f.properties.name, label: kindLabel(f.properties.kind), kind: 'feature' as const, key: String(i), n: normName(f.properties.name) }));
+let overlaySearch: Promise<void> | null = null;
+function loadOverlaySearch() {
+  overlaySearch ??= overlays.searchEntries().then((xs) => { searchIndex = searchIndex.concat(xs); if (!results.hidden || input.value.trim()) renderResults(); });
+  return overlaySearch;
+}
+input.addEventListener('focus', () => { loadOverlaySearch(); }, { once: true });
+let hits: SearchEntry[] = [], active = -1;
 function renderResults() {
-  const q = norm(input.value.trim());
-  if (!q) { results.hidden = true; input.setAttribute('aria-expanded', 'false'); return; }
-  hits = features.filter((f) => norm(f.properties.name).includes(q))
-    .sort((a, b) => Number(!norm(a.properties.name).startsWith(q)) - Number(!norm(b.properties.name).startsWith(q)) || a.properties.name.localeCompare(b.properties.name))
-    .slice(0, 12);
+  const raw = input.value.trim();
+  if (!raw) { results.hidden = true; input.setAttribute('aria-expanded', 'false'); return; }
+  hits = searchRank(searchIndex, raw, 12);
   active = hits.length ? 0 : -1;
   results.innerHTML = hits.length
-    ? hits.map((f, i) => `<li role="option" id="opt-${i}" aria-selected="${i === active}" data-i="${i}"><span>${f.properties.name}</span><span class="k">${kindLabel(f.properties.kind)}</span></li>`).join('')
-    : `<li class="empty" role="option" aria-disabled="true">No feature named “${input.value.trim()}”. Try a trench, ridge or seamount name.</li>`;
+    ? hits.map((f, i) => `<li role="option" id="opt-${i}" aria-selected="${i === active}" data-i="${i}" data-kind="${f.kind}"><span>${esc(f.name)}</span><span class="k">${esc(f.label)}</span></li>`).join('')
+    : `<li class="empty" role="option" aria-disabled="true">Nothing named “${esc(raw)}”. Try a trench, seamount, cable or ship name.</li>`;
   results.hidden = false; input.setAttribute('aria-expanded', 'true');
   input.setAttribute('aria-activedescendant', active >= 0 ? `opt-${active}` : '');
 }
-function choose(i: number) {
-  const f = hits[i]; if (!f) return;
-  results.hidden = true; input.setAttribute('aria-expanded', 'false'); input.value = f.properties.name;
+async function choose(i: number) {
+  const e = hits[i]; if (!e) return;
+  results.hidden = true; input.setAttribute('aria-expanded', 'false'); input.value = e.name;
   markStory(null); show('story-card', false);
-  showFeature(f.properties);
+  if (e.kind === 'feature') {
+    const f = features[Number(e.key)];
+    showFeature(f.properties);
+    updatePadding();
+    map.flyTo({ center: f.geometry.coordinates as [number, number], zoom: Math.max(map.getZoom(), 5), pitch: 45, duration: 3500, essential: true });
+    return;
+  }
+  const r = await overlays.focus(e);
+  if (!r) return;
+  showCard(r.card);
   updatePadding();
-  map.flyTo({ center: f.geometry.coordinates as [number, number], zoom: Math.max(map.getZoom(), 5), pitch: 45, duration: 3500, essential: true });
+  const below = belowCard();
+  if (r.feature.geometry.type === 'Point') {
+    map.flyTo({ center: r.feature.geometry.coordinates as [number, number], zoom: Math.max(map.getZoom(), 5.5), pitch: 30, duration: 3500, essential: true, offset: [0, below] });
+  } else {
+    const b = lineBounds(r.feature.geometry as GeoJSON.MultiLineString);
+    map.fitBounds(b, { padding: { top: 60 + 2 * below, bottom: 60, left: 60, right: 60 }, maxZoom: 5.5, duration: 3000, essential: true });
+  }
+}
+/** Desktop: how far to push a flown-to place down so it lands in the free space under a tall open card (px). */
+function belowCard(): number {
+  if (window.innerWidth < 760 || $('feature-card').hidden) return 0;
+  const pad = map.getPadding(), H = window.innerHeight;
+  const top = pad.top ?? 0, bottom = H - (pad.bottom ?? 0), mid = (top + bottom) / 2;
+  const cardBottom = $('feature-card').getBoundingClientRect().bottom;
+  return cardBottom > mid - 40 ? Math.round((cardBottom + bottom) / 2 - mid) : 0;
+}
+/** Bounds of a (multi)line, with longitudes unwrapped so a trans-Pacific cable does not span the whole globe. */
+function lineBounds(g: GeoJSON.MultiLineString | GeoJSON.LineString): [[number, number], [number, number]] {
+  const lines = g.type === 'LineString' ? [g.coordinates] : g.coordinates;
+  const ref = lines[0][0][0];
+  let w = Infinity, e = -Infinity, sth = Infinity, n = -Infinity;
+  for (const l of lines) for (const [x0, y] of l) {
+    let x = x0; while (x - ref > 180) x -= 360; while (x - ref < -180) x += 360;
+    w = Math.min(w, x); e = Math.max(e, x); sth = Math.min(sth, y); n = Math.max(n, y);
+  }
+  return [[w, sth], [e, n]];
 }
 input.addEventListener('input', renderResults);
 input.addEventListener('keydown', (e) => {
@@ -275,7 +377,13 @@ async function readout(lon: number, lat: number) {
 function renderWaterReadout() {
   if (!lastPoint || !lastRead) return;
   const w = water.readout(lastPoint[0], lastPoint[1]);
-  if (!w) { $('r-meas-dt').textContent = 'Measured by ship'; return; }
+  if (!w) {
+    // back to the coverage value (it was replaced while the water panel was open)
+    const f = lastRead.f;
+    $('r-meas-dt').textContent = 'Measured by ship';
+    $('r-meas').textContent = f === null ? 'land' : Number.isNaN(f) ? 'n/a' : `${Math.round(f * 100)}%`;
+    return;
+  }
   $('r-meas-dt').textContent = w.label;
   $('r-meas').textContent = w.value;
 }
@@ -359,10 +467,12 @@ map.on('click', (e) => {
   readout(e.lngLat.lng, e.lngLat.lat);
   if (water.open) water.showColumn(e.lngLat.lng, e.lngLat.lat);
   const box: [maplibregl.PointLike, maplibregl.PointLike] = [[e.point.x - 6, e.point.y - 6], [e.point.x + 6, e.point.y + 6]];
-  const layers = [...FEATURE_LAYERS, ...(tPlates.checked ? ['plates'] : [])];
+  const layers = [...FEATURE_LAYERS, ...overlays.clickableLayers(), ...(tPlates.checked ? ['plates'] : [])];
   const hit: MapGeoJSONFeature | undefined = map.queryRenderedFeatures(box, { layers })[0];
   if (!hit) return;
-  if (hit.layer.id === 'plates') showPlate(hit.properties); else showFeature(hit.properties as FeatureProps);
+  if (hit.layer.id === 'plates') showPlate(hit.properties);
+  else if (FEATURE_LAYERS.includes(hit.layer.id)) showFeature(hit.properties as FeatureProps);
+  else overlays.cardFor(hit).then((c) => { if (c && c !== 'cluster') { showCard(c); updatePadding(); } });
 });
 for (const id of FEATURE_LAYERS) {
   map.on('mouseenter', id, () => { if (!profiling) map.getCanvas().style.cursor = 'pointer'; });
@@ -540,24 +650,93 @@ const waterReady = await water.init();
 // ---------- keep the globe centred in the part of the screen the panels leave free ----------
 const touch = window.matchMedia('(hover: none)').matches;
 if (touch) $('readout-hint').textContent = 'Tap the seafloor to read its depth.';
+const visible = (id: string) => !$(id).hidden && getComputedStyle($(id)).display !== 'none';
+const BOTTOM_PANELS = ['sea', 'water', 'profile'];
 function updatePadding() {
   const W = window.innerWidth, H = window.innerHeight;
   const r = (id: string) => $(id).getBoundingClientRect();
   let pad;
   if (W < 760) {
     const top = document.querySelector('.masthead')!.getBoundingClientRect().bottom;
-    // the free band is between the masthead and whatever is highest of readout / open card
-    const tops = ['readout', 'story-card', 'feature-card'].filter((id) => !$(id).hidden && getComputedStyle($(id)).display !== 'none').map((id) => r(id).top);
-    pad = { top: Math.round(top), bottom: Math.round(H - Math.min(...tops)), left: 0, right: 0 };
+    // the free band is between the masthead and whatever is highest of readout / open card / open sheet
+    const tops = ['readout', 'story-card', 'feature-card', ...BOTTOM_PANELS].filter(visible).map((id) => r(id).top);
+    pad = { top: Math.round(top), bottom: Math.round(H - Math.min(H, ...tops)), left: 0, right: 0 };
   } else {
-    // the sea-level panel sits over the bottom of the globe: keep the view centred above it
-    const bottom = seaOpen ? Math.round(H - r('sea').top + 12) : water.open ? Math.round(H - r('water').top + 12) : 0;
-    const layersShown = getComputedStyle($('layers')).display !== 'none';
-    pad = { top: 0, bottom, left: Math.round(r('stories').right), right: layersShown ? Math.round(W - r('layers').left) : 0 };
+    // padding from where the panels really are: a bottom panel (sea level, ocean water, profile) pads the bottom,
+    // the same panel docked in the right column (short windows) pads the right
+    let bottom = 0, right = visible('layers') ? W - r('layers').left : 0;
+    for (const id of BOTTOM_PANELS) {
+      if (!visible(id)) continue;
+      const b = r(id);
+      if (b.left > W * 0.55) right = Math.max(right, W - b.left);
+      else bottom = Math.max(bottom, H - b.top + 12);
+    }
+    pad = { top: 0, bottom: Math.round(bottom), left: Math.round(r('stories').right), right: Math.round(right) };
   }
   const cur = map.getPadding();
   if (cur.top === pad.top && cur.bottom === pad.bottom && cur.left === pad.left && cur.right === pad.right) return;
   map.setPadding(pad); // note: this stops a running camera animation, so callers set it before flying
+  fitGlobe();
+}
+
+// When the whole Earth is in view and a panel takes part of the window, zoom out just enough that the globe fits
+// the free area (padding already centres it there); zoom back when the panel goes, unless the user moved since.
+// Zoomed in on a place, only the padding shifts the view.
+let fitted: { from: number; to: number } | null = null;
+function disk() { const c = map.getCenter(); return globeDisk((ll) => map.project(ll), [c.lng, c.lat]); }
+function fitGlobe() {
+  if (map.isMoving()) return;
+  const W = window.innerWidth, H = window.innerHeight, z = map.getZoom();
+  if (fitted && Math.abs(z - fitted.to) > 0.02) fitted = null; // the user zoomed since: leave it
+  const d = disk();
+  if (!isGlobeScale(d, W, H)) return;
+  const free = freeRect(W, H, map.getPadding());
+  // a free area this small means the layout is mid-change (or a phone sheet): never chase it
+  if (free.right - free.left < 0.3 * W || free.bottom - free.top < 0.3 * H) return;
+  const target = fitRadius(free);
+  if (d.r > target * 1.01) {
+    const to = Math.max(z - 1.5, zoomForRadius(z, d.r, target));
+    fitted = { from: fitted?.from ?? z, to };
+    map.easeTo({ zoom: to, duration: 450, essential: true });
+    map.once('moveend', () => requestAnimationFrame(fitGlobe));
+  } else if (fitted && d.r < target * 0.97) {
+    const to = Math.min(fitted.from, zoomForRadius(z, d.r, target));
+    fitted = to >= fitted.from - 0.01 ? null : { from: fitted.from, to };
+    map.easeTo({ zoom: to, duration: 450, essential: true });
+    map.once('moveend', () => requestAnimationFrame(fitGlobe));
+  }
+}
+
+// ---------- minimise the bottom panels to their header bar (remembered for the session) ----------
+const MIN_KEY = 'sfa-minimised';
+function minStore(): Record<string, boolean> { try { return JSON.parse(sessionStorage.getItem(MIN_KEY) ?? '{}'); } catch { return {}; } }
+const MIN_LABEL: Record<string, string> = { sea: 'sea level', water: 'ocean water', profile: 'depth profile' };
+function setMinimised(id: string, on: boolean) {
+  $(id).classList.toggle('min', on);
+  const b = $(`${id}-min`);
+  b.setAttribute('aria-expanded', String(!on));
+  b.setAttribute('aria-label', `${on ? 'Expand' : 'Minimise'} ${MIN_LABEL[id]}`);
+  try { sessionStorage.setItem(MIN_KEY, JSON.stringify({ ...minStore(), [id]: on })); } catch { /* storage blocked: state lasts until reload */ }
+  updatePadding();
+}
+for (const id of BOTTOM_PANELS) {
+  $(`${id}-min`).addEventListener('click', () => setMinimised(id, !$(id).classList.contains('min')));
+  if (minStore()[id]) setMinimised(id, true);
+}
+
+/** QA: the globe disk vs the panels covering it. */
+function layoutCheck() {
+  const W = window.innerWidth, H = window.innerHeight;
+  const d = disk();
+  const ids = ['stories', 'layers', 'readout', 'story-card', 'feature-card', 'profile', 'sea', 'water', 'search-input'];
+  const rects: (Rect & { id: string })[] = ids.filter(visible).map((id) => { const b = $(id).getBoundingClientRect(); return { id, left: b.left, top: b.top, right: b.right, bottom: b.bottom }; });
+  const credits = document.querySelector('.credits details')!.getBoundingClientRect();
+  rects.push({ id: 'credits', left: credits.left, top: credits.top, right: credits.right, bottom: credits.bottom });
+  const cov = diskCoverage(d, rects, { left: 0, top: 0, right: W, bottom: H });
+  const free = freeRect(W, H, map.getPadding());
+  return { W, H, zoom: +map.getZoom().toFixed(2), disk: { cx: Math.round(d.cx), cy: Math.round(d.cy), r: Math.round(d.r) }, globeScale: isGlobeScale(d, W, H),
+    pad: map.getPadding(), free, centreFree: inside(d.cx, d.cy, free) && !rects.some((rc) => inside(d.cx, d.cy, rc)),
+    freeFrac: +cov.freeFrac.toFixed(3), panels: rects.map((x) => ({ id: x.id, top: Math.round(x.top), left: Math.round(x.left), h: Math.round(x.bottom - x.top), w: Math.round(x.right - x.left) })) };
 }
 {
   let raf = 0;
@@ -583,11 +762,14 @@ function storyFromHash() {
 }
 const linked = storyFromHash();
 const linkedSea = seaFromHash(location.hash); // read before playStory rewrites the hash
+const linkedLayers = layersFromHash(location.hash);
+// read before playStory rewrites the hash, so #story=x&water=t-0 keeps its water part
+const linkedWater = waterReady ? water.fromHash(location.hash) : null;
+if (linkedLayers) overlays.apply(linkedLayers);
 if (linked) playStory(linked, true);
 // #sea=<metres> opens the sea-level panel at that level (after a story, which resets it)
 if (linkedSea !== null) openSea(linkedSea);
 // #water=t-1000 opens the ocean-water panel on that variable and depth
-const linkedWater = waterReady ? water.fromHash(location.hash) : null;
 if (linkedWater) water.show({ v: linkedWater.v, depth: linkedWater.depth });
 // a pasted or edited #story= / #sea= link in an already open tab does not reload the page
 window.addEventListener('hashchange', () => {
@@ -597,13 +779,15 @@ window.addEventListener('hashchange', () => {
   if (sea !== null && (!seaOpen || sea !== seaLevel)) { setPlaying(false); openSea(sea); }
   const w = water.fromHash(location.hash);
   if (w && (!water.open || w.v !== water.v || w.depth !== water.depth)) water.show({ v: w.v, depth: w.depth });
+  const ls = layersFromHash(location.hash);
+  if (ls && hashWithLayers('', ls) !== hashWithLayers('', overlays.state)) overlays.apply(ls);
 });
 
 // ---------- test/capture hooks ----------
 function idle(): Promise<void> { return new Promise((res) => { if (map.loaded() && map.areTilesLoaded()) map.once('idle', () => res()); else map.once('idle', () => res()); map.triggerRepaint(); }); }
 Object.assign(window, {
   __seafloor: {
-    map, meta, synthetic, idle,
+    map, meta, synthetic, idle, rasterTileSize, terrainTileSize,
     playStory: (id: string, instant = true) => { const s = stories.find((x) => x.id === id); if (s) playStory(s, instant); return !!s; },
     setVeil, setPlates, setNew,
     profile: async (a: [number, number], b: [number, number]) => { setProfiling(true); profileA = a; return runProfile(a, b); },
@@ -612,6 +796,31 @@ Object.assign(window, {
     current: () => currentStory?.id ?? null,
     openSea, closeSea, setSeaLevel: (L: number) => setSeaLevel(L), play: setPlaying,
     seaLevel: () => seaLevel,
+    layoutCheck,
+    setMinimised,
+    overlays: {
+      set: (id: Parameters<OverlayUI['set']>[0], on: boolean) => overlays.set(id, on),
+      allWrecks: (on: boolean) => overlays.setAllWrecks(on),
+      state: () => ({ ...overlays.state, loadMs: overlays.loadMs,
+        visibility: Object.fromEntries(['shipping', 'cables', 'landing-points', 'pipelines', 'platforms', 'wind', 'wrecks'].map((id) => [id, map.getLayoutProperty(id, 'visibility')])) }),
+      find: async (key: Parameters<OverlayUI['find']>[0], re: string) => { const f = await overlays.find(key, new RegExp(re)); return f ? { props: f.properties, geometry: f.geometry } : null; },
+      /** rendered features of the clickable layers (and labels) in a 6 px box around a screen point */
+      hitsAt: (x: number, y: number) => map.queryRenderedFeatures([[x - 6, y - 6], [x + 6, y + 6]], { layers: [...FEATURE_LAYERS, ...overlays.clickableLayers()] })
+        .map((f) => ({ layer: f.layer.id, name: f.properties?.name ?? null })),
+    },
+    /** rAF intervals while the camera eases by dLng degrees over ms milliseconds */
+    panFrames: (dLng: number, ms: number) => new Promise((res) => {
+      const dt: number[] = []; let last = 0, live = true;
+      const loop = (t: number) => { if (last) dt.push(t - last); last = t; if (live) requestAnimationFrame(loop); };
+      requestAnimationFrame(loop);
+      const c = map.getCenter();
+      map.once('moveend', () => {
+        live = false;
+        const a = [...dt].sort((x, y) => x - y), q = (p: number) => +a[Math.min(a.length - 1, Math.floor(p * a.length))].toFixed(2);
+        res({ frames: a.length, medianMs: q(0.5), p95Ms: q(0.95), p99Ms: q(0.99), maxMs: q(1), over20ms: a.filter((x) => x > 20).length });
+      });
+      map.easeTo({ center: [c.lng + dLng, c.lat], duration: ms, easing: (t) => t });
+    }),
     water: {
       ready: waterReady,
       show: (v?: 't' | 's' | 'd', depth?: number) => water.show({ v, depth }),

@@ -1,0 +1,74 @@
+{
+ "globe-no-layers": [
+  {
+   "frames": 240,
+   "medianMs": 16.7,
+   "p95Ms": 16.7,
+   "p99Ms": 16.8,
+   "maxMs": 16.8,
+   "over20ms": 0
+  },
+  {
+   "frames": 239,
+   "medianMs": 16.7,
+   "p95Ms": 16.7,
+   "p99Ms": 16.8,
+   "maxMs": 16.8,
+   "over20ms": 0
+  }
+ ],
+ "globe-all-layers": [
+  {
+   "frames": 240,
+   "medianMs": 16.7,
+   "p95Ms": 16.8,
+   "p99Ms": 16.8,
+   "maxMs": 16.8,
+   "over20ms": 0
+  },
+  {
+   "frames": 239,
+   "medianMs": 16.7,
+   "p95Ms": 16.7,
+   "p99Ms": 16.8,
+   "maxMs": 16.8,
+   "over20ms": 0
+  }
+ ],
+ "north-sea-no-layers": [
+  {
+   "frames": 240,
+   "medianMs": 16.7,
+   "p95Ms": 16.8,
+   "p99Ms": 16.8,
+   "maxMs": 16.8,
+   "over20ms": 0
+  },
+  {
+   "frames": 239,
+   "medianMs": 16.7,
+   "p95Ms": 16.7,
+   "p99Ms": 16.8,
+   "maxMs": 16.8,
+   "over20ms": 0
+  }
+ ],
+ "north-sea-all-layers": [
+  {
+   "frames": 240,
+   "medianMs": 16.7,
+   "p95Ms": 16.8,
+   "p99Ms": 16.8,
+   "maxMs": 16.8,
+   "over20ms": 0
+  },
+  {
+   "frames": 239,
+   "medianMs": 16.7,
+   "p95Ms": 16.8,
+   "p99Ms": 16.8,
+   "maxMs": 16.8,
+   "over20ms": 0
+  }
+ ]
+}

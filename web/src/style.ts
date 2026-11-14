@@ -3,6 +3,7 @@
 import type { LayerSpecification, StyleSpecification } from 'maplibre-gl';
 import { maxZoomFor, tileTemplate, type HiresMeta } from './tilesource';
 import { colorReliefExpression, plateColorExpression, SURVEY_LINE } from './palette';
+import { overlayLayers, overlaySources, shippingLayer } from './overlays';
 import labelFontUrl from '@fontsource-variable/atkinson-hyperlegible-next/files/atkinson-hyperlegible-next-latin-wght-normal.woff2?url';
 
 export interface Meta {
@@ -55,12 +56,14 @@ export function makeDot(): ImageData {
   return g.getImageData(0, 0, S, S);
 }
 
-export function buildStyle(tilesBase: string, dataBase: string, meta: Meta): StyleSpecification {
+/** tileSize: what MapLibre is told the raster tiles measure in CSS px (256 for our 512 px files on a 2x screen). */
+export interface TileOpts { tileSize: number; terrainTileSize: number }
+export function buildStyle(tilesBase: string, dataBase: string, meta: Meta, opts: TileOpts = { tileSize: meta.tileSize, terrainTileSize: meta.tileSize }): StyleSpecification {
   const abs = (p: string) => new URL(p, window.location.href).href;
   // resolve the directory only: new URL() would percent-encode the {z}/{x}/{y} template braces
   const tiles = abs(`${tilesBase}/`);
   // dem + coverage go through the sfa:// protocol (static z0-5, PMTiles above); see tilesource.ts
-  const dem = { type: 'raster-dem' as const, tiles: [tileTemplate('dem')], tileSize: meta.tileSize, minzoom: meta.minzoom, maxzoom: maxZoomFor('dem'), encoding: 'terrarium' as const };
+  const dem = { type: 'raster-dem' as const, tiles: [tileTemplate('dem')], tileSize: opts.tileSize, minzoom: meta.minzoom, maxzoom: maxZoomFor('dem'), encoding: 'terrarium' as const };
   return {
     version: 8,
     'font-faces': { [LABEL_FONT]: abs(labelFontUrl) },
@@ -77,14 +80,16 @@ export function buildStyle(tilesBase: string, dataBase: string, meta: Meta): Sty
     // Two DEM sources pointing at the same tiles: one feeds the 3D mesh, the other the colour/hillshade
     // passes, so the two don't evict each other's tiles (MapLibre's recommendation).
     sources: {
-      'dem-terrain': dem,
+      'dem-terrain': { ...dem, tileSize: opts.terrainTileSize },
       'dem-relief': { ...dem },
-      veil: { type: 'raster', tiles: [tileTemplate('coverage')], tileSize: meta.tileSize, minzoom: meta.minzoom, maxzoom: maxZoomFor('coverage') },
-      new2026: { type: 'raster', tiles: [`${tiles}new2026/{z}/{x}/{y}.webp`], tileSize: meta.tileSize, minzoom: meta.minzoom, maxzoom: meta.maxzoom },
+      veil: { type: 'raster', tiles: [tileTemplate('coverage')], tileSize: opts.tileSize, minzoom: meta.minzoom, maxzoom: maxZoomFor('coverage') },
+      new2026: { type: 'raster', tiles: [`${tiles}new2026/{z}/{x}/{y}.webp`], tileSize: opts.tileSize, minzoom: meta.minzoom, maxzoom: meta.maxzoom },
       plates: { type: 'geojson', data: abs(`${dataBase}/plates.geojson`) },
       features: { type: 'geojson', data: abs(`${dataBase}/features.geojson`) },
       profile: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
       cursor: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+      // human-activity overlays (empty until switched on; see overlays.ts). Shipping tiles are only on the real set.
+      ...overlaySources(abs('tiles/shipping/'), opts.tileSize),
     },
     terrain: { source: 'dem-terrain', exaggeration: 40 },
     layers: [
@@ -103,6 +108,7 @@ export function buildStyle(tilesBase: string, dataBase: string, meta: Meta): Sty
       },
       { id: 'veil', type: 'raster', source: 'veil', layout: { visibility: 'none' }, paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } },
       { id: 'new2026', type: 'raster', source: 'new2026', layout: { visibility: 'none' }, paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 } },
+      shippingLayer(),
       {
         id: 'plates', type: 'line', source: 'plates', layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
         paint: {
@@ -112,6 +118,8 @@ export function buildStyle(tilesBase: string, dataBase: string, meta: Meta): Sty
           'line-dasharray': ['match', ['get', 'type'], 'transform', ['literal', [2, 1.5]], 'convergent', ['literal', [0.6, 1.6]], 'rift', ['literal', [3, 1.5]], ['literal', [1, 0]]] as never,
         },
       },
+      // above relief, veil and plates, below the gazetteer labels (which are placed first and never hidden)
+      ...overlayLayers(LABEL_FONT),
       ...featureLayers(),
       { id: 'profile-casing', type: 'line', source: 'profile', filter: ['==', ['geometry-type'], 'LineString'], paint: { 'line-color': '#04080f', 'line-width': 5, 'line-opacity': 0.75 } },
       { id: 'profile-line', type: 'line', source: 'profile', filter: ['==', ['geometry-type'], 'LineString'], paint: { 'line-color': SURVEY_LINE, 'line-width': 2.2 } },

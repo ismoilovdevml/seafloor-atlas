@@ -162,6 +162,43 @@ input[role='switch']:checked::after { transform: translateX(14px); background: v
 .tool:hover { border-color: var(--shelf); }
 .tool[aria-pressed='true'] { background: var(--shelf); color: #06261b; border-color: var(--shelf); }
 
+/* ---------- human activity at sea ---------- */
+.layer-group { border-bottom: 1px solid var(--line); padding: 2px 0 4px; }
+.group-title { font: 600 13px/1 var(--sans); color: var(--ink-3); margin: 0; padding: 12px 16px 2px; letter-spacing: 0.01em; }
+.layer.ov { border-bottom: 0; padding: 0 16px; }
+.layer.ov .switch-row { min-height: 38px; }
+.layer.ov[aria-busy='true'] .switch-row span::after { content: ' loading…'; color: var(--ink-3); font-weight: 400; font-size: 13px; }
+.ov-legend { font-size: 13px; color: var(--ink-2); padding: 0 0 8px 44px; }
+.ov-key { list-style: none; margin: 0 0 4px; padding: 0; display: grid; gap: 4px; }
+.ov-key li { display: grid; grid-template-columns: 30px 1fr; gap: 8px; align-items: center; line-height: 1.3; }
+.ov-key li > :first-child { justify-self: center; }
+.ov-key svg, .ov-ico { display: block; }
+.ov-wind-sizes { display: flex; align-items: center; gap: 3px; justify-self: start !important; }
+.ov-key li:has(.ov-wind-sizes) { grid-template-columns: auto 1fr; }
+.ov-cluster {
+  display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-size: 10.5px; color: #f3ece0;
+  background: rgba(9, 16, 28, 0.86); border: 1.5px solid #d9b98a;
+}
+.ov-note { margin: 2px 0 2px; line-height: 1.4; }
+.ov-att { margin: 2px 0 0; font-size: 12px; color: var(--ink-3); line-height: 1.35; }
+.ov-legend .check-row { min-height: 30px; font-size: 13.5px; }
+.ov-bar { height: 10px; border-radius: 2px; border: 1px solid var(--line); margin-top: 4px; }
+.ov-ticks { position: relative; height: 15px; font-size: 11.5px; color: var(--ink-2); margin: 1px 6px 2px; }
+.ov-ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+#ovk-shipping { display: block; }
+
+/* overlay cards: facts, links and an optional photo above the title */
+.card .f-facts { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 4px 0 8px; font-size: 14px; }
+.card .f-facts dt { color: var(--ink-3); }
+.card .f-facts dd { margin: 0; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+.card .f-links { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.card .f-links a { color: var(--shelf); font-weight: 600; text-underline-offset: 3px; }
+.f-photo { margin: 30px 0 10px; position: relative; }
+.f-photo img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; background: rgba(150, 196, 214, 0.08); max-height: 140px; }
+.f-photo figcaption { position: absolute; right: 6px; bottom: 4px; font-size: 11px; color: #e6eef0; text-shadow: 0 1px 3px #000; }
+.credits-list { margin: 0 0 6px; padding-left: 16px; }
+.credits-list li { margin-bottom: 4px; }
+
 /* ---------- readout ---------- */
 .readout {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-panel); backdrop-filter: blur(10px);
@@ -191,6 +228,7 @@ input[role='switch']:checked::after { transform: translateX(14px); background: v
   background: none; color: var(--ink-3); font-size: 22px; line-height: 1; cursor: pointer;
 }
 .close:hover { color: var(--ink); background: rgba(255, 255, 255, 0.06); }
+.card .close { z-index: 2; }
 .text-btn { background: none; border: 0; padding: 4px 0; color: var(--shelf); font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .story-card.entering { animation: rise 0.35s ease-out; }
 @keyframes rise { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
@@ -201,7 +239,7 @@ input[role='switch']:checked::after { transform: translateX(14px); background: v
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-panel); backdrop-filter: blur(12px);
   padding: 10px 14px 10px; max-width: 980px; width: 100%; justify-self: center;
 }
-.profile-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; padding-right: 40px; }
+.profile-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; padding-right: 80px; }
 .profile-head h2 { font: 500 19px/1.2 var(--serif); margin: 0; }
 .profile-status { margin: 0; color: var(--ink-2); font-size: 14px; }
 .profile-stats { display: flex; gap: 18px; margin: 0; }
@@ -228,7 +266,7 @@ input[role='switch']:checked::after { transform: translateX(14px); background: v
   --sand-ink: #d6c194;
   --flood-ink: #a3dcea;
 }
-.sea-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; padding-right: 40px; }
+.sea-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; padding-right: 80px; }
 .sea-head h2 { font: 500 19px/1.2 var(--serif); margin: 0; }
 .sea-value {
   font: 600 30px/1.1 var(--serif); font-variation-settings: 'opsz' 48; min-width: 4.4ch; color: var(--ink);
@@ -275,20 +313,20 @@ input[role='switch']:checked::after { transform: translateX(14px); background: v
 .sea-ticks span::before { content: ''; position: absolute; left: 50%; top: -5px; width: 1px; height: 4px; background: var(--ink-3); }
 .sea-ticks .today { color: var(--ink); font-weight: 600; }
 
-.sea-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.sea-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .sea-presets button {
-  min-height: 34px; padding: 4px 9px; cursor: pointer; border-radius: var(--r-ctl);
+  min-height: 32px; padding: 3px 9px; cursor: pointer; border-radius: var(--r-ctl);
   background: transparent; border: 1px solid var(--line-strong); color: var(--ink); font-size: 13.5px;
 }
 .sea-presets button span { color: var(--ink-3); margin-left: 5px; }
 .sea-presets button:hover { border-color: var(--shelf); }
 .sea-presets button[aria-pressed='true'] { background: rgba(168, 224, 194, 0.14); border-color: var(--shelf); }
 .sea-presets button[aria-pressed='true'] span { color: var(--ink-2); }
-.sea-note { margin: 8px 0 0; color: var(--ink-2); font-size: 14px; line-height: 1.45; min-height: 2.9em; max-width: 92ch; }
+.sea-note { margin: 6px 0 0; color: var(--ink-2); font-size: 13.5px; line-height: 1.4; max-width: 92ch; }
 .sea-chip { display: inline-block; width: 16px; height: 11px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
 .sea-chip.exposed { background: linear-gradient(90deg, var(--exposed-lo), var(--exposed-hi)); }
 .sea-chip.flooded { background: linear-gradient(90deg, var(--flooded-lo), var(--flooded-hi)); }
-.sea-foot { margin: 6px 0 0; color: var(--ink-3); font-size: 12px; line-height: 1.4; max-width: 110ch; }
+.sea-foot { margin: 4px 0 0; color: var(--ink-3); font-size: 11.5px; line-height: 1.35; max-width: 120ch; }
 #r-depth .was { display: block; font: 400 12.5px/1.3 var(--sans); color: var(--ink-3); margin-top: 1px; }
 
 
@@ -297,30 +335,30 @@ input[role='switch']:checked::after { transform: translateX(14px); background: v
   grid-area: profile; align-self: end; justify-self: center; position: relative; min-width: 0;
   width: 100%; max-width: 1000px;
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-panel); backdrop-filter: blur(12px);
-  padding: 10px 16px 12px;
+  padding: 8px 14px 10px;
 }
-.water-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; padding-right: 40px; }
+.water-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; padding-right: 80px; }
 .water-head h2 { font: 500 19px/1.2 var(--serif); margin: 0; }
 .water-sub { margin: 0; color: var(--ink-3); font-size: 13px; }
 .water .close { top: 4px; right: 4px; }
-.water-body { display: grid; grid-template-columns: minmax(250px, 290px) minmax(0, 1fr); gap: 8px 22px; margin-top: 8px; }
-.water-controls { min-width: 0; display: grid; gap: 8px; align-content: start; }
+.water-body { display: grid; grid-template-columns: minmax(250px, 290px) minmax(0, 1fr); gap: 6px 22px; margin-top: 6px; }
+.water-controls { min-width: 0; display: grid; gap: 6px; align-content: start; }
 
 .seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line-strong); border-radius: var(--r-ctl); padding: 2px; gap: 2px; }
-.seg button { min-height: 36px; border: 0; border-radius: 4px; background: none; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--ink-2); padding: 0 4px; }
+.seg button { min-height: 32px; border: 0; border-radius: 4px; background: none; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--ink-2); padding: 0 4px; }
 .seg button:hover { color: var(--ink); }
 .seg button[aria-checked='true'] { background: rgba(168, 224, 194, 0.16); color: var(--ink); box-shadow: inset 0 -2px 0 var(--shelf); }
 
 .water-depth-head { display: flex; justify-content: space-between; align-items: baseline; font-weight: 500; }
-.water-depth-head output { font: 600 22px/1.1 var(--serif); color: var(--ink); }
-#water-depth { width: 100%; accent-color: var(--shelf); margin: 4px 0 0; height: 24px; }
+.water-depth-head output { font: 600 18px/1.1 var(--serif); color: var(--ink); }
+#water-depth { width: 100%; accent-color: var(--shelf); margin: 2px 0 0; height: 22px; }
 .water-depth-ticks { position: relative; height: 15px; margin: 0 8px; font-size: 11.5px; color: var(--ink-3); }
 .water-depth-ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; line-height: 15px; }
 
-.water-months { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 8px; align-items: center; }
+.water-months { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 8px; align-items: center; }
 .water-months[aria-disabled='true'] { opacity: 0.45; }
 .water-play {
-  width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
+  width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
   background: transparent; border: 1px solid var(--line-strong); color: var(--ink);
 }
 .water-play:hover { border-color: var(--shelf); }
@@ -329,29 +367,29 @@ input[role='switch']:checked::after { transform: translateX(14px); background: v
 .water-play[aria-pressed='true'] .i-pause { display: block; }
 .month-strip { display: grid; grid-template-columns: 1.9fr repeat(12, 1fr); gap: 1px; }
 .month-strip button {
-  min-height: 30px; padding: 0; border: 0; border-radius: 3px; cursor: pointer; background: rgba(150, 196, 214, 0.08);
+  min-height: 28px; padding: 0; border: 0; border-radius: 3px; cursor: pointer; background: rgba(150, 196, 214, 0.08);
   font-size: 12px; color: var(--ink-2);
 }
 .month-strip button:hover { color: var(--ink); background: rgba(150, 196, 214, 0.16); }
 .month-strip button[aria-checked='true'] { background: var(--shelf); color: #06261b; font-weight: 700; }
 
 .water-legend { margin: 0; }
-.water-legend figcaption { font-weight: 500; font-size: 14px; margin-bottom: 5px; }
-.water-bar { height: 12px; border-radius: 2px; border: 1px solid var(--line); position: relative; }
+.water-legend figcaption { font-weight: 500; font-size: 13.5px; margin-bottom: 3px; }
+.water-bar { height: 10px; border-radius: 2px; border: 1px solid var(--line); position: relative; }
 .water-bar::before, .water-bar::after { position: absolute; top: -1px; font-size: 10px; color: var(--ink-3); line-height: 12px; }
 .water-ticks { position: relative; height: 16px; font-size: 12px; color: var(--ink-2); margin-top: 2px; }
 .water-ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
 .water-ticks span::before { content: ''; position: absolute; left: 50%; top: -4px; width: 1px; height: 3px; background: var(--ink-3); }
 .water-ticks span.end-lo { transform: none; }
 .water-ticks span.end-hi { transform: translateX(-100%); }
-.water-note { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.4; }
+.water-note { margin: 0; color: var(--ink-2); font-size: 12.5px; line-height: 1.35; }
 
 .water-column { min-width: 0; display: flex; flex-direction: column; }
 .water-column-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; }
 .water-column-head h3 { font: 500 16px/1.2 var(--serif); margin: 0; }
 .wc-where { margin: 0; color: var(--ink-3); font-size: 13px; }
 .wc-empty { margin: 10px 0 0; padding: 14px; color: var(--ink-2); font-size: 14px; line-height: 1.45; border: 1px dashed var(--line-strong); border-radius: var(--r-ctl); flex: 1; display: grid; place-items: center; text-align: center; }
-.wc-chart { height: 250px; margin-top: 4px; }
+.wc-chart { height: 230px; margin-top: 4px; }
 .wc-frame { fill: rgba(4, 9, 18, 0.35); stroke: rgba(150, 196, 214, 0.18); }
 .wc-title { fill: var(--ink); font: 600 12.5px var(--sans); }
 .wc-note { fill: var(--ink-3); font: 12px var(--sans); }
@@ -359,10 +397,52 @@ input[role='switch']:checked::after { transform: translateX(14px); background: v
 .wc-map { stroke: var(--shelf); stroke-width: 1.5; stroke-dasharray: 2 3; }
 #r-water-dt .dt-unit { color: var(--ink-3); }
 
+/* until a point is clicked the water column is one line of text and the controls sit in two columns */
+.water[data-col='empty'] .water-body { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.water[data-col='empty'] .water-controls { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 22px; align-items: center; }
+.water[data-col='empty'] .water-column-head { display: none; }
+.water[data-col='empty'] .wc-empty { margin: 0; padding: 0; border: 0; display: block; text-align: left; font-size: 13px; color: var(--ink-3); flex: none; }
+.water-sum { display: none; margin: 0; color: var(--ink-2); font-size: 14px; }
+
+/* ---------- minimise: the bottom panels fold to their header bar ---------- */
+.min-btn {
+  position: absolute; top: 4px; right: 42px; width: 36px; height: 36px; border: 0; border-radius: var(--r-ctl);
+  background: none; color: var(--ink-3); cursor: pointer; display: grid; place-items: center;
+}
+.min-btn:hover { color: var(--ink); background: rgba(255, 255, 255, 0.06); }
+.min-btn svg { transition: transform 0.15s; }
+.min > header .min-btn svg { transform: rotate(180deg); }
+.sea.min > :not(header), .water.min > :not(header), .profile.min > :not(header) { display: none; }
+.sea.min, .water.min, .profile.min { padding-top: 8px; padding-bottom: 8px; }
+.sea.min .sea-stat, .water.min .water-sub { display: none; }
+.water.min .water-sum { display: block; }
+.sea.min .sea-value { font-size: 22px; }
+
+/* windows up to 900 px tall: a shorter profile chart */
+@media (max-height: 900px) {
+  .profile .chart { height: 180px; }
+  .wc-chart { height: 200px; }
+  .sea-curve { height: 30px; }
+}
+
 /* mid-width screens: the ocean-water panel takes the layers column too (its own × closes it) */
 @media (min-width: 761px) and (max-width: 1239px) {
   .ui.water-open .layers { display: none; }
   .ui.water-open .water { grid-column: 2 / 4; max-width: none; }
+}
+
+/* short desktop windows: sea level and ocean water dock into the right column instead of the bottom */
+@media (min-width: 761px) and (max-height: 759px) {
+  .ui.water-open .layers, .ui.sea-open .layers { display: none; }
+  .ui.water-open .water, .ui.sea-open .sea {
+    grid-area: layers; align-self: start; justify-self: stretch; max-width: none; max-height: 100%;
+    overflow: auto; overscroll-behavior: contain;
+  }
+  .water .water-body, .water[data-col='empty'] .water-body, .water[data-col='empty'] .water-controls { grid-template-columns: minmax(0, 1fr); }
+  .wc-chart { height: 210px; }
+  .sea-stat { flex-basis: 100%; }
+  .sea-key { display: block; margin-left: 0; }
+  .sea-ticks .minor, .sea-presets button span, .sea-curve-label { display: none; }
 }
 
 /* ---------- credits ---------- */
@@ -401,7 +481,8 @@ input[role='switch']:checked::after { transform: translateX(14px); background: v
   .masthead::before { inset: -12px -12px -14px; background: linear-gradient(rgba(7, 13, 24, 0.92) 60%, rgba(7, 13, 24, 0)); }
   .stories h2 { display: none; }
   .stories { padding-top: 6px; }
-  .card { align-self: end; width: 100%; padding: 12px 44px 12px 14px; }
+  .card { align-self: end; width: 100%; padding: 12px 44px 12px 14px; max-height: 48vh; overflow: auto; overscroll-behavior: contain; }
+  .f-photo img { max-height: 120px; }
   .card h2 { font-size: 20px; }
   .card p { font-size: 14px; }
   .readout { min-height: 46px; padding: 6px 12px; }
