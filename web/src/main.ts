@@ -413,7 +413,7 @@ function setSeaLevel(level: number, opts: { fromSlider?: boolean; hash?: boolean
   const pre = presetFor(seaLevel);
   $('sea-presets').querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.level) === seaLevel)));
   $('sea-note').textContent = pre ? pre.note
-    : `Drag the slider or press play. Water is coloured by its depth below a sea ${seaLevel < 0 ? 'lowered' : 'raised'} by ${formatLevel(Math.abs(seaLevel))}.`;
+    : `Drag the slider or press play. Water is coloured by its depth below a sea ${seaLevel < 0 ? 'lowered' : 'raised'} by ${Math.abs(seaLevel).toLocaleString('en-US')} m.`;
   $('sea-marker').style.left = `${(100 * levelToPos(seaLevel)) / SLIDER_MAX}%`;
   $('depth-legend-cap').textContent = seaLevel === 0 ? 'Depth below sea level' : `Depth below the sea at ${formatLevel(seaLevel)}`;
   renderDepth();

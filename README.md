@@ -111,7 +111,7 @@ PB2002 plate boundaries (Bird 2003) ───────┴─ pipeline/plates.
 
 * **Elevation** comes from a Cloud-Optimised GeoTIFF mirror of the official grid (Source Cooperative), so only the 1′ level (~140 MB) needs to be downloaded instead of 7.5 GB. `pipeline/verify_mirror.py` checks the mirror against the official GEBCO server cell by cell at 6 sites (Challenger Deep, Mid-Atlantic Ridge, Hawaii, SE Indian Ocean, North Sea, Himalaya). Result: **all 6 windows identical** for elevation and TID; the 1′ level is the mean of each 4 × 4 block of 15″ cells (max difference 0.8 m, rounding).
 * **"Measured"** = TID codes 10–17 (single beam, multibeam, seismic, soundings, lidar, optical). **"Ocean"** = TID ≠ 0 *and* elevation below sea level. Without the elevation test, the Antarctic ice sheet (2.7 % of Earth) would count as ocean.
-* **Tiles:** Web Mercator, 512 px, zoom 0–5, lossless WebP. Depth is stored as Terrarium RGB in whole metres. See [docs/data-contract.md](docs/data-contract.md).
+* **Tiles:** Web Mercator, 512 px, lossless WebP, depth as Terrarium RGB in whole metres. Zoom 0–5 (1′ source) are static files on GitHub Pages; zoom 6–7 (15″ source, 1.8 GB + 0.2 GB) are PMTiles archives on Hugging Face, read with HTTP range requests (`pipeline/tiles_hires.py`, `pipeline/publish_hires.py`). Checked: Challenger Deep reads −10,922 m at zoom 7 (official 15″ grid −10,927 m) vs −10,675 m at zoom 5; zoom-6 tiles averaged down agree with the zoom-5 tiles to a median of 1–2 m. See [docs/data-contract.md](docs/data-contract.md).
 
 ## Run it
 
@@ -120,6 +120,8 @@ uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r pypro
 pipeline/fetch_data.sh                    # inputs (~470 MB, needs GDAL)
 .venv/bin/python pipeline/coverage.py     # stats + coverage grid   (~1 min)
 .venv/bin/python pipeline/tiles.py        # web tiles              (~10 min)
+.venv/bin/python pipeline/tiles_hires.py  # zoom 6-7 PMTiles from the 15" grid (~70 min, 4.6 GB input)
+.venv/bin/python pipeline/publish_hires.py # upload to Hugging Face, pin URLs in meta.json
 .venv/bin/python pipeline/features.py     # undersea feature names
 .venv/bin/python pipeline/plates.py       # plate boundaries
 .venv/bin/python pipeline/hypsometry.py   # land area vs sea level for the viewer (~5 s)
@@ -133,7 +135,8 @@ cd web && npm ci && npm run dev           # viewer at http://localhost:5173
 
 ## Limits
 
-* The web map uses the 1′ grid (~1.85 km), so it shows features a few km across, not the full 15″ (~460 m) detail.
+* Zoom 0–5 comes from the 1′ grid (~1.85 km). Zoom 6–7 comes from the full 15″ grid (~460 m) and is streamed from [Hugging Face](https://huggingface.co/datasets/ismoilovdev/seafloor-atlas-tiles) as PMTiles. Away from ship surveys the real detail is still only a few km (satellite gravity), so zooming in there shows smooth terrain.
+* Beyond 85.05° N/S (outside Web Mercator) the globe shows a flat cap at the mean depth of the polar grid.
 * The depth axis of figure 3 uses the 1′ cell mean, which smooths narrow trenches (Challenger Deep reads −10,900 m at 1′ vs −10,927 m at 15″).
 * Even "measured" cells are a 460 m average. A single ship track crossing a cell marks it as measured.
 * The ocean mask (TID ≠ 0 and below sea level) also includes the Caspian Sea and lake beds below sea level (Dead Sea, deep parts of Baikal and the Great Lakes), about 0.15 % of the ocean area. The regional tables exclude the Caspian.

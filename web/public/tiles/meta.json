@@ -45,5 +45,12 @@
   "dem": 1365,
   "coverage": 1365,
   "new2026": 1365
+ },
+ "hires": {
+  "maxzoom": 7,
+  "dem": "https://huggingface.co/datasets/ismoilovdev/seafloor-atlas-tiles/resolve/58579eae22ebd3539d310391ab53cdd843b0395c/dem_z6-7.pmtiles",
+  "coverage": "https://huggingface.co/datasets/ismoilovdev/seafloor-atlas-tiles/resolve/58579eae22ebd3539d310391ab53cdd843b0395c/coverage_z6-7.pmtiles",
+  "revision": "58579eae22ebd3539d310391ab53cdd843b0395c",
+  "sourceResolutionArcsec": 15
  }
 }

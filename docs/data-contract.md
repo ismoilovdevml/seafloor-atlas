@@ -42,6 +42,13 @@ Official citation: GEBCO Compilation Group (2026) GEBCO 2026 Grid (doi:10.5285/4
    "sourceResolutionArcsec": 60, "citation": "...", "doi": "...", "stats": { ... }}
   ```
 
+## High-zoom archives (Hugging Face, z6-7)
+
+* `dem_z6-7.pmtiles`, `coverage_z6-7.pmtiles` in the HF dataset `ismoilovdev/seafloor-atlas-tiles`. Same encodings as `dem/` and `coverage/`, 512 px, built from the 15" grids (`pipeline/tiles_hires.py`; coverage from a 15" measured flag, not from codes averaged).
+* `meta.json` -> `"hires": {"maxzoom": 7, "dem": url, "coverage": url, "revision": sha}`; URLs are pinned to the upload commit (`resolve/<sha>/...`). No `hires` = the viewer stays at z0-5.
+* Polar rows: values poleward of 84.92 deg are the cap mean (same as z0-5), so the pole has no radial artefact at any zoom.
+* The viewer reads both homes through one `sfa://<layer>/{z}/{x}/{y}` protocol (`web/src/tilesource.ts`); the depth readout and profiles use the same path.
+
 ## Vector overlays (web/public/data/)
 
 * `plates.geojson`: PB2002 boundary steps merged into lines. Properties: `type` in {ridge, rift, transform, subduction, convergent} (from PB2002 `STEPCLASS`: OSR/CRB/OTF+CTF/SUB/OCB+CCB), `cls`, `boundary` ("PA-NA"), `plates` (full names), `rate_mm_yr` (length-weighted mean relative velocity).

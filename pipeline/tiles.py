@@ -230,6 +230,11 @@ def main() -> None:
         "polarCaps": {k: [None if np.isnan(v) else round(v, 3) for v in vals] for k, vals in caps.items()},
         "tiles": {"dem": n_dem, "coverage": n_cov, "new2026": count("new2026")},
     }
+    old_meta = args.out / "meta.json"
+    if old_meta.exists():  # keep the z6+ archive pointer written by pipeline/publish_hires.py
+        prev = json.loads(old_meta.read_text())
+        if prev.get("hires"):
+            meta["hires"] = prev["hires"]
     (args.out / "meta.json").write_text(json.dumps(meta, indent=1))
     print(json.dumps(meta, indent=1))
 
