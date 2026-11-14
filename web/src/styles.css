@@ -291,6 +291,80 @@ input[role='switch']:checked::after { transform: translateX(14px); background: v
 .sea-foot { margin: 6px 0 0; color: var(--ink-3); font-size: 12px; line-height: 1.4; max-width: 110ch; }
 #r-depth .was { display: block; font: 400 12.5px/1.3 var(--sans); color: var(--ink-3); margin-top: 1px; }
 
+
+/* ---------- ocean water ---------- */
+.water {
+  grid-area: profile; align-self: end; justify-self: center; position: relative; min-width: 0;
+  width: 100%; max-width: 1000px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-panel); backdrop-filter: blur(12px);
+  padding: 10px 16px 12px;
+}
+.water-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; padding-right: 40px; }
+.water-head h2 { font: 500 19px/1.2 var(--serif); margin: 0; }
+.water-sub { margin: 0; color: var(--ink-3); font-size: 13px; }
+.water .close { top: 4px; right: 4px; }
+.water-body { display: grid; grid-template-columns: minmax(250px, 290px) minmax(0, 1fr); gap: 8px 22px; margin-top: 8px; }
+.water-controls { min-width: 0; display: grid; gap: 8px; align-content: start; }
+
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line-strong); border-radius: var(--r-ctl); padding: 2px; gap: 2px; }
+.seg button { min-height: 36px; border: 0; border-radius: 4px; background: none; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--ink-2); padding: 0 4px; }
+.seg button:hover { color: var(--ink); }
+.seg button[aria-checked='true'] { background: rgba(168, 224, 194, 0.16); color: var(--ink); box-shadow: inset 0 -2px 0 var(--shelf); }
+
+.water-depth-head { display: flex; justify-content: space-between; align-items: baseline; font-weight: 500; }
+.water-depth-head output { font: 600 22px/1.1 var(--serif); color: var(--ink); }
+#water-depth { width: 100%; accent-color: var(--shelf); margin: 4px 0 0; height: 24px; }
+.water-depth-ticks { position: relative; height: 15px; margin: 0 8px; font-size: 11.5px; color: var(--ink-3); }
+.water-depth-ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; line-height: 15px; }
+
+.water-months { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 8px; align-items: center; }
+.water-months[aria-disabled='true'] { opacity: 0.45; }
+.water-play {
+  width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
+  background: transparent; border: 1px solid var(--line-strong); color: var(--ink);
+}
+.water-play:hover { border-color: var(--shelf); }
+.water-play[aria-pressed='true'] { background: var(--shelf); border-color: var(--shelf); color: #06261b; }
+.water-play .i-pause, .water-play[aria-pressed='true'] .i-play { display: none; }
+.water-play[aria-pressed='true'] .i-pause { display: block; }
+.month-strip { display: grid; grid-template-columns: 1.9fr repeat(12, 1fr); gap: 1px; }
+.month-strip button {
+  min-height: 30px; padding: 0; border: 0; border-radius: 3px; cursor: pointer; background: rgba(150, 196, 214, 0.08);
+  font-size: 12px; color: var(--ink-2);
+}
+.month-strip button:hover { color: var(--ink); background: rgba(150, 196, 214, 0.16); }
+.month-strip button[aria-checked='true'] { background: var(--shelf); color: #06261b; font-weight: 700; }
+
+.water-legend { margin: 0; }
+.water-legend figcaption { font-weight: 500; font-size: 14px; margin-bottom: 5px; }
+.water-bar { height: 12px; border-radius: 2px; border: 1px solid var(--line); position: relative; }
+.water-bar::before, .water-bar::after { position: absolute; top: -1px; font-size: 10px; color: var(--ink-3); line-height: 12px; }
+.water-ticks { position: relative; height: 16px; font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+.water-ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.water-ticks span::before { content: ''; position: absolute; left: 50%; top: -4px; width: 1px; height: 3px; background: var(--ink-3); }
+.water-ticks span.end-lo { transform: none; }
+.water-ticks span.end-hi { transform: translateX(-100%); }
+.water-note { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.4; }
+
+.water-column { min-width: 0; display: flex; flex-direction: column; }
+.water-column-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; }
+.water-column-head h3 { font: 500 16px/1.2 var(--serif); margin: 0; }
+.wc-where { margin: 0; color: var(--ink-3); font-size: 13px; }
+.wc-empty { margin: 10px 0 0; padding: 14px; color: var(--ink-2); font-size: 14px; line-height: 1.45; border: 1px dashed var(--line-strong); border-radius: var(--r-ctl); flex: 1; display: grid; place-items: center; text-align: center; }
+.wc-chart { height: 250px; margin-top: 4px; }
+.wc-frame { fill: rgba(4, 9, 18, 0.35); stroke: rgba(150, 196, 214, 0.18); }
+.wc-title { fill: var(--ink); font: 600 12.5px var(--sans); }
+.wc-note { fill: var(--ink-3); font: 12px var(--sans); }
+.grid line.break { stroke: rgba(150, 196, 214, 0.4); stroke-dasharray: 4 3; }
+.wc-map { stroke: var(--shelf); stroke-width: 1.5; stroke-dasharray: 2 3; }
+#r-water-dt .dt-unit { color: var(--ink-3); }
+
+/* mid-width screens: the ocean-water panel takes the layers column too (its own × closes it) */
+@media (min-width: 761px) and (max-width: 1239px) {
+  .ui.water-open .layers { display: none; }
+  .ui.water-open .water { grid-column: 2 / 4; max-width: none; }
+}
+
 /* ---------- credits ---------- */
 .credits details {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-ctl); backdrop-filter: blur(10px);
@@ -355,6 +429,12 @@ input[role='switch']:checked::after { transform: translateX(14px); background: v
   .sea-note { font-size: 13px; min-height: 0; }
   .sea-foot { font-size: 11.5px; }
   #r-depth .was { display: none; }
+  .water { grid-area: panel; max-height: 52vh; overflow: auto; overscroll-behavior: contain; padding: 8px 12px 10px; background: rgba(8, 16, 30, 0.95); }
+  .ui.water-open .stories, .ui.water-open .layers, .ui.water-open .tabs, .ui.water-open .card { display: none; }
+  .water-body { grid-template-columns: minmax(0, 1fr); }
+  .water-sub { flex-basis: 100%; font-size: 12px; }
+  .water-note { min-height: 0; }
+  .wc-chart { height: 230px; }
   .credits { justify-self: stretch; }
   .credits details { max-width: none; }
 }

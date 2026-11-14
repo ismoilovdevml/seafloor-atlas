@@ -1,0 +1,367 @@
+"""Ocean water layer: temperature, salinity and potential density from the World Ocean Atlas 2023.
+
+Climatology: WOA23 "decav91C0" = the 1991-2020 climate normal, objectively analysed means (t_an, s_an) only.
+
+  fetch : NCEI THREDDS OPeNDAP subsets (only the variables and depth levels used) -> data/raw/woa23/*.npy
+          annual 0.25 deg t_an + s_an at the map depths (11 levels x 2)          ~ 90 MB
+          monthly 0.25 deg t_an at 0 m (t01..t12)                               ~ 50 MB
+          annual 1 deg t_an + s_an at all 102 standard levels (0-5,500 m)       ~ 53 MB
+  build : web/public/woa/ (format in docs/data-contract.md)
+          manifest.json                 variables, depths, months, colour ranges, per-layer quantisation
+          map/<var>_<depth>.bin         0.25 deg, uint16 at a fixed step per variable, byte planes, zlib
+          map/t_m<MM>.bin               monthly surface temperature, same encoding
+          col/<i>_<j>.bin               1 deg water columns of a 30 x 30 deg region: int16 T, S, sigma0 at all
+                                        102 levels, deflate compressed (lazily fetched by the viewer on click)
+  check : prints the science spot checks (warm pool, Antarctic shelf, deep water, Atlantic/Bay of Bengal
+          surface salinity, Mediterranean outflow tongue at 1,000 m)
+
+Density (TEOS-10, gsw): p = p_from_z(-z, lat); SA = SA_from_SP(SP, p, lon, lat); CT = CT_from_t(SA, t, p);
+sigma0 = rho(SA, CT, 0) - 1000 kg/m^3 (potential density anomaly referenced to the sea surface).
+
+usage: .venv/bin/python pipeline/woa.py [fetch|build|check|all]
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+import zlib
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parents[1]
+RAW = ROOT / "data/raw/woa23"
+OUT = ROOT / "web/public/woa"
+
+PERIOD = "decav91C0"  # 1991-2020 climate normal
+DODS = "https://www.ncei.noaa.gov/thredds-ocean/dodsC/woa23/DATA"
+FILE_URL = "https://www.ncei.noaa.gov/data/oceans/woa/WOA23/DATA"
+MAP_DEPTHS = [0, 50, 100, 200, 500, 1000, 1500, 2000, 3000, 4000, 5000]
+VARS = {"t": "temperature", "s": "salinity"}
+
+# fixed colour ranges (same at every depth so depths are comparable); values outside are clamped in colour only
+RANGES = {"t": (-2.0, 32.0), "s": (32.0, 38.0), "d": (20.0, 28.0)}
+# map layers: uint16 q, value = lo + (q - 1) * step, q = 0 no data (step per variable)
+MAP_STEP = {"t": 0.01, "s": 0.005, "d": 0.005}
+# int16 water-column encoding: value = OFFSET + q * SCALE, q = -32768 means no data
+COL_SCALE = 0.001
+COL_OFFSET = {"t": 10.0, "s": 20.0, "d": 15.0}
+COL_FILL = -32768
+CHUNK_DEG = 30
+
+CITATIONS = {
+    "t": "Locarnini, R.A., A.V. Mishonov, O.K. Baranova, J.R. Reagan, T.P. Boyer, D. Seidov, Z. Wang, H.E. Garcia, "
+         "C. Bouchard, S.L. Cross, C.R. Paver, and D. Dukhovskoy (2024). World Ocean Atlas 2023, Volume 1: Temperature. "
+         "A. Mishonov Technical Editor, NOAA Atlas NESDIS 89, doi:10.25923/54bh-1613",
+    "s": "Reagan, J.R., D. Seidov, Z. Wang, D. Dukhovskoy, T.P. Boyer, R.A. Locarnini, O.K. Baranova, A.V. Mishonov, "
+         "H.E. Garcia, C. Bouchard, S.L. Cross, and C.R. Paver (2024). World Ocean Atlas 2023, Volume 2: Salinity. "
+         "A. Mishonov Technical Editor, NOAA Atlas NESDIS 90, doi:10.25923/70qt-9574",
+    "dataset": "Reagan, J.R. et al. (2024). World Ocean Atlas 2023. NOAA National Centers for Environmental Information. "
+               "Dataset: NCEI Accession 0270533",
+    "teos10": "IOC, SCOR and IAPSO (2010). The international thermodynamic equation of seawater - 2010 (TEOS-10). "
+              "Computed with the gsw Python package",
+}
+
+
+# ---------------------------------------------------------------- fetch
+
+def dods_url(v: str, res: str, tt: str) -> str:
+    rr = "04" if res == "0.25" else "01"
+    return f"{DODS}/{VARS[v]}/netcdf/{PERIOD}/{res}/woa23_{PERIOD}_{v}{tt}_{rr}.nc"
+
+
+def _read(url: str, var: str, k: int | slice, tries: int = 5) -> np.ndarray:
+    import netCDF4  # only needed for fetching
+
+    for attempt in range(tries):
+        try:
+            with netCDF4.Dataset(url) as ds:
+                a = ds.variables[var][0, k, :, :]
+            return np.ma.filled(a.astype(np.float32), np.nan)
+        except Exception as e:  # network hiccups: retry with backoff
+            if attempt == tries - 1:
+                raise
+            print(f"  retry {attempt + 1}: {e}", flush=True)
+            time.sleep(5 * (attempt + 1))
+    raise RuntimeError("unreachable")
+
+
+def coords(url: str) -> dict:
+    import netCDF4
+
+    with netCDF4.Dataset(url) as ds:
+        return {k: ds.variables[k][:].astype(float).tolist() for k in ("lat", "lon", "depth")}
+
+
+def fetch() -> None:
+    RAW.mkdir(parents=True, exist_ok=True)
+    meta_p = RAW / "coords.json"
+    if not meta_p.exists():
+        c = {"q": coords(dods_url("t", "0.25", "00")), "one": coords(dods_url("t", "1.00", "00"))}
+        meta_p.write_text(json.dumps(c))
+    c = json.loads(meta_p.read_text())
+    depths = c["q"]["depth"]
+    jobs: list[tuple[Path, str, str, int | slice]] = []
+    for v in VARS:
+        for d in MAP_DEPTHS:
+            jobs.append((RAW / f"{v}_an_025_annual_{d:04d}m.npy", dods_url(v, "0.25", "00"), f"{v}_an", depths.index(d)))
+    for m in range(1, 13):
+        jobs.append((RAW / f"t_an_025_m{m:02d}_0000m.npy", dods_url("t", "0.25", f"{m:02d}"), "t_an", 0))
+    for v in VARS:
+        jobs.append((RAW / f"{v}_an_1deg_annual_all.npy", dods_url(v, "1.00", "00"), f"{v}_an", slice(None)))
+    for i, (path, url, var, k) in enumerate(jobs, 1):
+        if path.exists():
+            continue
+        t0 = time.time()
+        a = _read(url, var, k)
+        np.save(path.with_suffix(".tmp.npy"), a)
+        path.with_suffix(".tmp.npy").rename(path)
+        print(f"[{i}/{len(jobs)}] {path.name} {a.shape} {a.nbytes / 1e6:.1f} MB in {time.time() - t0:.1f} s", flush=True)
+    total = sum(p.stat().st_size for p in RAW.glob("*.npy"))
+    print(f"raw WOA23 subsets: {total / 1e6:.0f} MB in {RAW}")
+
+
+# ---------------------------------------------------------------- science
+
+def sigma0(t: np.ndarray, sp: np.ndarray, depth_m: float | np.ndarray, lon: np.ndarray, lat: np.ndarray) -> np.ndarray:
+    """Potential density anomaly sigma0 (kg/m^3) from in-situ temperature (deg C, ITS-90), practical salinity,
+    depth (m, positive down), lon/lat (deg), TEOS-10. All inputs broadcast together."""
+    import gsw
+
+    z = -np.asarray(depth_m, dtype=np.float64)
+    p = gsw.p_from_z(z, lat)
+    sa = gsw.SA_from_SP(sp, p, lon, lat)
+    ct = gsw.CT_from_t(sa, t, p)
+    return gsw.sigma0(sa, ct)
+
+
+# ---------------------------------------------------------------- encodings
+
+def quantise_u16(a: np.ndarray, step: float) -> tuple[np.ndarray, float]:
+    """uint16 at a fixed physical step: 0 = no data, value = lo + (q - 1) * step, lo = layer minimum
+    rounded down to a multiple of the step."""
+    ok = np.isfinite(a)
+    q = np.zeros(a.shape, np.uint16)
+    if not ok.any():
+        return q, 0.0
+    lo = float(np.floor(np.nanmin(a) / step) * step)
+    v = np.rint((a[ok] - lo) / step) + 1
+    if v.max() > 65535:
+        raise ValueError(f"range {lo}..{np.nanmax(a)} too wide for step {step}")
+    q[ok] = v.astype(np.uint16)
+    return q, lo
+
+
+def dequantise_u16(q: np.ndarray, lo: float, step: float) -> np.ndarray:
+    out = lo + (q.astype(np.float64) - 1) * step
+    out[q == 0] = np.nan
+    return out
+
+
+def byte_planes(q: np.ndarray) -> bytes:
+    """uint16 -> all low bytes, then all high bytes (compresses ~25 % better than interleaved)."""
+    b = np.frombuffer(q.astype("<u2").tobytes(), np.uint8).reshape(-1, 2)
+    return b[:, 0].tobytes() + b[:, 1].tobytes()
+
+
+def from_byte_planes(raw: bytes, shape: tuple[int, ...]) -> np.ndarray:
+    b = np.frombuffer(raw, np.uint8)
+    n = b.size // 2
+    return (b[:n].astype(np.uint16) | (b[n:].astype(np.uint16) << 8)).reshape(shape)
+
+
+def encode_i16(a: np.ndarray, offset: float) -> np.ndarray:
+    q = np.full(a.shape, COL_FILL, np.int16)
+    ok = np.isfinite(a)
+    v = np.rint((a[ok] - offset) / COL_SCALE)
+    if v.size and (v.min() <= COL_FILL or v.max() > 32767):
+        raise ValueError(f"value out of int16 range for offset {offset}: {a[ok].min()}..{a[ok].max()}")
+    q[ok] = v.astype(np.int16)
+    return q
+
+
+def decode_i16(q: np.ndarray, offset: float) -> np.ndarray:
+    out = offset + q.astype(np.float64) * COL_SCALE
+    out[q == COL_FILL] = np.nan
+    return out
+
+
+def north_up(a: np.ndarray) -> np.ndarray:
+    """WOA rows run south -> north; the web files run north -> south (row 0 = northernmost)."""
+    return a[..., ::-1, :]
+
+
+def deflate(b: bytes) -> bytes:
+    return zlib.compress(b, 9)
+
+
+# ---------------------------------------------------------------- build
+
+def load(name: str) -> np.ndarray:
+    return np.load(RAW / name)
+
+
+def build() -> None:
+    c = json.loads((RAW / "coords.json").read_text())
+    latq, lonq = np.array(c["q"]["lat"]), np.array(c["q"]["lon"])
+    lat1, lon1, dep1 = np.array(c["one"]["lat"]), np.array(c["one"]["lon"]), np.array(c["one"]["depth"])
+    (OUT / "map").mkdir(parents=True, exist_ok=True)
+    (OUT / "col").mkdir(parents=True, exist_ok=True)
+    LON, LAT = np.meshgrid(lonq, latq)
+    layers: dict[str, dict] = {}
+    sizes = {"map": 0, "col": 0}
+
+    def put_map(key: str, a: np.ndarray) -> None:
+        step = MAP_STEP[key[0]]
+        q, lo = quantise_u16(north_up(a), step)
+        hi = float(np.nanmax(a))
+        blob = deflate(byte_planes(q))
+        (OUT / "map" / f"{key}.bin").write_bytes(blob)
+        sizes["map"] += len(blob)
+        ok = np.isfinite(a)
+        pct = np.nanpercentile(a, [2, 98]).tolist() if ok.any() else [lo, hi]
+        layers[key] = {"lo": round(lo, 6), "step": step, "hi": round(hi, 5), "p2": round(pct[0], 4), "p98": round(pct[1], 4),
+                       "bytes": len(blob), "ocean_cells": int(ok.sum())}
+
+    for d in MAP_DEPTHS:
+        t = load(f"t_an_025_annual_{d:04d}m.npy")
+        s = load(f"s_an_025_annual_{d:04d}m.npy")
+        both = np.isfinite(t) & np.isfinite(s)
+        dens = np.full(t.shape, np.nan)
+        dens[both] = sigma0(t[both], s[both], d, LON[both], LAT[both])
+        put_map(f"t_{d}", t)
+        put_map(f"s_{d}", s)
+        put_map(f"d_{d}", dens)
+        print(f"map {d:>5} m: T {np.nanmin(t):.2f}..{np.nanmax(t):.2f}  S {np.nanmin(s):.2f}..{np.nanmax(s):.2f}  "
+              f"sigma0 {np.nanmin(dens):.2f}..{np.nanmax(dens):.2f}", flush=True)
+    for m in range(1, 13):
+        put_map(f"t_m{m:02d}", load(f"t_an_025_m{m:02d}_0000m.npy"))
+
+    # 1 deg water columns, 30 x 30 deg regions
+    T = load("t_an_1deg_annual_all.npy")  # (102, 180, 360), south -> north
+    S = load("s_an_1deg_annual_all.npy")
+    L1, LA1 = np.meshgrid(lon1, lat1)
+    both = np.isfinite(T) & np.isfinite(S)
+    D = np.full(T.shape, np.nan)
+    Z = np.broadcast_to(dep1[:, None, None], T.shape)
+    LO = np.broadcast_to(L1, T.shape)
+    LA = np.broadcast_to(LA1, T.shape)
+    D[both] = sigma0(T[both], S[both], Z[both], LO[both], LA[both])
+    # one mask for all three variables: a level counts only where both T and S exist
+    T = np.where(both, T, np.nan)
+    S = np.where(both, S, np.nan)
+    Tn, Sn, Dn = north_up(T), north_up(S), north_up(D)
+    n = CHUNK_DEG
+    nchunks = 0
+    for i in range(180 // n):          # rows, north -> south
+        for j in range(360 // n):      # cols, west -> east from 180 W
+            sl = (slice(None), slice(i * n, (i + 1) * n), slice(j * n, (j + 1) * n))
+            if not np.isfinite(Tn[sl]).any():
+                continue
+            parts = [encode_i16(Tn[sl], COL_OFFSET["t"]), encode_i16(Sn[sl], COL_OFFSET["s"]),
+                     encode_i16(Dn[sl], COL_OFFSET["d"])]
+            raw = np.stack(parts).astype("<i2").tobytes()  # [var][level][row][col]
+            blob = deflate(raw)
+            (OUT / "col" / f"{i}_{j}.bin").write_bytes(blob)
+            sizes["col"] += len(blob)
+            nchunks += 1
+
+    manifest = {
+        "source": "World Ocean Atlas 2023 (NOAA NCEI), objectively analysed climatological mean",
+        "period": "1991-2020", "period_code": PERIOD,
+        "citations": CITATIONS,
+        "licence": "NOAA NCEI data, openly available to the public without restriction (US Government work); "
+                   "acknowledge WOA23 as cited",
+        "urls": {"opendap": f"{DODS}/", "files": f"{FILE_URL}/"},
+        "variables": {
+            "t": {"name": "Temperature", "units": "°C", "long": "in-situ temperature (ITS-90)", "range": RANGES["t"],
+                  "cmap": "cmocean thermal"},
+            "s": {"name": "Salinity", "units": "", "long": "practical salinity (PSS-78, unitless)", "range": RANGES["s"],
+                  "cmap": "cmocean haline"},
+            "d": {"name": "Density", "units": "kg/m³", "long": "potential density anomaly σ0 = ρ(SA, CT, 0) − 1000 (TEOS-10)",
+                  "range": RANGES["d"], "cmap": "cmocean dense"},
+        },
+        "map": {"res_deg": 0.25, "width": 1440, "height": 720, "north": 90.0, "west": -180.0, "rows": "north_to_south",
+                "encoding": "zlib-deflated uint16 as two byte planes (all low bytes, then all high bytes); "
+                            "0 = no data; value = lo + (q - 1) * step",
+                "depths": MAP_DEPTHS, "monthly": {"var": "t", "depth": 0, "months": list(range(1, 13))},
+                "layers": layers},
+        "columns": {"res_deg": 1.0, "width": 360, "height": 180, "chunk_deg": n, "depths": dep1.tolist(),
+                    "encoding": "zlib-deflated little-endian int16 [var t,s,d][level][row][col] per chunk; "
+                                "value = offset + q * scale; -32768 = no data",
+                    "scale": COL_SCALE, "offset": COL_OFFSET, "fill": COL_FILL, "vars": ["t", "s", "d"],
+                    "chunks": nchunks},
+        "sizes_bytes": sizes,
+    }
+    (OUT / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")))
+    total = sum(p.stat().st_size for p in OUT.rglob("*") if p.is_file())
+    print(f"wrote {OUT}: maps {sizes['map'] / 1e6:.1f} MB, columns {sizes['col'] / 1e6:.1f} MB in {nchunks} chunks, "
+          f"total {total / 1e6:.1f} MB")
+
+
+# ---------------------------------------------------------------- check
+
+def column_at(lon: float, lat: float) -> dict:
+    """Decode one 1 deg column from the built web files (what the viewer reads)."""
+    m = json.loads((OUT / "manifest.json").read_text())["columns"]
+    row = int(np.clip(np.floor(90 - lat), 0, 179))
+    col = int(np.clip(np.floor(lon + 180), 0, 359))
+    n = m["chunk_deg"]
+    blob = (OUT / "col" / f"{row // n}_{col // n}.bin").read_bytes()
+    nl = len(m["depths"])
+    a = np.frombuffer(zlib.decompress(blob), "<i2").reshape(3, nl, n, n)
+    r, c = row % n, col % n
+    return {v: decode_i16(a[k, :, r, c].copy(), m["offset"][v]) for k, v in enumerate(m["vars"])} | {"depth": np.array(m["depths"])}
+
+
+def map_value(key: str, lon: float, lat: float) -> float:
+    man = json.loads((OUT / "manifest.json").read_text())["map"]
+    L = man["layers"][key]
+    q = from_byte_planes(zlib.decompress((OUT / "map" / f"{key}.bin").read_bytes()), (720, 1440))
+    r = int(np.clip(np.floor((90 - lat) / 0.25), 0, 719))
+    c = int(np.clip(np.floor((lon + 180) / 0.25), 0, 1439))
+    return float(dequantise_u16(q[r:r + 1, c:c + 1], L["lo"], L["step"])[0, 0])
+
+
+SPOTS = [
+    ("West Pacific warm pool, surface T", "t_0", 150.0, 0.0),
+    ("Weddell Sea shelf, surface T (Antarctica)", "t_0", -45.0, -74.0),
+    ("Weddell Sea, inner shelf, surface T", "t_0", -40.0, -72.0),
+    ("Ross Sea, surface T (Antarctica)", "t_0", 175.0, -76.5),
+    ("North Pacific abyss, 4,000 m T", "t_4000", -150.0, 30.0),
+    ("South Atlantic, 3,000 m T", "t_3000", -20.0, -30.0),
+    ("Subtropical N Atlantic, surface S", "s_0", -45.0, 25.0),
+    ("Bay of Bengal, surface S", "s_0", 89.5, 19.5),
+    ("Gulf of Cadiz / off Iberia, 1,000 m S (Mediterranean outflow)", "s_1000", -12.0, 37.0),
+    ("Western N Atlantic, 1,000 m S (same latitude, no outflow)", "s_1000", -60.0, 37.0),
+    ("Red Sea, surface S", "s_0", 38.5, 21.0),
+    ("Tropical surface sigma0", "d_0", 150.0, 0.0),
+    ("Weddell Sea, 4,000 m sigma0", "d_4000", -30.0, -65.0),
+]
+
+
+def check() -> None:
+    for label, key, lon, lat in SPOTS:
+        print(f"{label:<66} {key:<7} ({lon:>7.2f}, {lat:>6.2f}): {map_value(key, lon, lat):8.3f}")
+    c = column_at(-20.5, 30.5)
+    ok = np.isfinite(c["t"])
+    print("water column 20.5W 30.5N (Canary Basin), selected levels:")
+    for z in (0, 100, 500, 1000, 1500, 2000, 3000, 4000, 5000):
+        k = int(np.where(c["depth"] == z)[0][0])
+        if ok[k]:
+            print(f"  {z:>5} m  T {c['t'][k]:7.3f} °C  S {c['s'][k]:7.3f}  sigma0 {c['d'][k]:7.3f} kg/m³")
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("step", nargs="?", default="all", choices=["fetch", "build", "check", "all"])
+    step = ap.parse_args().step
+    if step in ("fetch", "all"):
+        fetch()
+    if step in ("build", "all"):
+        build()
+    if step in ("check", "all"):
+        check()
+    sys.exit(0)

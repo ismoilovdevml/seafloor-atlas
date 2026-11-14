@@ -118,6 +118,50 @@ const shot = (page, f) => page.screenshot({ path: `${outdir}/${f}` });
     await page.evaluate(() => window.__seafloor.closeSea());
   }
 
+  // ocean water (WOA23): layer, readout, monthly animation, water-column chart, coexistence with other tools
+  if (await page.evaluate(() => window.__seafloor.water?.ready)) {
+    const W = (fn, arg) => page.evaluate(fn, arg);
+    await W(() => { const s = window.__seafloor; s.map.jumpTo({ center: [160, 0], zoom: 1.8, pitch: 0, bearing: 0 }); return s.water.show('t', 0); });
+    await settle(1500);
+    const st = await W(() => window.__seafloor.water.state());
+    // the map canvas behind the layer: warm-pool pixel must be in the warm (orange/yellow) end of cmocean thermal
+    const px = await W(() => { const c = window.__seafloor.map.getSource('water').getCanvas(); const x = Math.floor(((150 + 180) / 360) * c.width), y = c.height / 2; return [...c.getContext('2d').getImageData(x, y, 1, 1).data]; });
+    ok('water layer visible with warm colours in the West Pacific', st.open && st.visibility === 'visible' && px[3] === 255 && px[0] > 200 && px[2] < 140, `${JSON.stringify(st)} rgba ${px}`);
+    await page.evaluate(() => window.__seafloor.readout(150, 0));
+    const tv = await page.textContent('#r-meas');
+    const tnum = Number((tv || '').replace('−', '-').replace(/[^\d.-]/g, ''));
+    ok('readout: surface temperature in the warm pool 28-31 °C', tnum > 28 && tnum < 31 && (await page.textContent('#r-meas-dt')).startsWith('Temperature'), tv);
+    await shot(page, 'water-t0.png');
+    await W(() => window.__seafloor.water.set({ v: 's', depthIdx: 5 }));
+    await page.evaluate(() => window.__seafloor.readout(-12, 37));
+    const med = Number((await page.textContent('#r-meas')).replace(/[^\d.]/g, ''));
+    await page.evaluate(() => window.__seafloor.readout(-60, 37));
+    const west = Number((await page.textContent('#r-meas')).replace(/[^\d.]/g, ''));
+    ok('readout: Mediterranean outflow at 1,000 m saltier than the western Atlantic', med > 35.6 && med - west > 0.5, `off Iberia ${med}, 60° W ${west}`);
+    const col = await W(() => window.__seafloor.water.column(-20.5, 30.5));
+    await settle(500);
+    const paths = await page.locator('#wc-chart svg path.series').count();
+    ok('water-column chart renders T, S and density down to the abyss', col && col.series === 3 && paths === 3 && col.bottom >= 4000 && col.surface.d > 20 && col.surface.d < 28,
+      JSON.stringify(col));
+    await shot(page, 'water-column.png');
+    await W(() => { const w = window.__seafloor.water; w.set({ v: 't', depthIdx: 0 }); w.stats(); w.play(true); });
+    await page.waitForTimeout(3000);
+    const anim = await W(() => { const w = window.__seafloor.water; const st = w.state(); w.play(false); return { st, stats: w.stats() }; });
+    ok('monthly animation runs (redraw p95 < 60 ms)', anim.st.playing && anim.stats.renders > 10 && anim.stats.p95Ms < 60, JSON.stringify(anim.stats));
+    await W(() => window.__seafloor.openSea());
+    ok('opening sea level closes the water panel', !(await W(() => window.__seafloor.water.state())).open);
+    await W(() => { window.__seafloor.closeSea(); return window.__seafloor.water.show('d', 1000); });
+    await W(() => window.__seafloor.playStory('challenger-deep', true));
+    await settle(400);
+    const after = await W(() => window.__seafloor.water.state());
+    ok('a story turns the water layer off', !after.open && after.visibility === 'none', JSON.stringify(after));
+    await page.evaluate(() => { location.hash = '#water=s-1000'; });
+    await page.waitForTimeout(1200);
+    const linked = await W(() => window.__seafloor.water.state());
+    ok('#water=s-1000 link opens salinity at 1,000 m', linked.open && linked.v === 's' && linked.depth === 1000, JSON.stringify(linked));
+    await W(() => window.__seafloor.water.close());
+  }
+
   // deep link changed in an open tab
   await page.evaluate(() => { location.hash = '#story=drake-passage'; });
   await page.waitForTimeout(800);
@@ -136,6 +180,14 @@ const shot = (page, f) => page.screenshot({ path: `${outdir}/${f}` });
   await shot(page, 'phone-layers.png');
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
   ok('phone: no horizontal scroll', !overflow);
+  if (await page.evaluate(() => window.__seafloor.water?.ready)) {
+    await page.evaluate(() => window.__seafloor.water.show('t', 0));
+    await page.evaluate(() => window.__seafloor.water.column(-160, 20));
+    await settle(800);
+    const r = await page.evaluate(() => { const w = document.getElementById('water').getBoundingClientRect(); return { top: w.top, bottom: w.bottom, h: innerHeight, over: document.documentElement.scrollWidth > innerWidth, series: document.querySelectorAll('#wc-chart svg path.series').length }; });
+    ok('phone: water sheet fits, chart drawn, no horizontal scroll', r.bottom <= r.h + 1 && r.top > 100 && !r.over && r.series === 3, JSON.stringify(r));
+    await shot(page, 'phone-water.png');
+  }
   await page.close();
 }
 

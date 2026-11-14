@@ -1,0 +1,63 @@
+{
+ "layer": "shipping",
+ "title": "Shipping traffic density",
+ "units": "AIS position reports per km² per year",
+ "period": "2015-01/2021-02",
+ "scale": "log10",
+ "log10Min": 2.5,
+ "log10Max": 8.0,
+ "transparentBelow": 100.0,
+ "alphaMin": 70,
+ "alphaMax": 235,
+ "colormap": "matplotlib inferno from 0.18",
+ "stops": [
+  {
+   "value": 316.0,
+   "log10": 2.5,
+   "color": "#390963"
+  },
+  {
+   "value": 1000.0,
+   "log10": 3.0,
+   "color": "#59106e"
+  },
+  {
+   "value": 10000.0,
+   "log10": 4.0,
+   "color": "#952667"
+  },
+  {
+   "value": 100000.0,
+   "log10": 5.0,
+   "color": "#ce4347"
+  },
+  {
+   "value": 1000000.0,
+   "log10": 6.0,
+   "color": "#f37819"
+  },
+  {
+   "value": 10000000.0,
+   "log10": 7.0,
+   "color": "#fbbe23"
+  },
+  {
+   "value": 100000000.0,
+   "log10": 8.0,
+   "color": "#fcffa4"
+  }
+ ],
+ "tileSize": 512,
+ "minzoom": 0,
+ "maxzoom": 5,
+ "format": "webp (lossy RGBA)",
+ "sourceResolutionDeg": 0.005,
+ "aggregatedResolutionDeg": 0.02,
+ "source": "World Bank / IMF, Global Shipping Traffic Density (dataset 0037580)",
+ "sourceUrl": "https://datacatalog.worldbank.org/search/dataset/0037580",
+ "licence": "CC BY 4.0",
+ "attribution": "Shipping density: World Bank / IMF (Cerdeiro, Komaromi, Liu & Saeed 2020), CC BY 4.0",
+ "tiles": 1365,
+ "emptyTiles": 273,
+ "bytes": 38574442
+}

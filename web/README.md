@@ -18,6 +18,10 @@ What it answers:
   exposed sea floor in sand, flooded land in blue. Presets (ice age −120 m, ridges −2,500 m, trenches −6,000 m,
   +1/+10 m, no land ice ~+70 m), play/pause animation, land area for that level from `public/data/hypsometry.json`
   (`pipeline/hypsometry.py`), hover depth relative to the chosen sea level. Deep link `#sea=-120`.
+* **What is the water like down there?** "Show ocean water" (WOA23, 1991–2020): temperature / salinity / potential
+  density at 11 depths over the relief, fixed colour ranges (cmocean thermal / haline / dense) with an optional stretch,
+  12-month surface-temperature animation, hover values, and a water-column chart (T, S, σ₀ vs depth) on click.
+  Data in `public/woa/` (`pipeline/woa.py`); deep link `#water=s-1000`. Screenshots: `node scripts/capture_water.mjs screenshots <url>`.
 * Guided views (`public/data/stories.json`), deep-linkable as `#story=<id>` (a story resets the sea level to today).
 
 ## Run

@@ -101,6 +101,24 @@ export function seaLevelExpression(level: number): unknown[] {
   return e;
 }
 
+// ---------- under the ocean-water layer ----------
+// While temperature / salinity / density are shown, the relief ramp drops its hue: the seafloor becomes a
+// low-chroma slate (darker with depth) and land keeps its greys, so every hue on the globe belongs to the
+// water layer, and seafloor that rises above the chosen depth (no water there) reads as plain rock.
+export const UNDERLAY_STOPS: [number, string][] = [
+  [-11000, '#0d131c'],
+  [-6000, '#131b26'],
+  [-4000, '#18222f'],
+  [-2000, '#1f2a38'],
+  [-500, '#283444'],
+  [-0.05, '#303c4b'],
+];
+export function underlayExpression(): unknown[] {
+  const e: unknown[] = ['interpolate', ['linear'], ['elevation']];
+  for (const [h, c] of [...UNDERLAY_STOPS, ...LAND_STOPS]) e.push(h, c);
+  return e;
+}
+
 /** Plate boundary classes as written by pipeline/plates.py (plus the contract's "trench" alias). */
 export type PlateClass = 'ridge' | 'rift' | 'subduction' | 'transform' | 'convergent' | 'other';
 export const PLATE_STYLE: Record<'ridge' | 'subduction' | 'transform' | 'convergent', { color: string; label: string; note: string }> = {

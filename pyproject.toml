@@ -12,6 +12,8 @@ dependencies = [
   "cmocean>=3",
   "scipy>=1.14",
   "pytest>=8",
+  "gsw>=3.6",
+  "netCDF4>=1.7",
 ]
 [tool.uv]
 package = false

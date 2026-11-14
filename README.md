@@ -15,6 +15,7 @@ A map of the whole Earth's ocean floor, built from the open **GEBCO_2026** grid.
 * **Depth profile:** click two points and get the depth along the line (here: across Challenger Deep, 227 km, deepest −10,721 m).
 * **Guided views:** 11 places such as Challenger Deep, the Hawaiian–Emperor bend, the Mid-Atlantic Ridge and the MH370 search area.
 * **Search** 5,412 named undersea features; **plate boundaries** with spreading rates.
+* **Ocean water:** temperature, salinity and potential density (TEOS-10) from the surface to 5,000 m, a month-by-month surface-temperature animation, and a water-column chart (T, S, σ₀ vs depth) wherever you click ([salinity at 1,000 m: the Mediterranean outflow](web/screenshots/water-2-salinity-1000m-mediterranean.png)). Data: World Ocean Atlas 2023, 1991–2020 normal (Locarnini et al. 2024, doi:10.25923/54bh-1613; Reagan et al. 2024, doi:10.25923/70qt-9574), open NOAA data.
 * **Change sea level** from −6,000 m to +100 m, with an animation and presets: at the ice-age −120 m, Beringia, Sundaland, Sahul and Doggerland are dry land and Earth has **21.8 million km²** more land than today; at +70 m (about all land ice melted) it has **15.8 million km²** less. Areas are computed from the 1′ grid (`pipeline/hypsometry.py`; today 148.2 million km², 29.0 % of Earth, ice surfaces counted as land).
 
 | Measured vs estimated | Depth profile across the Mariana Trench |
@@ -125,6 +126,7 @@ pipeline/fetch_data.sh                    # inputs (~470 MB, needs GDAL)
 .venv/bin/python pipeline/features.py     # undersea feature names
 .venv/bin/python pipeline/plates.py       # plate boundaries
 .venv/bin/python pipeline/hypsometry.py   # land area vs sea level for the viewer (~5 s)
+.venv/bin/python pipeline/woa.py          # ocean water layer: WOA23 subsets over OPeNDAP (194 MB, ~6 min) + TEOS-10 density
 .venv/bin/python pipeline/change.py       # 2025 -> 2026 comparison (needs the 2025 TID grid)
 .venv/bin/python pipeline/tiles.py --only new2026
 .venv/bin/python pipeline/figures.py      # README figures

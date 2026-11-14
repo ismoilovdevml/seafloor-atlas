@@ -9,12 +9,13 @@ import { buildStyle, DOT_IMAGE, FEATURE_LAYERS, makeDot, type Meta } from './sty
 import { TileSampler } from './sampler';
 import { configureTiles, maxZoomFor, PROTOCOL, protocolHandler } from './tilesource';
 import { ProfileChart } from './profile-chart';
-import { BATHY_STOPS, EXPOSED_HIGH, EXPOSED_LOW, FLOODED_DEEP, FLOODED_SHALLOW, PLATE_STYLE, seaLevelExpression } from './palette';
+import { BATHY_STOPS, EXPOSED_HIGH, EXPOSED_LOW, FLOODED_DEEP, FLOODED_SHALLOW, PLATE_STYLE, seaLevelExpression, underlayExpression } from './palette';
 import {
   KNEE_LEVEL, PRESETS, SEA_MAX, SEA_MIN, SLIDER_MAX, formatLevel, hashWithSea, landAreaAt, levelToPos, posToLevel, presetFor, seaFromHash, snapLevel,
   type Hypsometry,
 } from './sealevel';
 import { formatDepth, formatLat, formatLon, greatCircle, haversineKm, profileZoom, unwrapPath } from './geo';
+import { WaterUI } from './water-ui';
 
 maplibregl.setWorkerUrl(workerUrl);
 
@@ -142,6 +143,7 @@ $('plate-key').innerHTML = (Object.keys(PLATE_STYLE) as (keyof typeof PLATE_STYL
   $('credits-body').innerHTML = `
     <p><strong>Bathymetry</strong>: ${meta.citation}${synthetic ? '' : ''}, <a href="https://doi.org/${doi}" target="_blank" rel="noopener">doi:${doi}</a>. ${meta.licence ?? 'Open Government Licence v3'}: <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/" target="_blank" rel="noopener">OGL v3</a>. Shown at ${meta.sourceResolutionArcsec / 60} arc-minute resolution. “Measured” = GEBCO type identifier 10–17 (direct survey).</p>
     <p><strong>Plate boundaries</strong>: Bird, P. (2003) An updated digital model of plate boundaries, <em>G³</em> 4(3), 1027, <a href="https://doi.org/10.1029/2001GC000252" target="_blank" rel="noopener">doi:10.1029/2001GC000252</a> (PB2002), ODC-By 1.0.</p>
+    <p><strong>Ocean water</strong>: World Ocean Atlas 2023, 1991–2020 climate normal, objectively analysed means (NOAA NCEI). Temperature: Locarnini et al. (2024), NOAA Atlas NESDIS 89, <a href="https://doi.org/10.25923/54bh-1613" target="_blank" rel="noopener">doi:10.25923/54bh-1613</a>. Salinity: Reagan et al. (2024), NOAA Atlas NESDIS 90, <a href="https://doi.org/10.25923/70qt-9574" target="_blank" rel="noopener">doi:10.25923/70qt-9574</a>. Potential density computed here with TEOS-10 (gsw). Colour maps: cmocean (Thyng et al. 2016).</p>
     <p>Rendered with <a href="https://maplibre.org" target="_blank" rel="noopener">MapLibre GL JS</a>.${synthetic ? ' <strong>These are synthetic development tiles, not real data.</strong>' : ''}</p>`;
 }
 
@@ -186,6 +188,7 @@ function markStory(id: string | null) {
 let currentStory: Story | null = null;
 function playStory(s: Story, instant = false) {
   closeSea(false); // stories are told at today's sea level
+  water.close(false); // and over the plain relief
   currentStory = s;
   markStory(s.id);
   show('feature-card', false);
@@ -254,8 +257,10 @@ input.addEventListener('blur', () => setTimeout(() => { results.hidden = true; i
 // ---------- hover readout ----------
 let readToken = 0;
 let lastRead: { h: number; f: number | null } | null = null;
+let lastPoint: [number, number] | null = null;
 async function readout(lon: number, lat: number) {
   const t = ++readToken;
+  lastPoint = [lon, lat];
   const { h, f } = await sampler.sample([[lon, lat]]);
   if (t !== readToken) return;
   $('readout-hint').hidden = true; $('readout-grid').hidden = false;
@@ -264,6 +269,15 @@ async function readout(lon: number, lat: number) {
   lastRead = { h: h[0], f: f[0] };
   renderDepth();
   $('r-meas').textContent = f[0] === null ? 'land' : Number.isNaN(f[0]) ? 'n/a' : `${Math.round(f[0] * 100)}%`;
+  renderWaterReadout();
+}
+/** While the ocean-water panel is open, the second readout cell shows the water value instead of coverage. */
+function renderWaterReadout() {
+  if (!lastPoint || !lastRead) return;
+  const w = water.readout(lastPoint[0], lastPoint[1]);
+  if (!w) { $('r-meas-dt').textContent = 'Measured by ship'; return; }
+  $('r-meas-dt').textContent = w.label;
+  $('r-meas').textContent = w.value;
 }
 /** Depth relative to the sea level shown; with a changed sea level, today's value is kept beside it. */
 function renderDepth() {
@@ -300,7 +314,7 @@ function setProfileSource(a: [number, number] | null, b: [number, number] | null
   (map.getSource('profile') as GeoJSONSource).setData({ type: 'FeatureCollection', features: feats });
 }
 function setProfiling(on: boolean) {
-  if (on) closeSea();
+  if (on) { closeSea(); water.close(); }
   profiling = on;
   $('profile-btn').setAttribute('aria-pressed', String(on));
   $('profile-btn').textContent = on ? 'Stop drawing profiles' : 'Draw a depth profile';
@@ -343,6 +357,7 @@ map.on('click', (e) => {
     return;
   }
   readout(e.lngLat.lng, e.lngLat.lat);
+  if (water.open) water.showColumn(e.lngLat.lng, e.lngLat.lat);
   const box: [maplibregl.PointLike, maplibregl.PointLike] = [[e.point.x - 6, e.point.y - 6], [e.point.x + 6, e.point.y + 6]];
   const layers = [...FEATURE_LAYERS, ...(tPlates.checked ? ['plates'] : [])];
   const hit: MapGeoJSONFeature | undefined = map.queryRenderedFeatures(box, { layers })[0];
@@ -475,6 +490,7 @@ function setPlaying(on: boolean) {
 
 function openSea(level?: number) {
   if (profiling) setProfiling(false);
+  water.close();
   seaOpen = true;
   show('sea', true);
   $('ui').classList.add('sea-open');
@@ -506,6 +522,21 @@ $('sea-presets').addEventListener('click', (e) => {
 // a hidden tab gets no animation frames; resume cleanly instead of jumping
 document.addEventListener('visibilitychange', () => { lastT = 0; });
 
+// ---------- ocean water (WOA23) ----------
+const water = new WaterUI({
+  map, base: 'woa/',
+  beforeOpen: () => { if (seaOpen) closeSea(); if (profiling) setProfiling(false); },
+  layout: () => updatePadding(),
+  seafloorAt: async (lon, lat) => (await sampler.sample([[lon, lat]])).h[0],
+  onChange: () => renderWaterReadout(),
+  underlay: (on) => {
+    map.setPaintProperty('relief', 'color-relief-color', (on ? underlayExpression() : seaLevelExpression(seaLevel)) as never);
+    seaApplied = seaLevel;
+    $('depth-legend').hidden = on; // the depth ramp legend does not describe the neutral under-layer
+  },
+});
+const waterReady = await water.init();
+
 // ---------- keep the globe centred in the part of the screen the panels leave free ----------
 const touch = window.matchMedia('(hover: none)').matches;
 if (touch) $('readout-hint').textContent = 'Tap the seafloor to read its depth.';
@@ -520,8 +551,9 @@ function updatePadding() {
     pad = { top: Math.round(top), bottom: Math.round(H - Math.min(...tops)), left: 0, right: 0 };
   } else {
     // the sea-level panel sits over the bottom of the globe: keep the view centred above it
-    const bottom = seaOpen ? Math.round(H - r('sea').top + 12) : 0;
-    pad = { top: 0, bottom, left: Math.round(r('stories').right), right: Math.round(W - r('layers').left) };
+    const bottom = seaOpen ? Math.round(H - r('sea').top + 12) : water.open ? Math.round(H - r('water').top + 12) : 0;
+    const layersShown = getComputedStyle($('layers')).display !== 'none';
+    pad = { top: 0, bottom, left: Math.round(r('stories').right), right: layersShown ? Math.round(W - r('layers').left) : 0 };
   }
   const cur = map.getPadding();
   if (cur.top === pad.top && cur.bottom === pad.bottom && cur.left === pad.left && cur.right === pad.right) return;
@@ -530,7 +562,7 @@ function updatePadding() {
 {
   let raf = 0;
   const ro = new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(updatePadding); });
-  for (const id of ['ui', 'readout', 'stories', 'layers', 'profile', 'sea', 'story-card', 'feature-card']) ro.observe($(id));
+  for (const id of ['ui', 'readout', 'stories', 'layers', 'profile', 'sea', 'water', 'story-card', 'feature-card']) ro.observe($(id));
 }
 updatePadding();
 
@@ -554,12 +586,17 @@ const linkedSea = seaFromHash(location.hash); // read before playStory rewrites 
 if (linked) playStory(linked, true);
 // #sea=<metres> opens the sea-level panel at that level (after a story, which resets it)
 if (linkedSea !== null) openSea(linkedSea);
+// #water=t-1000 opens the ocean-water panel on that variable and depth
+const linkedWater = waterReady ? water.fromHash(location.hash) : null;
+if (linkedWater) water.show({ v: linkedWater.v, depth: linkedWater.depth });
 // a pasted or edited #story= / #sea= link in an already open tab does not reload the page
 window.addEventListener('hashchange', () => {
   const s = storyFromHash();
   if (s && s.id !== currentStory?.id) playStory(s);
   const sea = seaFromHash(location.hash);
   if (sea !== null && (!seaOpen || sea !== seaLevel)) { setPlaying(false); openSea(sea); }
+  const w = water.fromHash(location.hash);
+  if (w && (!water.open || w.v !== water.v || w.depth !== water.depth)) water.show({ v: w.v, depth: w.depth });
 });
 
 // ---------- test/capture hooks ----------
@@ -575,6 +612,19 @@ Object.assign(window, {
     current: () => currentStory?.id ?? null,
     openSea, closeSea, setSeaLevel: (L: number) => setSeaLevel(L), play: setPlaying,
     seaLevel: () => seaLevel,
+    water: {
+      ready: waterReady,
+      show: (v?: 't' | 's' | 'd', depth?: number) => water.show({ v, depth }),
+      close: () => water.close(),
+      set: (s: Parameters<WaterUI['set']>[0]) => water.set(s),
+      month: (m: number) => water.set({ month: m }),
+      play: (on: boolean) => water.setPlaying(on),
+      column: (lon: number, lat: number) => water.showColumn(lon, lat),
+      value: (lon: number, lat: number) => water.readout(lon, lat),
+      state: () => ({ open: water.open, v: water.v, depth: water.open ? water.depth : null, month: water.month, playing: water.playing,
+        visibility: map.getLayer('water') ? map.getLayoutProperty('water', 'visibility') : null }),
+      stats: () => water.renderStats(),
+    },
     /** frame-time summary since the last call (rAF intervals while playing, ramp swap -> next render) */
     seaStats: () => {
       const q = (xs: number[], p: number) => { const a = [...xs].sort((x, y) => x - y); return a.length ? +a[Math.min(a.length - 1, Math.floor(p * a.length))].toFixed(2) : null; };
