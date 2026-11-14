@@ -1,0 +1,817 @@
+{
+ "title": "Marine life (OBIS)",
+ "generated": "2026-11-14",
+ "grids": {
+  "gh4": {
+   "ncol": 1024,
+   "nrow": 1024,
+   "dlon": 0.3515625,
+   "dlat": 0.17578125,
+   "west": -180,
+   "north": 90,
+   "rowOrder": "row 0 = north",
+   "colOrder": "col 0 = 180 W"
+  },
+  "gh3": {
+   "ncol": 256,
+   "nrow": 128,
+   "dlon": 1.40625,
+   "dlat": 1.40625,
+   "west": -180,
+   "north": 90,
+   "rowOrder": "row 0 = north",
+   "colOrder": "col 0 = 180 W"
+  },
+  "csquare_0p5": {
+   "ncol": 720,
+   "nrow": 360,
+   "dlon": 0.5,
+   "dlat": 0.5,
+   "west": -180,
+   "north": 90,
+   "rowOrder": "row 0 = north",
+   "colOrder": "col 0 = 180 W"
+  }
+ },
+ "encoding": "zlib-deflated little-endian unsigned ints stored as byte planes (all byte-0s, then all byte-1s, ...), row-major ncol x nrow",
+ "layers": {
+  "records_gh4": {
+   "file": "grid/records_gh4.bin",
+   "grid": "gh4",
+   "dtype": "uint32",
+   "bytes": 492871,
+   "value": "OBIS occurrence records in the cell (all taxonomic ranks); 0 = none",
+   "source": "OBIS API occurrence/grid/4"
+  },
+  "ocean_gh4": {
+   "file": "grid/ocean_gh4.bin",
+   "grid": "gh4",
+   "dtype": "uint8",
+   "bytes": 67452,
+   "value": "ocean share of the cell = q / 255 (0 = land)"
+  },
+  "species_gh4": {
+   "file": "grid/species_gh4.bin",
+   "grid": "gh4",
+   "dtype": "uint16",
+   "bytes": 425909,
+   "value": "species recorded in the cell (OBIS speciesgrids, OBIS + GBIF); 0 = none"
+  },
+  "records_gh3": {
+   "file": "grid/records_gh3.bin",
+   "grid": "gh3",
+   "dtype": "uint32",
+   "bytes": 40402,
+   "value": "OBIS records (sum of gh4)"
+  },
+  "ocean_gh3": {
+   "file": "grid/ocean_gh3.bin",
+   "grid": "gh3",
+   "dtype": "uint8",
+   "bytes": 6134,
+   "value": "ocean share = q / 255"
+  },
+  "species_gh3": {
+   "file": "grid/species_gh3.bin",
+   "grid": "gh3",
+   "dtype": "uint16",
+   "bytes": 30277,
+   "value": "species recorded (speciesgrids); 0 = none"
+  },
+  "species_fish_gh3": {
+   "file": "grid/species_fish_gh3.bin",
+   "grid": "gh3",
+   "dtype": "uint16",
+   "bytes": 19072,
+   "value": "fish species recorded (speciesgrids)"
+  },
+  "records_sg_gh3": {
+   "file": "grid/records_sg_gh3.bin",
+   "grid": "gh3",
+   "dtype": "uint32",
+   "bytes": 44292,
+   "value": "species-level records in speciesgrids (OBIS + GBIF), the N behind ES50"
+  },
+  "es50_gh3": {
+   "file": "grid/es50_gh3.bin",
+   "grid": "gh3",
+   "dtype": "uint16",
+   "bytes": 39490,
+   "value": "ES50 = (q - 1) / 100; q = 0: fewer than 50 records (not enough data)"
+  },
+  "es50_fish_gh3": {
+   "file": "grid/es50_fish_gh3.bin",
+   "grid": "gh3",
+   "dtype": "uint16",
+   "bytes": 20631,
+   "value": "ES50 = (q - 1) / 100; q = 0: fewer than 50 records (not enough data)"
+  },
+  "aquamaps_richness": {
+   "file": "grid/aquamaps_richness.bin",
+   "grid": "csquare_0p5",
+   "dtype": "uint16",
+   "bytes": 186071,
+   "value": "AquaMaps predicted number of species (probability > 0.5); 0 = no prediction (land or outside)"
+  }
+ },
+ "scales": {
+  "records": {
+   "scale": "log10",
+   "log10Min": 0,
+   "log10Max": 6,
+   "cmap": "matplotlib magma",
+   "noRecordsColor": "#3a3f4b",
+   "note": "ocean cells with 0 records drawn in noRecordsColor"
+  },
+  "species": {
+   "scale": "log10",
+   "log10Min": 0,
+   "log10Max": 4,
+   "cmap": "matplotlib viridis"
+  },
+  "es50": {
+   "scale": "linear",
+   "min": 1,
+   "max": 50,
+   "cmap": "matplotlib viridis",
+   "maskedColor": "#3a3f4b",
+   "maskedLabel": "fewer than 50 records: not enough data"
+  },
+  "aquamaps": {
+   "scale": "log10",
+   "log10Min": 1,
+   "log10Max": 4,
+   "cmap": "matplotlib viridis",
+   "note": "median ocean cell ~325 species, 95th percentile ~1,200, Coral Triangle up to ~9,900"
+  },
+  "groupRecords": {
+   "scale": "log10",
+   "log10Min": 0,
+   "log10Max": 5
+  }
+ },
+ "groups": [
+  {
+   "id": "whales",
+   "title": "Whales & dolphins",
+   "taxa": "Infraorder Cetacea",
+   "file": "groups/whales.json",
+   "bytes": 173544,
+   "records": 2640480,
+   "species": 94,
+   "cells": 12844,
+   "speciesPerCell": true,
+   "topSpecies": "Megaptera novaeangliae"
+  },
+  {
+   "id": "sharks",
+   "title": "Sharks & rays",
+   "taxa": "Class Elasmobranchii",
+   "file": "groups/sharks.json",
+   "bytes": 102365,
+   "records": 5623385,
+   "species": 1166,
+   "cells": 7284,
+   "speciesPerCell": true,
+   "topSpecies": "Squalus acanthias"
+  },
+  {
+   "id": "turtles",
+   "title": "Sea turtles",
+   "taxa": "Families Cheloniidae + Dermochelyidae (leatherback)",
+   "file": "groups/turtles.json",
+   "bytes": 104957,
+   "records": 556143,
+   "species": 7,
+   "cells": 7989,
+   "speciesPerCell": true,
+   "topSpecies": "Chelonia mydas"
+  },
+  {
+   "id": "corals",
+   "title": "Stony corals",
+   "taxa": "Order Scleractinia (reef-building and deep-water stony corals)",
+   "file": "groups/corals.json",
+   "bytes": 59932,
+   "records": 1251302,
+   "species": 2051,
+   "cells": 4159,
+   "speciesPerCell": true,
+   "topSpecies": "Porites lobata"
+  },
+  {
+   "id": "tunas",
+   "title": "Tunas",
+   "taxa": "Tribe Thunnini: genera Thunnus, Katsuwonus, Euthynnus, Auxis, Allothunnus",
+   "file": "groups/tunas.json",
+   "bytes": 74696,
+   "records": 665599,
+   "species": 18,
+   "cells": 5515,
+   "speciesPerCell": true,
+   "topSpecies": "Thunnus albacares"
+  },
+  {
+   "id": "penguins",
+   "title": "Penguins",
+   "taxa": "Family Spheniscidae",
+   "file": "groups/penguins.json",
+   "bytes": 42860,
+   "records": 1185086,
+   "species": 19,
+   "cells": 2800,
+   "speciesPerCell": true,
+   "topSpecies": "Eudyptula minor"
+  },
+  {
+   "id": "seals",
+   "title": "Seals & sea lions",
+   "taxa": "Infraorder Pinnipedia",
+   "file": "groups/seals.json",
+   "bytes": 115825,
+   "records": 3026637,
+   "species": 33,
+   "cells": 8049,
+   "speciesPerCell": true,
+   "topSpecies": "Mirounga leonina"
+  },
+  {
+   "id": "cephalopods",
+   "title": "Octopus & squid",
+   "taxa": "Class Cephalopoda",
+   "file": "groups/cephalopods.json",
+   "bytes": 106067,
+   "records": 5726757,
+   "species": 824,
+   "cells": 7787,
+   "speciesPerCell": true,
+   "topSpecies": "Doryteuthis gahi"
+  },
+  {
+   "id": "deepfish",
+   "title": "Deep-sea fish",
+   "taxa": "Fish records with a depth of 1,000 m or more (Actinopterygii, Chondrichthyes, hagfish, lampreys, coelacanths)",
+   "file": "groups/deepfish.json",
+   "bytes": 47079,
+   "records": 410218,
+   "species": 2842,
+   "cells": 3267,
+   "speciesPerCell": false,
+   "topSpecies": "Dissostichus mawsoni"
+  }
+ ],
+ "cells": {
+  "dir": "cells/",
+  "file": "cells/{geohash2}.json",
+  "key": "geohash-3 of the cell (precision 3)",
+  "fields": {
+   "r": "OBIS records (API)",
+   "s": "species recorded (speciesgrids)",
+   "e": "ES50 or null",
+   "top": "up to 10 species with most records: [AphiaID, name, records (speciesgrids, OBIS + GBIF)]"
+  },
+  "files": 1007,
+  "bytes": 9388867,
+  "speciesUrl": "https://www.marinespecies.org/aphia.php?p=taxdetails&id={AphiaID}",
+  "obisTaxonUrl": "https://obis.org/taxon/{AphiaID}"
+ },
+ "liveApi": {
+  "checklist": "https://api.obis.org/v3/checklist?geometry={geohash3}&size=20",
+  "statistics": "https://api.obis.org/v3/statistics?geometry={geohash3}",
+  "cors": "Access-Control-Allow-Origin: * (checked 2026-11-14 with Origin https://ismoilovdevml.github.io; preflight 204)",
+  "note": "checklist results are taxa of all ranks sorted by OBIS record count; filter taxonRank == 'Species'"
+ },
+ "sources": {
+  "obis": {
+   "citation": "OBIS (2026) Ocean Biodiversity Information System. Intergovernmental Oceanographic Commission of UNESCO. www.obis.org",
+   "url": "https://obis.org",
+   "api": "https://api.obis.org/v3",
+   "terms": "OBIS data policy: cite OBIS and, where practical, the datasets; each dataset carries its own licence (CC0, CC BY or CC BY-NC)",
+   "snapshot": "2026-11-14"
+  },
+  "speciesgrids": {
+   "citation": "OBIS (2025). speciesgrids: gridded dataset of marine species occurrence (H3 resolution 7). Ocean Biodiversity Information System. Intergovernmental Oceanographic Commission of UNESCO. Available at s3://obis-products/speciesgrids/h3_7/ ; build 20261014. Provoost, P. (2026). speciesgrids: build pipeline and documentation for a gridded dataset of marine species occurrence. Zenodo. https://doi.org/10.5281/zenodo.19392660 ; GBIF.org (1 May 2024) GBIF Occurrence Data https://doi.org/10.15468/dl.ubwn8z ; World Register of Marine Species, doi:10.14284/170",
+   "licence": "CC BY-NC 4.0",
+   "build": "20261014",
+   "url": "https://github.com/iobis/speciesgrids"
+  },
+  "aquamaps": {
+   "citation": "Kaschner, K., K. Kesner-Reyes, C. Garilao, J. Segschneider, J. Rius-Barile, T. Rees, and R. Froese. 2019. AquaMaps: Predicted range maps for aquatic species. www.aquamaps.org, version 10/2019. Global Species Richness Map for All Marine Species (probability > 0.5).",
+   "licence": "CC BY-NC 3.0",
+   "url": "https://www.aquamaps.org",
+   "mirror": "https://vanuatu-data.sprep.org/system/files/fe383bc7-bd3d-4654-bb61-17d3d75f9f58/Global_2020_MarineSpeciesRichness_AquaMaps.csv",
+   "terms": "non-commercial use; clearly identify maps as coming from AquaMaps with a link back to www.aquamaps.org"
+  }
+ },
+ "licence": "CC BY-NC 4.0 (most restrictive input: speciesgrids CC BY-NC 4.0, AquaMaps CC BY-NC 3.0)",
+ "attribution": "Marine life records: OBIS (2026), www.obis.org · Species and ES50: OBIS speciesgrids (OBIS + GBIF), CC BY-NC 4.0 · Predicted richness: AquaMaps (www.aquamaps.org, version 10/2019), CC BY-NC 3.0",
+ "attributionByLayer": {
+  "records": "Marine life records: OBIS (2026), www.obis.org",
+  "species": "Species and ES50: OBIS speciesgrids (OBIS + GBIF), CC BY-NC 4.0",
+  "es50": "Species and ES50: OBIS speciesgrids (OBIS + GBIF), CC BY-NC 4.0",
+  "aquamaps": "Predicted richness: AquaMaps (www.aquamaps.org, version 10/2019), CC BY-NC 3.0",
+  "groups": "Marine life records: OBIS (2026), www.obis.org · Species and ES50: OBIS speciesgrids (OBIS + GBIF), CC BY-NC 4.0"
+ },
+ "caveats": [
+  "Sampling bias: records and raw species counts show where people looked (coasts, rich countries, research stations, shipping lanes) as much as where species live. Records and species per cell correlate strongly (see stats).",
+  "ES50 corrects for the number of records, not for where sampling happened or which groups were sampled: a cell sampled only for plankton or only for birds gets the ES50 of that group. Cells with fewer than 50 records have no ES50.",
+  "speciesgrids merges OBIS and GBIF records; datasets published to both can be counted twice, and GBIF bird observations (eBird) make up a large share of coastal records.",
+  "Taxonomy follows the World Register of Marine Species at build time; names change (synonyms are merged into the accepted name), and misidentified or mislocated records are not removed beyond OBIS quality flags.",
+  "Records include museum specimens and observations from 1700s to 2026; a record is not proof the species lives there today. Absence of records is not absence of species.",
+  "AquaMaps richness is a model (environmental envelopes + expert ranges), not observations; it is smooth by construction and excludes species with fewer than 10 good occurrence cells."
+ ],
+ "stats": {
+  "obisGlobal": {
+   "records": 259211609,
+   "species": 168316,
+   "taxa": 200771,
+   "datasets": 7306,
+   "specieslevel": 178446631,
+   "yearrange": [
+    1103,
+    2026
+   ]
+  },
+  "recordsOnGrid": 260012406,
+  "dataGap": {
+   "definition": "share of ocean area (GEBCO ocean mask, area-weighted) in cells with fewer than T OBIS records; gh4 = 0.35 x 0.18 deg (~39 x 20 km at the equator), gh3 = 1.41 deg (~156 km)",
+   "gh4": {
+    "lt1": 0.4525,
+    "lt10": 0.7586,
+    "lt50": 0.8815,
+    "lt100": 0.9171,
+    "lt1000": 0.9789,
+    "lt10000": 0.9961
+   },
+   "gh3": {
+    "lt1": 0.0185,
+    "lt10": 0.1216,
+    "lt50": 0.2923,
+    "lt100": 0.3898,
+    "lt1000": 0.7482,
+    "lt10000": 0.9349
+   }
+  },
+  "speciesgrids": {
+   "rows": 42707553,
+   "records": 620065294,
+   "gbifOnlyRows": 20411609,
+   "obisOnlyRows": 5624680,
+   "species": 229867,
+   "speciesFineCells": 512681,
+   "speciesCoarseCells": 28349
+  },
+  "es50": {
+   "oceanAreaWithES50": 0.7358,
+   "oceanAreaWithES50fish": 0.3334,
+   "cells": 21060
+  },
+  "correlation": {
+   "gh4": {
+    "cells": 437432,
+    "pearsonLog10": 0.777,
+    "spearman": 0.736
+   },
+   "gh3": {
+    "cells": 26976,
+    "pearsonLog10": 0.794,
+    "spearman": 0.772
+   },
+   "gh3_es50_vs_records": {
+    "cells": 20876,
+    "spearman": 0.356
+   },
+   "gh3_es50_vs_species": {
+    "cells": 21060,
+    "spearman": 0.779
+   },
+   "es50_vs_obisFlaggedOnly": {
+    "cells": 19312,
+    "spearman": 0.94,
+    "medianAbsDiff": 0.91
+   },
+   "es50_vs_withoutBirds": {
+    "cells": 18357,
+    "spearman": 0.932,
+    "medianAbsDiff": 1.26
+   },
+   "es50_vs_incidenceBased": {
+    "cells": 18418,
+    "spearman": 0.918,
+    "medianAbsDiff": 3.79
+   }
+  },
+  "regions": {
+   "North Sea": {
+    "box": [
+     -4,
+     51,
+     9,
+     61
+    ],
+    "cells": 40,
+    "medianRecords": 270110.0,
+    "medianSpecies": 1645.5,
+    "medianES50": 32.0,
+    "cellsWithES50": 40,
+    "medianAquaMaps": 663.0,
+    "rankRecords": 1,
+    "rankSpecies": 1,
+    "rankES50": 5,
+    "rankAquaMaps": 4
+   },
+   "Western Mediterranean": {
+    "box": [
+     -5,
+     35,
+     15,
+     44
+    ],
+    "cells": 53,
+    "medianRecords": 12444.0,
+    "medianSpecies": 1365.0,
+    "medianES50": 35.8,
+    "cellsWithES50": 53,
+    "medianAquaMaps": 639.5,
+    "rankRecords": 2,
+    "rankSpecies": 2,
+    "rankES50": 3,
+    "rankAquaMaps": 5
+   },
+   "Coral Triangle": {
+    "box": [
+     115,
+     -10,
+     135,
+     8
+    ],
+    "cells": 157,
+    "medianRecords": 712.0,
+    "medianSpecies": 351.0,
+    "medianES50": 41.9,
+    "cellsWithES50": 147,
+    "medianAquaMaps": 2403.0,
+    "rankRecords": 6,
+    "rankSpecies": 5,
+    "rankES50": 1,
+    "rankAquaMaps": 1
+   },
+   "Great Barrier Reef": {
+    "box": [
+     142,
+     -25,
+     154,
+     -10
+    ],
+    "cells": 64,
+    "medianRecords": 1613.0,
+    "medianSpecies": 685.5,
+    "medianES50": 38.1,
+    "cellsWithES50": 64,
+    "medianAquaMaps": 1303.0,
+    "rankRecords": 3,
+    "rankSpecies": 3,
+    "rankES50": 2,
+    "rankAquaMaps": 2
+   },
+   "Caribbean": {
+    "box": [
+     -88,
+     9,
+     -60,
+     22
+    ],
+    "cells": 158,
+    "medianRecords": 1577.0,
+    "medianSpecies": 354.5,
+    "medianES50": 33.8,
+    "cellsWithES50": 157,
+    "medianAquaMaps": 767.0,
+    "rankRecords": 4,
+    "rankSpecies": 4,
+    "rankES50": 4,
+    "rankAquaMaps": 3
+   },
+   "Central North Pacific gyre": {
+    "box": [
+     -160,
+     10,
+     -130,
+     30
+    ],
+    "cells": 308,
+    "medianRecords": 31.0,
+    "medianSpecies": 17.0,
+    "medianES50": 29.8,
+    "cellsWithES50": 129,
+    "medianAquaMaps": 387.0,
+    "rankRecords": 7,
+    "rankSpecies": 7,
+    "rankES50": 6,
+    "rankAquaMaps": 6
+   },
+   "Southern Ocean (Indian sector)": {
+    "box": [
+     30,
+     -65,
+     120,
+     -50
+    ],
+    "cells": 640,
+    "medianRecords": 815.5,
+    "medianSpecies": 34.0,
+    "medianES50": 13.1,
+    "cellsWithES50": 640,
+    "medianAquaMaps": 63.0,
+    "rankRecords": 5,
+    "rankSpecies": 6,
+    "rankES50": 7,
+    "rankAquaMaps": 7
+   }
+  },
+  "spotChecks": {
+   "blueWhale": {
+    "aphiaId": 137090,
+    "records": 24522,
+    "southernOceanSouthOf50S": 5612,
+    "northeastPacific20to60N170to110W": 13889,
+    "cells": 1251
+   },
+   "leatherback": {
+    "aphiaId": 137209,
+    "records": 25792,
+    "cells": 3690,
+    "northmostCellLat": 65.39,
+    "southmostCellLat": -47.11,
+    "recordWeightedLat1to99pct": [
+     -38.67,
+     55.55
+    ]
+   },
+   "boxes": {
+    "great_barrier_reef": {
+     "records": 6394144,
+     "species": 19908,
+     "taxa": 27801,
+     "datasets": 311,
+     "specieslevel": 2105359,
+     "yearrange": [
+      1770,
+      2026
+     ]
+    },
+    "coral_triangle": {
+     "records": 499682,
+     "species": 16673,
+     "taxa": 21009,
+     "datasets": 259,
+     "specieslevel": 423804,
+     "yearrange": [
+      1758,
+      2026
+     ]
+    },
+    "north_sea": {
+     "records": 45891479,
+     "species": 10612,
+     "taxa": 17529,
+     "datasets": 697,
+     "specieslevel": 42058434,
+     "yearrange": [
+      1583,
+      2026
+     ]
+    },
+    "central_pacific_gyre": {
+     "records": 1017371,
+     "species": 7397,
+     "taxa": 12794,
+     "datasets": 351,
+     "specieslevel": 803218,
+     "yearrange": [
+      1838,
+      2026
+     ]
+    }
+   },
+   "richestCells": {
+    "bySpecies": [
+     {
+      "lat": -34.45,
+      "lon": 151.17,
+      "value": 12169.0,
+      "gh3": "r3g",
+      "records": 10567768,
+      "species": 12169
+     },
+     {
+      "lat": 24.61,
+      "lon": -82.27,
+      "value": 8520.0,
+      "gh3": "dhm",
+      "records": 668794,
+      "species": 8520
+     },
+     {
+      "lat": -18.98,
+      "lon": 146.95,
+      "value": 8516.0,
+      "gh3": "rk8",
+      "records": 3426100,
+      "species": 8516
+     },
+     {
+      "lat": -21.8,
+      "lon": 166.64,
+      "value": 8463.0,
+      "gh3": "rsn",
+      "records": 111110,
+      "species": 8463
+     },
+     {
+      "lat": -27.42,
+      "lon": 153.98,
+      "value": 8132.0,
+      "gh3": "r7j",
+      "records": 4801911,
+      "species": 8132
+     },
+     {
+      "lat": 30.23,
+      "lon": -86.48,
+      "value": 7995.0,
+      "gh3": "dj6",
+      "records": 81162,
+      "species": 7995
+     },
+     {
+      "lat": -16.17,
+      "lon": 145.55,
+      "value": 7776.0,
+      "gh3": "rjp",
+      "records": 1118371,
+      "species": 7776
+     },
+     {
+      "lat": -14.77,
+      "lon": 145.55,
+      "value": 7751.0,
+      "gh3": "rjr",
+      "records": 211413,
+      "species": 7751
+     },
+     {
+      "lat": 27.42,
+      "lon": -82.27,
+      "value": 7732.0,
+      "gh3": "dhv",
+      "records": 430958,
+      "species": 7732
+     },
+     {
+      "lat": 27.42,
+      "lon": -83.67,
+      "value": 7224.0,
+      "gh3": "dhu",
+      "records": 95993,
+      "species": 7224
+     }
+    ],
+    "byES50": [
+     {
+      "lat": 10.55,
+      "lon": 93.52,
+      "value": 49.7,
+      "gh3": "w1f",
+      "records": 12735,
+      "species": 4254
+     },
+     {
+      "lat": 23.2,
+      "lon": -89.3,
+      "value": 49.4,
+      "gh3": "dh0",
+      "records": 7497,
+      "species": 4125
+     },
+     {
+      "lat": 14.77,
+      "lon": 89.3,
+      "value": 49.4,
+      "gh3": "tfx",
+      "records": 1620,
+      "species": 1474
+     },
+     {
+      "lat": -21.8,
+      "lon": 49.92,
+      "value": 49.3,
+      "gh3": "mh5",
+      "records": 342,
+      "species": 315
+     },
+     {
+      "lat": 24.61,
+      "lon": 159.61,
+      "value": 49.3,
+      "gh3": "xs3",
+      "records": 209,
+      "species": 183
+     },
+     {
+      "lat": 28.83,
+      "lon": 138.52,
+      "value": 49.3,
+      "gh3": "xj4",
+      "records": 3623,
+      "species": 1573
+     },
+     {
+      "lat": -4.92,
+      "lon": 145.55,
+      "value": 49.3,
+      "gh3": "rpp",
+      "records": 42413,
+      "species": 5288
+     },
+     {
+      "lat": -13.36,
+      "lon": 48.52,
+      "value": 49.1,
+      "gh3": "mjd",
+      "records": 19780,
+      "species": 4275
+     },
+     {
+      "lat": 18.98,
+      "lon": 124.45,
+      "value": 49.1,
+      "gh3": "wg2",
+      "records": 1329,
+      "species": 827
+     },
+     {
+      "lat": 16.17,
+      "lon": 83.67,
+      "value": 49.0,
+      "gh3": "tfg",
+      "records": 2463,
+      "species": 870
+     }
+    ],
+    "byAquaMaps": [
+     {
+      "lat": 22.25,
+      "lon": 121.75,
+      "value": 9887.0
+     },
+     {
+      "lat": 22.75,
+      "lon": 121.75,
+      "value": 9874.0
+     },
+     {
+      "lat": 25.75,
+      "lon": 124.75,
+      "value": 9772.0
+     },
+     {
+      "lat": 25.75,
+      "lon": 123.75,
+      "value": 9701.0
+     },
+     {
+      "lat": 3.75,
+      "lon": 126.75,
+      "value": 9687.0
+     },
+     {
+      "lat": 21.75,
+      "lon": 120.75,
+      "value": 9685.0
+     },
+     {
+      "lat": 24.25,
+      "lon": 123.25,
+      "value": 9680.0
+     },
+     {
+      "lat": -2.75,
+      "lon": 130.25,
+      "value": 9662.0
+     },
+     {
+      "lat": 15.25,
+      "lon": 122.25,
+      "value": 9658.0
+     },
+     {
+      "lat": 24.75,
+      "lon": 124.25,
+      "value": 9657.0
+     }
+    ]
+   }
+  }
+ }
+}

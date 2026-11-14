@@ -1,0 +1,110 @@
+[
+ {
+  "id": "whales",
+  "title": "Whales & dolphins",
+  "taxa": "Infraorder Cetacea",
+  "file": "groups/whales.json",
+  "bytes": 173544,
+  "records": 2640480,
+  "species": 94,
+  "cells": 12844,
+  "speciesPerCell": true,
+  "topSpecies": "Megaptera novaeangliae"
+ },
+ {
+  "id": "sharks",
+  "title": "Sharks & rays",
+  "taxa": "Class Elasmobranchii",
+  "file": "groups/sharks.json",
+  "bytes": 102365,
+  "records": 5623385,
+  "species": 1166,
+  "cells": 7284,
+  "speciesPerCell": true,
+  "topSpecies": "Squalus acanthias"
+ },
+ {
+  "id": "turtles",
+  "title": "Sea turtles",
+  "taxa": "Families Cheloniidae + Dermochelyidae (leatherback)",
+  "file": "groups/turtles.json",
+  "bytes": 104957,
+  "records": 556143,
+  "species": 7,
+  "cells": 7989,
+  "speciesPerCell": true,
+  "topSpecies": "Chelonia mydas"
+ },
+ {
+  "id": "corals",
+  "title": "Stony corals",
+  "taxa": "Order Scleractinia (reef-building and deep-water stony corals)",
+  "file": "groups/corals.json",
+  "bytes": 59932,
+  "records": 1251302,
+  "species": 2051,
+  "cells": 4159,
+  "speciesPerCell": true,
+  "topSpecies": "Porites lobata"
+ },
+ {
+  "id": "tunas",
+  "title": "Tunas",
+  "taxa": "Tribe Thunnini: genera Thunnus, Katsuwonus, Euthynnus, Auxis, Allothunnus",
+  "file": "groups/tunas.json",
+  "bytes": 74696,
+  "records": 665599,
+  "species": 18,
+  "cells": 5515,
+  "speciesPerCell": true,
+  "topSpecies": "Thunnus albacares"
+ },
+ {
+  "id": "penguins",
+  "title": "Penguins",
+  "taxa": "Family Spheniscidae",
+  "file": "groups/penguins.json",
+  "bytes": 42860,
+  "records": 1185086,
+  "species": 19,
+  "cells": 2800,
+  "speciesPerCell": true,
+  "topSpecies": "Eudyptula minor"
+ },
+ {
+  "id": "seals",
+  "title": "Seals & sea lions",
+  "taxa": "Infraorder Pinnipedia",
+  "file": "groups/seals.json",
+  "bytes": 115825,
+  "records": 3026637,
+  "species": 33,
+  "cells": 8049,
+  "speciesPerCell": true,
+  "topSpecies": "Mirounga leonina"
+ },
+ {
+  "id": "cephalopods",
+  "title": "Octopus & squid",
+  "taxa": "Class Cephalopoda",
+  "file": "groups/cephalopods.json",
+  "bytes": 106067,
+  "records": 5726757,
+  "species": 824,
+  "cells": 7787,
+  "speciesPerCell": true,
+  "topSpecies": "Doryteuthis gahi"
+ },
+ {
+  "id": "deepfish",
+  "title": "Deep-sea fish",
+  "taxa": "Fish records with a depth of 1,000 m or more (Actinopterygii, Chondrichthyes, hagfish, lampreys, coelacanths)",
+  "file": "groups/deepfish.json",
+  "bytes": 47079,
+  "records": 410218,
+  "species": 2842,
+  "cells": 3267,
+  "speciesPerCell": false,
+  "topSpecies": "Dissostichus mawsoni"
+ }
+]

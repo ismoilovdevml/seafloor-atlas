@@ -203,3 +203,249 @@ Density: TEOS-10 via `gsw`: `p = p_from_z(-z, lat)`, `SA = SA_from_SP(SP, p, lon
   not included; a few dam or harbour-wall farms (Maasvlakte 2) are.
 * Coverage is whatever OSM mappers have added (snapshot time in `metadata.osmTimestamp`). There are no
   satellite detections: single turbines are not points here, and Chinese offshore wind is under-mapped.
+
+## Marine life (web/public/data/obis/, `pipeline/obis.py`)
+
+Three layers answer three different questions, so the viewer can be honest about what a "fish map" shows:
+
+| Question | Layer | Source | Licence | Attribution to show |
+|---|---|---|---|---|
+| Where have people looked? | `records_gh4` (+ `ocean_gh4`): OBIS records per geohash-4 cell, ocean cells with **no record** explicit | OBIS API `occurrence/grid/4` | OBIS data policy (cite OBIS) | Marine life records: OBIS (2026), www.obis.org |
+| Where are species recorded? | `species_gh3`, `species_gh4` (raw counts), `es50_gh3` (sampling-corrected) | OBIS **speciesgrids** build 20261014 (OBIS + GBIF) | **CC BY-NC 4.0** | Species and ES50: OBIS speciesgrids (OBIS + GBIF), CC BY-NC 4.0 |
+| Where should they live? | `aquamaps_richness` (model) | AquaMaps version 10/2019 | **CC BY-NC 3.0** | Predicted richness: AquaMaps (www.aquamaps.org, version 10/2019), CC BY-NC 3.0, with a link to www.aquamaps.org |
+
+Because two inputs are non-commercial, the derived marine-life files are **CC BY-NC 4.0** as a whole (like the cable layer,
+this differs from the MIT code licence). `manifest.json` carries `licence`, `attribution`, `attributionByLayer`, full
+`sources.*.citation` strings and `caveats`.
+
+Citations (exact text in `manifest.sources`):
+* OBIS (2026) Ocean Biodiversity Information System. Intergovernmental Oceanographic Commission of UNESCO. www.obis.org
+  (the form OBIS asks for; accessed 2026-11-14 through api.obis.org/v3).
+* OBIS (2025). speciesgrids: gridded dataset of marine species occurrence (H3 resolution 7). OBIS, IOC-UNESCO.
+  s3://obis-products/speciesgrids/ (build 20261014); Provoost, P. (2026) doi:10.5281/zenodo.19392660; GBIF.org (1 May 2024)
+  doi:10.15468/dl.ubwn8z; WoRMS doi:10.14284/170.
+* Kaschner, K., K. Kesner-Reyes, C. Garilao, J. Segschneider, J. Rius-Barile, T. Rees, and R. Froese (2019). AquaMaps:
+  Predicted range maps for aquatic species. www.aquamaps.org, version 10/2019 ("Global Species Richness Map for All
+  Marine Species", probability > 0.5, as mirrored by SPREP).
+
+### Inputs (data/raw/obis/, gitignored)
+
+* `api/*.json.gz`: cached OBIS API v3 responses (~70 requests, sequential, 1 s pause, User-Agent names this repo).
+  `occurrence/grid/4?geometry=<geohash1>` for each of the 32 geohash-1 regions (≤ 32,768 cells each, under the API's
+  100,000-feature cap); cells the API returns from a neighbouring region are dropped so nothing is counted twice.
+  Group grids `occurrence/grid/3?taxonid=...`, `checklist?taxonid=...&size=5000`, `statistics`.
+* `speciesgrids/rgNNN.parquet`: the 41 row groups of `speciesgrids/20261014/h3_7/data.parquet`, read from the public
+  bucket with column projection (geometry and year columns skipped: ~730 MB instead of 1.5 GB). Each row = one WoRMS
+  species in one H3 resolution-7 cell (~5 km²) with its record count and source flags.
+* `aquamaps/Global_2020_MarineSpeciesRichness_AquaMaps.csv`: 174,321 half-degree C-squares with `Species Count`.
+* `common_names.json`: English common names (iNaturalist, WoRMS fallback) for the group top-species lists only.
+
+### Grids and encoding
+
+All grids are regular latitude/longitude, **row 0 = north (90° N), column 0 = 180° W**, cell-aligned with geohashes:
+
+| Grid | Cell | Size | Use |
+|---|---|---|---|
+| `gh4` | 0.3515625° lon × 0.17578125° lat (geohash precision 4, ~39 × 20 km at the equator) | 1024 × 1024 | records, ocean share, raw species |
+| `gh3` | 1.40625° × 1.40625° (geohash precision 3, ~156 km) = 4 × 8 `gh4` cells exactly | 256 × 128 | ES50, species, groups, click lists |
+| `csquare_0p5` | 0.5° | 720 × 360 | AquaMaps |
+
+`grid/<layer>.bin` = zlib-deflated little-endian unsigned integers stored as **byte planes** (all byte 0s, then all byte 1s,
+...; same idea as `woa/map/*.bin`), `ncol × nrow` row-major. `manifest.layers[layer]` gives `grid`, `dtype`
+(`uint8|uint16|uint32`), `bytes` and the meaning of the value:
+
+* `records_gh4`, `records_gh3` (uint32): OBIS occurrence records (all ranks, presence records) in the cell; 0 = none.
+* `ocean_gh4`, `ocean_gh3` (uint8): ocean share of the cell × 255 (GEBCO ocean mask of this repo: TID ≠ 0 and
+  elevation < 0). Draw "no records" only where this is > 0.
+* `species_gh4`, `species_gh3`, `species_fish_gh3` (uint16): distinct species in speciesgrids (fish = classes
+  Teleostei, Elasmobranchii, Holocephali, Myxini, Petromyzonti, Holostei, Chondrostei, Cladistii, Coelacanthi).
+* `records_sg_gh3` (uint32): species-level records in speciesgrids (OBIS + GBIF), the N behind ES50.
+* `es50_gh3`, `es50_fish_gh3` (uint16): **ES50 = (q − 1) / 100**; q = 0 = fewer than 50 records ("not enough data").
+* `aquamaps_richness` (uint16): AquaMaps predicted species; 0 = no prediction.
+
+`manifest.scales` suggests colour scales (log10 for records/species/AquaMaps, linear 1–50 for ES50, a grey for
+"no records" and "not enough data"). The viewer reprojects these grids itself (like the WOA layer); there are no
+raster tiles. Reason: the whole set is ~1 MB with exact values for hover and click, versus several MB of tiles that
+only carry colours.
+
+**ES50** (Hurlbert 1971; the OBIS diversity indicator): for a cell with N species-level records, N_i of species i,
+ES50 = Σ_i [1 − C(N − N_i, 50) / C(N, 50)] (computed with log-gamma), per `gh3` cell from all speciesgrids rows whose
+H3 centre falls in the cell. The OBIS API has no ES50 endpoint, so it is computed here. Sensitivity variants (in
+`manifest.stats.correlation`): only species flagged as present in OBIS, without birds, and incidence-based (each
+occupied H3-7 cell counts as one "record").
+
+### Groups (`groups/index.json`, `groups/<id>.json`)
+
+whales (Cetacea), sharks (Elasmobranchii), turtles (Cheloniidae + Dermochelyidae), corals (Scleractinia), tunas
+(Thunnini genera), penguins (Spheniscidae), seals (Pinnipedia), cephalopods, deepfish (fish records at ≥ 1,000 m).
+Each file: `stats` (OBIS records, species, datasets, year range, cells), `top` (25 species with most OBIS records:
+`aphiaId`, `name`, `common` (iNaturalist preferred English name, else first English WoRMS vernacular, may be empty), `records`, `iucn`), and `cells.data` =
+`[col, row, records, species]` on `gh3` (records from the API, OBIS only; species from speciesgrids). Deep-sea fish
+has no per-cell species (speciesgrids has no depth); of the 100 species with most deep records, those with less than
+20 % of all their OBIS records at ≥ 1,000 m are flagged "mostly shallow" (60 of 100, e.g. swordfish, mackerel, blue shark,
+yellowfin tuna: a bottom or gear depth recorded as the fish's depth). They are dropped from the top list and their deep
+records (one extra `grid/3` request) are subtracted from the cells: 410,218 deep records → 209,288 on the grid
+(`stats.flaggedMostlyShallow`, `recordsOfFlagged`, `recordsRemovedFromGrid`). Species outside the checked 100 are not filtered.
+
+### Click info (`cells/<geohash2>.json`)
+
+One file per geohash-2 block (11.25° × 5.625°), keyed by the `gh3` cell's geohash-3:
+`{"r": OBIS records, "s": species, "e": ES50 or null, "top": [[AphiaID, name, records], ...]}` (up to 10 species with
+most speciesgrids records). Links: `https://obis.org/taxon/{AphiaID}`, `https://www.marinespecies.org/aphia.php?p=taxdetails&id={AphiaID}`.
+Live alternative (same cell): `https://api.obis.org/v3/checklist?geometry={geohash3}&size=20` (taxa of all ranks,
+sorted by OBIS records; filter `taxonRank == "Species"`). CORS: `Access-Control-Allow-Origin: *`, checked from
+https://ismoilovdevml.github.io in a real browser (checklist ~1.2 s, statistics ~0.2 s).
+
+### Caveats (also in `manifest.caveats`)
+
+* Records and raw species counts map **sampling effort** as much as biology (coasts, rich countries, research cruises,
+  ship tracks); see `stats.correlation`. Absence of records is not absence of species.
+* ES50 corrects for the number of records, not for where or what was sampled (a plankton-survey track or a bird
+  survey gives that group's ES50).
+* speciesgrids merges OBIS and GBIF: datasets in both can be counted twice, and GBIF bird observations are a large
+  share of coastal records. Records span the 1700s to 2026.
+* Names follow WoRMS at build time (synonyms merged); misidentified or mislocated records remain unless OBIS flagged them.
+* The OBIS index changes while the API is queried (global totals moved by ~0.3 % within an hour on 2026-11-14).
+* AquaMaps is a model (environmental envelopes plus expert ranges), smooth by construction, and excludes species with
+  fewer than 10 good occurrence cells; per-group AquaMaps richness is not included (see below).
+* Not included: per-group AquaMaps richness (needs the 1.25 GB `am.db.bz2`, ~10 GB unpacked SQLite, from
+  archive.org/details/aquamapsdb, version 2019) and a chlorophyll layer (NASA OceanColor file search returned no
+  public climatology without an Earthdata login).
+
+## How sure is the depth? (model disagreement, seal dives, prediction confidence)
+
+Three analysis layers from open Zenodo datasets (all CC BY 4.0). Raw files go in `data/raw/<name>/` (gitignored,
+~1.8 GB together); md5 checked against the Zenodo record on download (2026-11-14).
+
+| Layer | Files | Script | Attribution to show |
+|---|---|---|---|
+| Model disagreement | `tiles/disagree/{z}/{x}/{y}.webp`, `tiles/disagree/legend.json` | `pipeline/disagree.py` | Model disagreement: AUST_2026_BAT (Yuan & Yang 2026, doi:10.5281/zenodo.22711109, CC BY 4.0) minus GEBCO_2026 (OGL v3) |
+| Seal dives deeper than the chart | `data/seals.geojson`, `data/seals-coverage.geojson` | `pipeline/seals.py` | Seal dives: SO-ABBA v1.0 (Hindell, McMahon, Jonsen et al. 2026, doi:10.5281/zenodo.19121676), CC BY 4.0; compared with GEBCO_2026 |
+| Prediction confidence | `tiles/uncertainty/{z}/{x}/{y}.webp`, `tiles/uncertainty/legend.json` | `pipeline/uncertainty.py` | Prediction confidence: Nilsson, Phrampus, Sandwell et al. (2025), SWOT ML bathymetry confidence level v1.1, doi:10.5281/zenodo.17673974, CC BY 4.0 |
+
+Every `legend.json` / GeoJSON `metadata` carries `citation`, `licence` and `attribution`. Statistics:
+`data/derived/disagree_stats.json`, `seals_stats.json`, `uncertainty_stats.json`. Figures: `figures/fig7_model_disagreement.png`,
+`figures/fig8_seals.png`.
+
+### Model disagreement (`tiles/disagree/`)
+
+* Source: Yuan, J. & Yang, C. (2026) *AUST_2026_BAT: A Global Bathymetry Model Derived from Multi-Scale Marine
+  Gravity Anomalies Using Fully Connected Deep Neural Networks and Adaptive Multi-Factor Spatial Partitioning* (v2026).
+  Zenodo. doi:10.5281/zenodo.22711109. `AUST_2026_BAT.nc` (386 MB): GMT pixel-registered 1′ grid, 21600 × 9000,
+  75° S – 75° N, variable `z` (m, up positive). Ocean = neural-network prediction from SIO V33.1 marine gravity, trained
+  on NCEI ship soundings; land filled from GEBCO_2025. Its cell centres coincide with GEBCO's 1′ centres, so the
+  comparison is cell for cell (no resampling).
+* Difference `AUST − GEBCO_2026` (1′ = mean of 4 × 4 15″ cells) over ocean (TID ≠ 0 and 1′ elevation < 0), minus the
+  Caspian Sea and Lake Baikal boxes. Classes from `coverage_1arcmin.tif`: measured = all 16 sub-cells TID 10–17,
+  unmeasured = none, partial = the rest. Area-weighted (spherical cell area). Derived grids:
+  `data/derived/disagree_1arcmin.tif` (signed difference), `disagree_tiles_src.tif` (what the tiles show).
+* **Shown on the map only where the GEBCO depth is ≥ 1,000 m and < 50 % of the 1′ cell is measured.** On shelves and
+  upper slopes AUST is systematically too deep (GEBCO < 1,000 m: 98.7 % of the |diff| > 500 m area has AUST deeper; in
+  19.8 % of that area AUST is more than twice the GEBCO depth; Gulf of Carpentaria: GEBCO median 54 m, AUST 196 m).
+  Those differences are AUST errors, not genuine uncertainty. All depth bands remain in the statistics.
+* Encoding: **lossy** WebP RGBA (quality 50), 512 px, z0–5, 1,365 tiles (660 fully transparent, stored as tiny lossless
+  WebPs), 41.6 MB. Colour = matplotlib `plasma` from 0.12 on `t = (log10|diff| − log10 50) / (log10 1000 − log10 50)`,
+  clipped; alpha 110 → 235 along `t`; transparent below 50 m, on land, measured-majority cells, shelves, and beyond
+  75° (polar caps blank). z4..z0 are NaN-aware 2 × 2 means of |diff| (mean disagreement of the shown pixels).
+  The colour is a picture: read values from `legend.json` (`stops`, `vmin`, `vmax`, `headline`).
+* Numbers (GEBCO depth ≥ 1,000 m): unmeasured 203.9 M km², median |diff| **60.5 m**, RMS 190.9 m, p95 402.5 m,
+  35.1 % > 100 m, 16.6 % > 200 m, 3.0 % > 500 m. Measured 84.8 M km²: median 46.5 m, RMS 174.1 m, p95 365.5 m.
+  By TID of the unmeasured cell: 40 (gravity) median 59.5 m, 41 (interpolated) 46.5 m.
+* Honest reading: (1) measured cells are **not** an independent validation; AUST was trained on NCEI soundings that GEBCO
+  also contains, and AUST does not replace its prediction with the soundings, so there the difference is mostly AUST's
+  own (in-sample) prediction error. (2) In unmeasured cells both depths are satellite-gravity predictions from
+  overlapping inputs (SIO-type gravity; GEBCO's base is SRTM15+), so where they disagree at least one is wrong, and where
+  they agree both can still be wrong: the difference is a lower bound on the real uncertainty, not an error estimate.
+  (3) Unmeasured cells disagree only ~30 % more than measured ones (median 60.5 vs 46.5 m), so a large part of the map is
+  AUST's own 1′ prediction noise; patterns at 10–100 km scale (zoom 0–3) are more meaningful than single pixels.
+
+### Seal dives deeper than the chart (`data/seals.geojson`, `data/seals-coverage.geojson`)
+
+* Source: Hindell, M., McMahon, C., Jonsen, I., Harcourt, R., Guinet, C., Picard, B., Coleman, R., Padman, L., Fedak, M.,
+  Blight, C., Costa, D. P., Bester, M., Bornemann, H., Charrassin, J.-B., Labrousse, S., Campagna, C., Campagna, J.,
+  Boehme, L., Lee, W. Y., Kokubun, N., Takahashi, A., Muelbert, M. M. C., Lowther, A., McCormack, F., Ribeiro Santos, N.,
+  Post, A., Holland, M., Wege, M. & Raymond, B. (2026) *SO-ABBA: A Southern Ocean Animal-Borne Bathymetry Analysis*
+  (v1.0). Zenodo. doi:10.5281/zenodo.19121676. `SO-ABBA-v1.0.parquet` (439 MB): 5,167,124 rows; **4,492,019 with
+  `flag == 1`** (the authors' reliable-depth filter, `MATLAB_seal_read.m`), 1996-12 to 2025-08, 78.3° S – 50.0° S.
+  Columns used: `max_dep` (maximum dive depth, m, positive down), `lon`/`lat` (state-space-model location), `x_se`/`y_se`
+  (location standard errors, m; median max(x_se, y_se) = 2.0 km), and for the check `pt_elevation` /
+  `ellipse_elev_deepest` (IBCSO v2 at the point / deepest IBCSO v2 in the error ellipse).
+* Test per dive: excess = `max_dep` + GEBCO_2026 elevation. Two chart depths: (a) at the point, 15″ bilinear; (b) the
+  **deepest 15″ cell in a box of half-width 1 × max(x_se, y_se)** around the location (rounded up to whole cells; the
+  box contains the 1-σ error ellipse). 1 σ reproduces the authors' `ellipse_elev_deepest` best (200 k dives where GEBCO =
+  IBCSO at the point: median difference 2 m, 81 % within 20 m; 0.5 / 1.5 / 2 / 3 σ give +12 / −4 / −14 / −33 m).
+  "Deeper than the chart" = excess > 20 m with (b), i.e. beyond the location uncertainty.
+* `seals.geojson`: Points at 0.1° bin centres, **only bins with ≥ 1 such dive**, sorted by `x` ascending (largest excess
+  drawn last). Properties: `n` dives, `d` dives deeper than the chart beyond the uncertainty, `dp` deeper than the chart
+  at the point, `x` largest excess in the bin (m), `md` deepest dive (m), `cd` mean GEBCO depth at the dives (m, positive
+  down). Share = `d / n`.
+* `seals-coverage.geojson`: Points at 0.5° bin centres for every bin with a dive, `n` and `d`: where seals sampled at
+  all (no point in a bin = no seal data, not "chart confirmed").
+* Numbers vs GEBCO_2026: **2.18 % of dives (97,933) are > 20 m deeper than the chart beyond the location uncertainty**
+  (0.25 % > 200 m); at the point (paper's definition) 6.97 % (1.02 % > 200 m). With a 2-σ box: 1.02 %. Excess of those
+  dives: median 64 m, p90 215 m, max 1,636 m. By charted depth: 12.0 % of dives where GEBCO says < 200 m, 3.1 % at
+  200–500 m, 1.6 % at 500–1,000 m, 0.7 % at 1–2 km, 0 below 2 km (seals rarely reach the bottom there). 35.6 % of dives
+  are in GEBCO-measured 15″ cells; 1.8 % of those are still deeper than the chart (vs 2.3 % in unmeasured cells).
+* Check of our reading against the paper with the file's own IBCSO v2 columns: point ≥ 20 m **8.47 %**, ≥ 200 m 1.32 %
+  (abstract: 8.4 % and 1.3 %), ellipse ≥ 20 m 2.84 %. So the abstract's 8.4 % is the point comparison. GEBCO_2026 vs
+  IBCSO v2 at the dive points: median |Δ| 10.6 m, 36.7 % differ by > 20 m (likely resampling of the 500 m polar grid to 15″
+  plus newer data; not checked further), which is why our point share (7.0 %) differs from the paper's 8.4 %.
+* Caveats: a dive's maximum depth is a lower bound on the seafloor depth only where the seal reached it; `max_dep`
+  does not tell whether the seal was on the bottom, so the test can only find charts that are **too shallow**, never too
+  deep. Tag pressure-sensor errors and dives assigned to a wrong position beyond 1 σ remain possible; the 2-σ number
+  is the conservative bound. Sampling follows where the tagged seals foraged (`seals-coverage.geojson`), not a
+  survey design; the file has no per-seal id (85 tag `unittype` values), so dives are not independent samples.
+
+### Prediction confidence (`tiles/uncertainty/`)
+
+* Source: Nilsson, B., Phrampus, B. J., Salajegheh, F., Liu, B., Yu, Y., Sandwell, D., Harper, H., Andersen, O. B.,
+  Smith, W. H. F., Elmore, P., Kirby, J., Beale, J., Roberts, J. & Altamirano, L. (2025) *Bathymetry Prediction with SWOT
+  Gravity Anomaly using Machine Learning Methods: Paper 2 – Model Evaluation and Uncertainty Analysis*. Zenodo.
+  doi:10.5281/zenodo.17673974. File `Bathymetry_Prediction_Confidence_Level_v1.1.nc` (981 MB, model v1.1.0, created
+  2025-11-21): 1′ grid, 21600 × 9600, 80° S – 80° N, cell centres = GEBCO's 1′ centres.
+* Meaning (from the file's global `description`; the variables have no attributes and the paper DOI in the file is a
+  placeholder): `classification` 0 = contains a sounding, 1 = high, 2 = medium, 3 = low confidence in the prediction,
+  4 = land; `predicted_error` = "numerical value of the predicted error (more noisy than classification level)",
+  computed from gravity-field features and the distance to ship soundings. **No unit or statistical definition is given.**
+  Measured here: in every non-sounding cell class 1 ⇔ `predicted_error` < 80, class 2 ⇔ 80–150, class 3 ⇔ > 150, and the
+  median |AUST − GEBCO| per class (39 / 100 / 182 m) is close to the median `predicted_error` (51 / 104 / 178), so it
+  behaves like metres of depth error. It describes the authors' SWOT-gravity ML bathymetry, **not GEBCO_2026**.
+* Tile value: `predicted_error` where class 1–3 and GEBCO says ocean; NaN for class 0 (sounding), land, beyond 80°.
+  z5 warped with GDAL `average`, z4..z0 NaN-aware 2 × 2 means, then classed with the file's thresholds (< 80 high,
+  80–150 medium, > 150 low). Lossless WebP RGBA, 1,365 tiles, 9.1 MB. Colours: high `#4fb3bf` alpha 70, medium
+  `#f2b705` alpha 160, low `#e03e52` alpha 225 (`legend.json.classes`).
+* Validation (`uncertainty_stats.json`, area-weighted): of GEBCO ocean 80° S – 80° N, class 0/1/2/3 = 26.2 / 42.8 /
+  24.0 / 6.7 %. 64 % of class-0 area is GEBCO-measured (their sounding set is not GEBCO's), 75 / 83 / 85 % of class
+  1 / 2 / 3 is GEBCO-unmeasured. Against |AUST − GEBCO| (GEBCO ≥ 1,000 m, no sounding, 75° S – 75° N): Spearman
+  **0.44** per 1′ cell (Pearson 0.39; 0.44 in GEBCO-unmeasured cells only), **0.63** for 15′ block means (n = 418,421).
+  Both are partly circular (both grow where gravity-to-depth prediction is hard, e.g. rough seafloor, far from tracks),
+  so this shows consistency, not an independent calibration.
+* Note: Zenodo 24085730 (Phrampus 2026, "Global bathymetry with calibrated uncertainty") was the first choice, but its
+  files are restricted (HTTP 403), so this earlier open confidence product is used.
+
+### Checks (build of 2026-11-14, all in `manifest.stats`; `tests/test_obis.py`)
+
+* **Data gap** (share of ocean area): 45.3 % of the ocean lies in `gh4` cells (~39 × 20 km) with **no OBIS record**,
+  88.2 % in cells with fewer than 50, 97.9 % with fewer than 1,000. At `gh3` (~156 km): 1.9 % / 29.2 % / 74.8 %.
+* **Effort vs species**: records and species per cell, Spearman ρ = 0.74 (`gh4`, 437,432 cells) and 0.77 (`gh3`,
+  26,976 cells; Pearson on log10 0.79). ES50 vs records only ρ = 0.36. ES50 exists for 73.6 % of the ocean area
+  (fish ES50: 33.3 %). ES50 sensitivity (ρ against the served ES50): OBIS-flagged species only 0.94, without birds 0.93,
+  incidence-based 0.92.
+* **Same regions, three measures** (median `gh3` cell; rank among 7 regions):
+
+  | Region | OBIS records | raw species | ES50 | AquaMaps |
+  |---|---|---|---|---|
+  | North Sea | 270,110 (1) | 1,646 (1) | 32.0 (5) | 663 (4) |
+  | Western Mediterranean | 12,444 (2) | 1,365 (2) | 35.8 (3) | 640 (5) |
+  | Great Barrier Reef | 1,613 (3) | 686 (3) | 38.1 (2) | 1,303 (2) |
+  | Caribbean | 1,577 (4) | 355 (4) | 33.8 (4) | 767 (3) |
+  | Coral Triangle | 712 (6) | 351 (5) | **41.9 (1)** | **2,403 (1)** |
+  | Central North Pacific gyre | 31 (7) | 17 (7) | 29.8 (6; 129 of 308 cells) | 387 (6) |
+  | Southern Ocean, Indian sector | 816 (5) | 34 (6) | 13.1 (7) | 63 (7) |
+
+* Richest raw `gh3` cells: Sydney (r3g, 12,169 species, 10.6 M records), Florida Keys (dhm, 8,520), Townsville / central
+  Great Barrier Reef (rk8, 8,516), New Caledonia (rsn, 8,463), Moreton Bay (r7j, 8,132); Cairns/Lizard Island cells
+  (rjp, rjr) also in the top 10. AquaMaps' top 10 are all Taiwan–Philippines–Indonesia (max 9,887 species).
+* Blue whale (AphiaID 137090): 24,522 OBIS records, 5,612 south of 50° S, 13,889 in the NE Pacific (20–60° N,
+  170–110° W). Leatherback (137209): 25,792 records from 65.4° N to 47.1° S (1–99 % of records 38.7° S–55.6° N),
+  consistent with its known range into subpolar waters.
