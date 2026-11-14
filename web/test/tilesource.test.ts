@@ -33,6 +33,28 @@ describe('tilesource', () => {
     expect(maxZoomFor('new2026')).toBe(5);
   });
 
+  it('retries a transient 503 and then succeeds', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response('busy', { status: 503 }))
+      .mockResolvedValueOnce(new Response(new Uint8Array([7])));
+    vi.stubGlobal('fetch', fetchMock);
+    configureTiles('tiles/', 5, null);
+    const p = fetchTile('dem', 3, 5, 2);
+    await vi.runAllTimersAsync();
+    expect(new Uint8Array((await p)!)).toEqual(new Uint8Array([7]));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  it('does not retry a 404', async () => {
+    const fetchMock = vi.fn(async () => new Response('nope', { status: 404 }));
+    vi.stubGlobal('fetch', fetchMock);
+    configureTiles('tiles/', 5, null);
+    expect(await fetchTile('dem', 3, 5, 2)).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('a missing static tile resolves to null instead of throwing', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 404 })));
     configureTiles('tiles/', 5, null);

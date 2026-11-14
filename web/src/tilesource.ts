@@ -50,9 +50,29 @@ export async function fetchTile(layer: TileLayer, z: number, x: number, y: numbe
     const r = await pm.getZxy(z, x, y, signal);
     return r ? r.data : null;
   }
-  const res = await fetch(`${staticBase}${layer}/${z}/${x}/${y}.webp`, { signal });
-  if (!res.ok) return null;
-  return res.arrayBuffer();
+  const url = `${staticBase}${layer}/${z}/${x}/${y}.webp`;
+  // GitHub Pages occasionally answers 503 under load (seen in live QA); retry transient failures
+  // with backoff, but not 4xx (a real miss) and not an aborted request.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(url, { signal });
+      if (res.ok) return res.arrayBuffer();
+      if (res.status < 500 || attempt >= RETRIES) return null;
+    } catch (e) {
+      if (signal?.aborted || attempt >= RETRIES) throw e;
+    }
+    await sleep(RETRY_BASE_MS * 2 ** attempt, signal);
+  }
+}
+
+export const RETRIES = 3;
+export const RETRY_BASE_MS = 250;
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('aborted', 'AbortError')); }, { once: true });
+  });
 }
 
 /** Parse `sfa://dem/6/12/20` -> ['dem', 6, 12, 20]. */
