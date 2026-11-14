@@ -18,6 +18,9 @@ import { formatDepth, formatLat, formatLon, greatCircle, haversineKm, profileZoo
 import { diskCoverage, fitRadius, freeRect, globeDisk, inside, isGlobeScale, zoomForRadius, type Rect } from './layout';
 import { WaterUI } from './water-ui';
 import { OverlayUI } from './overlay-ui';
+import { CERTAINTY_IDS, CERTAINTY_LAYERS, RasterProbe, SEAL_STOPS, certaintyRasterLayers, certaintySources, classFromAlpha, disagreeFromAlpha, formatDisagree, loadSeals, sealCard, sealLayers,
+  type CertaintyId, type DisagreeLegend, type SealProps, type UncertaintyLegend } from './certainty';
+import { MarineUI } from './marine-ui';
 import { ATTRIBUTION, hashWithLayers, layersFromHash, normName, searchRank, type CardModel, type LayerState, type SearchEntry } from './overlays';
 
 maplibregl.setWorkerUrl(workerUrl);
@@ -106,24 +109,31 @@ await loaded;
 applyExaggeration(exagValue);
 
 // ---------- layer toggles ----------
+// Each layer is a compact row in the Layers drawer (switch, name, (i) for a short note); what is on the map gets a
+// section in the legend dock. The row's `on` class and the legend section follow the map layer.
 function setVisible(layer: string | string[], on: boolean) {
   for (const id of ([] as string[]).concat(layer)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
 }
 const tVeil = $<HTMLInputElement>('t-veil'), tPlates = $<HTMLInputElement>('t-plates'), tFeatures = $<HTMLInputElement>('t-features');
-function setVeil(on: boolean) { tVeil.checked = on; setVisible('veil', on); if (on) $('story-veil').hidden = true; }
-function setPlates(on: boolean) { tPlates.checked = on; setVisible('plates', on); $('plate-key').classList.toggle('off', !on); }
+function rowState(row: string, legend: string | null, on: boolean) {
+  $(row).classList.toggle('on', on);
+  if (legend) $(legend).hidden = !on;
+}
+function setVeil(on: boolean) { tVeil.checked = on; setVisible('veil', on); rowState('row-veil', 'lg-veil', on); if (on) $('story-veil').hidden = true; }
+function setPlates(on: boolean) { tPlates.checked = on; setVisible('plates', on); rowState('row-plates', 'lg-plates', on); }
+function setFeatures(on: boolean) { tFeatures.checked = on; setVisible(FEATURE_LAYERS, on); rowState('row-features', null, on); }
 tVeil.addEventListener('change', () => setVeil(tVeil.checked));
 tPlates.addEventListener('change', () => setPlates(tPlates.checked));
-tFeatures.addEventListener('change', () => setVisible(FEATURE_LAYERS, tFeatures.checked));
+tFeatures.addEventListener('change', () => setFeatures(tFeatures.checked));
 // newly measured between the GEBCO_2025 and GEBCO_2026 grids (pipeline/change.py); hidden if not built
 const tNew = $<HTMLInputElement>('t-new');
 const change = meta.change2025to2026;
-function setNew(on: boolean) { tNew.checked = on; setVisible('new2026', on); }
+function setNew(on: boolean) { tNew.checked = on; setVisible('new2026', on); rowState('new-layer', 'lg-new', on); }
 tNew.addEventListener('change', () => setNew(tNew.checked));
+const pct1 = (f: number) => `${(100 * f).toFixed(1)}%`;
+const mkm1 = (km2: number) => (km2 / 1e6).toFixed(1);
 if (change && (meta.tiles?.new2026 ?? 0) > 0) {
-  const mkm = (km2: number) => (km2 / 1e6).toFixed(1);
-  $('new-stat').innerHTML = `<strong>${mkm(change.newly_measured_km2)} million km²</strong> of seafloor are newly counted as directly measured `
-    + `in the 2026 grid (new surveys and older ones newly shared; measured share ${(100 * change.measured_2025_frac).toFixed(1)}% → ${(100 * change.measured_2026_frac).toFixed(1)}%).`;
+  $('new-stat').innerHTML = `<strong>${mkm1(change.newly_measured_km2)} million km²</strong> newly counted as measured; the measured share went from ${pct1(change.measured_2025_frac)} to ${pct1(change.measured_2026_frac)}.`;
 } else {
   $('new-layer').hidden = true;
 }
@@ -136,34 +146,113 @@ function writeLayersHash(st: LayerState) {
 }
 const overlays = new OverlayUI({ map, dataBase, shippingLegend: 'tiles/shipping/legend.json', onChange: writeLayersHash });
 
+const ATTRIBUTION_SEALS = 'Seal dives: SO-ABBA v1.0 (Hindell, McMahon, Jonsen et al. 2026, doi:10.5281/zenodo.19121676), CC BY 4.0; compared with GEBCO 2026';
+// ---------- how sure is the depth? (model disagreement, prediction confidence, seal soundings) ----------
+// real tiles only; each switch shows its layer and legend section, the readout adds the value under the cursor
+const tilesUrl = new URL(`${tilesBase}/`, location.href).href;
+const [disagreeLg, uncertaintyLg] = synthetic ? [null, null]
+  : await Promise.all([getJSON<DisagreeLegend>('tiles/disagree/legend.json'), getJSON<UncertaintyLegend>('tiles/uncertainty/legend.json')]);
+const certaintyOk: Record<CertaintyId, boolean> = { disagree: !!disagreeLg, uncertainty: !!uncertaintyLg, seals: !synthetic };
+{
+  const srcs = certaintySources(tilesUrl, rasterTileSize);
+  for (const [id, src] of Object.entries(srcs)) if (certaintyOk[id.startsWith('seals') ? 'seals' : id as CertaintyId]) map.addSource(id, src);
+  for (const l of certaintyRasterLayers()) if (certaintyOk[l.id as CertaintyId]) map.addLayer(l, 'shipping');
+  if (certaintyOk.seals) for (const l of sealLayers()) map.addLayer(l, 'plates');
+  for (const id of CERTAINTY_IDS) if (!certaintyOk[id]) $(`row-${id}`).hidden = true;
+  if (!CERTAINTY_IDS.some((id) => certaintyOk[id])) $('sub-certainty').hidden = true;
+}
+const probes = { disagree: new RasterProbe(`${tilesUrl}disagree/`), uncertainty: new RasterProbe(`${tilesUrl}uncertainty/`) };
+const certaintyOn = new Set<CertaintyId>();
+let sealsLoaded: Promise<unknown> | null = null;
+async function setCertainty(id: CertaintyId, on: boolean) {
+  if (!certaintyOk[id]) return;
+  $<HTMLInputElement>(`t-${id}`).checked = on;
+  if (on) certaintyOn.add(id); else certaintyOn.delete(id);
+  rowState(`row-${id}`, `lg-${id}`, on);
+  if (id === 'seals' && on && !sealsLoaded) {
+    $('row-seals').setAttribute('aria-busy', 'true');
+    sealsLoaded = loadSeals(map, dataBase).then((r) => {
+      $('row-seals').removeAttribute('aria-busy');
+      if (r && Number.isFinite(r.dives)) $('seals-stat').innerHTML = `<strong>${pct1(r.deeper / r.dives).replace('.0%', '%')}</strong> of ${(r.dives / 1e6).toFixed(1)} million seal dives went more than 20 m deeper than the chart (${r.deeper.toLocaleString('en-US')} dives).`;
+    });
+    await sealsLoaded;
+  }
+  setVisible(CERTAINTY_LAYERS[id], on);
+  updateLayersBadge();
+  if (lastPoint) renderExtra(lastPoint[0], lastPoint[1]);
+}
+for (const id of CERTAINTY_IDS) $<HTMLInputElement>(`t-${id}`).addEventListener('change', (e) => setCertainty(id, (e.target as HTMLInputElement).checked));
+map.on('mouseenter', 'seals', () => { if (!profiling) map.getCanvas().style.cursor = 'pointer'; });
+map.on('mouseleave', 'seals', () => { if (!profiling) map.getCanvas().style.cursor = ''; });
+// legends and the short notes, from each layer's own legend.json
+const tickRow = (vals: number[], pos: (v: number) => number, label: (v: number) => string) => vals.map((v, i) =>
+  `<span class="${i === 0 ? 'first' : i === vals.length - 1 ? 'last' : ''}" style="left:${(100 * pos(v)).toFixed(1)}%">${label(v)}</span>`).join('');
+if (disagreeLg) {
+  const L = Math.log10, pos = (v: number) => (L(v) - L(disagreeLg.vmin)) / (L(disagreeLg.vmax) - L(disagreeLg.vmin));
+  $('disagree-bar').style.background = `linear-gradient(90deg, ${disagreeLg.stops.map((st) => `${st.color} ${(100 * pos(st.value)).toFixed(1)}%`).join(', ')})`;
+  $('disagree-ticks').innerHTML = tickRow(disagreeLg.stops.map((st) => st.value), pos, (v) => (v >= 1000 ? `${v / 1000} km` : String(v)));
+  const h = disagreeLg.headline;
+  $('disagree-stat').innerHTML = `Where the seafloor is unmeasured and deeper than ${h.depthFromM.toLocaleString('en-US')} m, the two models differ by a median <strong>${Math.round(h.unmeasured_median_abs_m)} m</strong>; ${Math.round(100 * h.unmeasured_share_gt_200m)}% of that area by more than 200 m.`;
+  if (disagreeLg.attribution) $('disagree-src').textContent = disagreeLg.attribution;
+}
+if (uncertaintyLg) {
+  $('uncertainty-key').innerHTML = uncertaintyLg.classes.map((c) => `<li><span class="veil-chip" style="background:${c.color};opacity:${Math.max(0.45, c.alpha / 255).toFixed(2)}" aria-hidden="true"></span><span>${c.label}</span></li>`).join('')
+    + '<li><span class="veil-chip dim" aria-hidden="true"></span><span>Clear: a ship sounding in the cell</span></li>';
+  const sh = uncertaintyLg.shareOfOcean;
+  $('uncertainty-stat').innerHTML = `Low confidence over <strong>${pct1(sh['3'])}</strong> of the ocean, medium over ${pct1(sh['2'])}; ${pct1(sh['0'])} of cells hold a sounding.`;
+  if (uncertaintyLg.attribution) $('uncertainty-src').textContent = uncertaintyLg.attribution;
+}
+{
+  const [lo, , hi] = SEAL_STOPS.map(([v]) => v), pos = (v: number) => (v - lo) / (hi - lo);
+  $('seals-bar').style.background = `linear-gradient(90deg, ${SEAL_STOPS.map(([v, c]) => `${c} ${(100 * pos(v)).toFixed(1)}%`).join(', ')})`;
+  $('seals-ticks').innerHTML = tickRow(SEAL_STOPS.map(([v]) => v), pos, (v) => (v === hi ? `${v}+ m` : `${v}`));
+}
+
+// ---------- marine life (OBIS, speciesgrids, AquaMaps) ----------
+const marine = new MarineUI({
+  map, base: `${dataBase}/obis/`,
+  beforeOn: () => { if (water.open) water.close(); },
+  onChange: () => { updateLayersBadge(); if (lastPoint) renderExtra(lastPoint[0], lastPoint[1]); },
+});
+const marineReady = synthetic ? false : await marine.init();
+if (!marineReady) $('row-marine').hidden = true;
+
 // measured statistic (meta.stats.measured_fraction_area, area-weighted, TID 10-17)
 const mfRaw = meta.stats?.measured_fraction_area;
 const mf = typeof mfRaw === 'number' ? mfRaw : NaN;
 $('measured-stat').innerHTML = Number.isFinite(mf)
-  ? `Ships have directly measured <strong>${(mf * 100).toFixed(1)}%</strong> of the seafloor (Seabed 2030 counts 28.7% for GEBCO 2026 with a slightly different method). The rest is estimated from satellite gravity or interpolation.`
+  ? `<strong>${pct1(mf)}</strong> of the seafloor is directly measured by ships (Seabed 2030 counts 28.7% for GEBCO 2026, with a slightly different method).`
   : 'Coverage statistics are not available for these tiles.';
 
 // plate key (line samples match the map's dash patterns)
 const DASH: Record<string, string> = { ridge: '', subduction: '', transform: '4 3', convergent: '1.2 3.2' };
+const PLATE_SHORT: Record<string, string> = { ridge: 'Spreading', subduction: 'Subduction', transform: 'Transform', convergent: 'Collision' };
 $('plate-key').innerHTML = (Object.keys(PLATE_STYLE) as (keyof typeof PLATE_STYLE)[]).map((k) =>
-  `<li><svg width="26" height="10" aria-hidden="true"><line x1="1" y1="5" x2="25" y2="5" stroke="${PLATE_STYLE[k].color}" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="${DASH[k]}"/></svg><span>${PLATE_STYLE[k].label}</span></li>`).join('');
+  `<li title="${PLATE_STYLE[k].label}"><svg width="22" height="10" aria-hidden="true"><line x1="1" y1="5" x2="21" y2="5" stroke="${PLATE_STYLE[k].color}" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="${DASH[k]}"/></svg><span>${PLATE_SHORT[k]}</span></li>`).join('');
 
-// depth ramp legend: stops spaced evenly, as the colour scale is
+// depth ramp legend: horizontal, stops spaced evenly as the colour scale is (dense near the surface)
 {
-  const deep = [...BATHY_STOPS].reverse(); // 0 m at top
-  const grad = deep.map(([, c], i) => `${c} ${((i / (deep.length - 1)) * 100).toFixed(1)}%`).join(', ');
-  $('ramp').innerHTML = `<div class="bar" style="background: linear-gradient(${grad})"></div>` +
-    deep.map(([h]) => `<div class="tick">${h === 0 ? '0 m' : formatDepth(h).replace('−', '')}</div>`).join('');
-  ($('ramp').querySelector('.bar') as HTMLElement).style.gridRow = `1 / span ${deep.length}`;
+  const deep = [...BATHY_STOPS].reverse(); // 0 m at the left
+  const n = deep.length - 1;
+  const grad = deep.map(([, c], i) => `${c} ${((i / n) * 100).toFixed(1)}%`).join(', ');
+  const show = [0, -200, -1500, -4500, -11000];
+  const ticks = deep.map(([h], i) => show.includes(h)
+    ? `<span class="${i === 0 ? 'first' : i === n ? 'last' : ''}" style="left:${((i / n) * 100).toFixed(1)}%">${h === 0 ? '0' : Math.abs(h).toLocaleString('en-US')}${i === n ? ' m' : ''}</span>` : '').join('');
+  $('ramp').innerHTML = `<div class="ramp-bar" style="background: linear-gradient(90deg, ${grad})"></div><div class="ramp-ticks" aria-hidden="true">${ticks}</div>`;
+  $('ramp').setAttribute('role', 'img');
+  $('ramp').setAttribute('aria-label', 'Colour scale from pale green at 0 m through teal and blue to violet-black at 11,000 m; steps are closer near the surface.');
 }
 
-// credits from meta.json + plates attribution
+// credits and headline numbers (About this map)
 {
   const doi = meta.doi;
   $('credits-body').innerHTML = `
-    <p><strong>Bathymetry</strong>: ${meta.citation}${synthetic ? '' : ''}, <a href="https://doi.org/${doi}" target="_blank" rel="noopener">doi:${doi}</a>. ${meta.licence ?? 'Open Government Licence v3'}: <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/" target="_blank" rel="noopener">OGL v3</a>. Shown at ${meta.sourceResolutionArcsec / 60} arc-minute resolution. “Measured” = GEBCO type identifier 10–17 (direct survey).</p>
+    <p><strong>Bathymetry</strong>: ${meta.citation}, <a href="https://doi.org/${doi}" target="_blank" rel="noopener">doi:${doi}</a>. ${meta.licence ?? 'Open Government Licence v3'}: <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/" target="_blank" rel="noopener">OGL v3</a>. Shown at ${meta.sourceResolutionArcsec / 60} arc-minute resolution. “Measured” = GEBCO type identifier 10–17 (direct survey).</p>
     <p><strong>Plate boundaries</strong>: Bird, P. (2003) An updated digital model of plate boundaries, <em>G³</em> 4(3), 1027, <a href="https://doi.org/10.1029/2001GC000252" target="_blank" rel="noopener">doi:10.1029/2001GC000252</a> (PB2002), ODC-By 1.0.</p>
+    <p><strong>Undersea feature names</strong>: IHO-IOC GEBCO Gazetteer of Undersea Feature Names.</p>
     <p><strong>Ocean water</strong>: World Ocean Atlas 2023, 1991–2020 climate normal, objectively analysed means (NOAA NCEI). Temperature: Locarnini et al. (2024), NOAA Atlas NESDIS 89, <a href="https://doi.org/10.25923/54bh-1613" target="_blank" rel="noopener">doi:10.25923/54bh-1613</a>. Salinity: Reagan et al. (2024), NOAA Atlas NESDIS 90, <a href="https://doi.org/10.25923/70qt-9574" target="_blank" rel="noopener">doi:10.25923/70qt-9574</a>. Potential density computed here with TEOS-10 (gsw). Colour maps: cmocean (Thyng et al. 2016).</p>
+    <p><strong>How sure is the depth?</strong> ${disagreeLg?.attribution ?? 'Model disagreement: AUST_2026_BAT (Yuan &amp; Yang 2026, doi:10.5281/zenodo.22711109, CC BY 4.0) minus GEBCO_2026 (OGL v3)'}. ${uncertaintyLg?.attribution ?? 'Prediction confidence: Nilsson, Phrampus, Sandwell et al. (2025), SWOT ML bathymetry confidence level v1.1, doi:10.5281/zenodo.17673974, CC BY 4.0'}. ${ATTRIBUTION_SEALS}.</p>
+    <p><strong>Marine life</strong> (CC BY-NC 4.0 as a whole): OBIS (2026) Ocean Biodiversity Information System, IOC-UNESCO, <a href="https://www.obis.org" target="_blank" rel="noopener">www.obis.org</a>. OBIS speciesgrids (OBIS + GBIF), CC BY-NC 4.0. Predicted richness: <a href="https://www.aquamaps.org" target="_blank" rel="noopener">AquaMaps</a> (Kaschner et al. 2019, version 10/2019), CC BY-NC 3.0.</p>
     <p><strong>Human activity at sea</strong> (each layer under its own licence):</p>
     <ul class="credits-list">
       <li>${ATTRIBUTION.cables}. Non-commercial use only; adaptations under the same licence. Only this 2022 snapshot is used.</li>
@@ -171,7 +260,13 @@ $('plate-key').innerHTML = (Object.keys(PLATE_STYLE) as (keyof typeof PLATE_STYL
       <li>${ATTRIBUTION.wrecks}. Photos from Wikimedia Commons, loaded only when a wreck card opens.</li>
       <li>Offshore platforms, subsea pipelines and offshore wind farms: ${ATTRIBUTION.osm.replace('OpenStreetMap', '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>')}.</li>
     </ul>
-    <p>Rendered with <a href="https://maplibre.org" target="_blank" rel="noopener">MapLibre GL JS</a>.${synthetic ? ' <strong>These are synthetic development tiles, not real data.</strong>' : ''}</p>`;
+    <p>Rendered with <a href="https://maplibre.org" target="_blank" rel="noopener">MapLibre GL JS</a>. No basemap, tile or font servers, no analytics.${synthetic ? ' <strong>These are synthetic development tiles, not real data.</strong>' : ''}</p>`;
+  const stats: [string, string][] = [];
+  if (Number.isFinite(mf)) stats.push([pct1(mf), 'of the seafloor has been measured directly by ships. The rest is estimated from satellite gravity.']);
+  if (change) stats.push([`${mkm1(change.newly_measured_km2)}M km²`, `newly counted as measured in the 2026 grid, about ${Math.round(change.newly_measured_km2 / 357e3)} times the area of Germany.`]);
+  const of = meta.stats?.ocean_fraction_of_earth;
+  if (typeof of === 'number') stats.push([pct1(of), 'of Earth’s surface is ocean, by area in the GEBCO 2026 grid.']);
+  $('about-stats').innerHTML = stats.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
 }
 
 // ---------- cards ----------
@@ -278,10 +373,14 @@ $('story-veil').addEventListener('click', () => { setVeil(true); $('story-veil')
 // ---------- features + search ----------
 const featureData = await getJSON<GeoJSON.FeatureCollection<GeoJSON.Point, FeatureProps>>(`${dataBase}/features.geojson`);
 const features = featureData?.features ?? [];
+$('features-stat').innerHTML = features.length ? `<strong>${features.length.toLocaleString('en-US')}</strong> named undersea features.` : '';
 const esc = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const input = $<HTMLInputElement>('search-input'), results = $<HTMLUListElement>('search-results');
-// one index over gazetteer names plus, once loaded, cable names and notable wreck names (marked by kind)
-let searchIndex: SearchEntry[] = features.map((f, i) => ({ name: f.properties.name, label: kindLabel(f.properties.kind), kind: 'feature' as const, key: String(i), n: normName(f.properties.name) }));
+// one index over guided views, gazetteer names and, once loaded, cable names and notable wreck names (marked by kind)
+let searchIndex: SearchEntry[] = [
+  ...stories.map((s) => ({ name: s.title, label: 'Guided view', kind: 'story' as const, key: s.id, n: normName(s.title) })),
+  ...features.map((f, i) => ({ name: f.properties.name, label: kindLabel(f.properties.kind), kind: 'feature' as const, key: String(i), n: normName(f.properties.name) })),
+];
 let overlaySearch: Promise<void> | null = null;
 function loadOverlaySearch() {
   overlaySearch ??= overlays.searchEntries().then((xs) => { searchIndex = searchIndex.concat(xs); if (!results.hidden || input.value.trim()) renderResults(); });
@@ -296,13 +395,18 @@ function renderResults() {
   active = hits.length ? 0 : -1;
   results.innerHTML = hits.length
     ? hits.map((f, i) => `<li role="option" id="opt-${i}" aria-selected="${i === active}" data-i="${i}" data-kind="${f.kind}"><span>${esc(f.name)}</span><span class="k">${esc(f.label)}</span></li>`).join('')
-    : `<li class="empty" role="option" aria-disabled="true">Nothing named “${esc(raw)}”. Try a trench, seamount, cable or ship name.</li>`;
+    : `<li class="empty" role="option" aria-disabled="true">Nothing named “${esc(raw)}”. Try a trench, a seamount, a cable or a ship’s name.</li>`;
   results.hidden = false; input.setAttribute('aria-expanded', 'true');
   input.setAttribute('aria-activedescendant', active >= 0 ? `opt-${active}` : '');
 }
 async function choose(i: number) {
   const e = hits[i]; if (!e) return;
   results.hidden = true; input.setAttribute('aria-expanded', 'false'); input.value = e.name;
+  if (e.kind === 'story') {
+    const s = stories.find((x) => x.id === e.key);
+    if (s) { input.blur(); playStory(s); }
+    return;
+  }
   markStory(null); show('story-card', false);
   if (e.kind === 'feature') {
     const f = features[Number(e.key)];
@@ -344,7 +448,7 @@ function lineBounds(g: GeoJSON.MultiLineString | GeoJSON.LineString): [[number, 
 }
 input.addEventListener('input', renderResults);
 input.addEventListener('keydown', (e) => {
-  if (results.hidden) return;
+  if (results.hidden) { if (e.key === 'Escape') input.blur(); return; }
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault();
     active = (active + (e.key === 'ArrowDown' ? 1 : -1) + hits.length) % Math.max(1, hits.length);
@@ -372,6 +476,27 @@ async function readout(lon: number, lat: number) {
   renderDepth();
   $('r-meas').textContent = f[0] === null ? 'land' : Number.isNaN(f[0]) ? 'n/a' : `${Math.round(f[0] * 100)}%`;
   renderWaterReadout();
+  renderExtra(lon, lat);
+}
+/** One extra readout line for the active marine-life or depth-certainty layer (marine first, then confidence, then disagreement). */
+let extraToken = 0;
+async function renderExtra(lon: number, lat: number) {
+  const t = ++extraToken;
+  let out: { label: string; value: string } | null = marine.readout(lon, lat);
+  if (!out && certaintyOn.has('uncertainty') && uncertaintyLg) {
+    const px = await probes.uncertainty.at(lon, lat);
+    const c = px ? classFromAlpha(px[3], uncertaintyLg) : null;
+    out = { label: 'Prediction confidence', value: c ? c.label.replace(' confidence', '') : 'sounding or land' };
+  }
+  if (!out && certaintyOn.has('disagree') && disagreeLg) {
+    const px = await probes.disagree.at(lon, lat);
+    const m = px ? disagreeFromAlpha(px[3], disagreeLg) : null;
+    out = { label: 'Models differ by', value: m === null ? 'under 50 m or not shown' : formatDisagree(m, disagreeLg.vmax) };
+  }
+  if (t !== extraToken) return;
+  $('r-extra').hidden = !out;
+  if (out) { $('r-extra-dt').textContent = out.label; $('r-extra-dd').textContent = out.value; }
+  return out;
 }
 /** While the ocean-water panel is open, the second readout cell shows the water value instead of coverage. */
 function renderWaterReadout() {
@@ -425,7 +550,6 @@ function setProfiling(on: boolean) {
   if (on) { closeSea(); water.close(); }
   profiling = on;
   $('profile-btn').setAttribute('aria-pressed', String(on));
-  $('profile-btn').textContent = on ? 'Stop drawing profiles' : 'Draw a depth profile';
   $('ui').classList.toggle('profiling', on);
   show('profile', on);
   map.getCanvas().style.cursor = on ? 'crosshair' : '';
@@ -467,10 +591,14 @@ map.on('click', (e) => {
   readout(e.lngLat.lng, e.lngLat.lat);
   if (water.open) water.showColumn(e.lngLat.lng, e.lngLat.lat);
   const box: [maplibregl.PointLike, maplibregl.PointLike] = [[e.point.x - 6, e.point.y - 6], [e.point.x + 6, e.point.y + 6]];
-  const layers = [...FEATURE_LAYERS, ...overlays.clickableLayers(), ...(tPlates.checked ? ['plates'] : [])];
+  const layers = [...FEATURE_LAYERS, ...overlays.clickableLayers(), ...(certaintyOn.has('seals') ? ['seals'] : []), ...(tPlates.checked ? ['plates'] : [])];
   const hit: MapGeoJSONFeature | undefined = map.queryRenderedFeatures(box, { layers })[0];
-  if (!hit) return;
+  if (!hit) {
+    if (marine.on) marine.card(e.lngLat.lng, e.lngLat.lat).then((c) => { if (c) { showCard(c); updatePadding(); } });
+    return;
+  }
   if (hit.layer.id === 'plates') showPlate(hit.properties);
+  else if (hit.layer.id === 'seals') { const [lon, lat] = (hit.geometry as GeoJSON.Point).coordinates; showCard(sealCard(hit.properties as SealProps, lon, lat, ATTRIBUTION_SEALS)); updatePadding(); }
   else if (FEATURE_LAYERS.includes(hit.layer.id)) showFeature(hit.properties as FeatureProps);
   else overlays.cardFor(hit).then((c) => { if (c && c !== 'cluster') { showCard(c); updatePadding(); } });
 });
@@ -605,7 +733,6 @@ function openSea(level?: number) {
   show('sea', true);
   $('ui').classList.add('sea-open');
   $('sea-btn').setAttribute('aria-pressed', 'true');
-  $('sea-btn').textContent = 'Return to today’s sea level';
   setSeaLevel(level ?? seaLevel);
   updatePadding();
 }
@@ -616,7 +743,6 @@ function closeSea(hash = true) {
   show('sea', false);
   $('ui').classList.remove('sea-open');
   $('sea-btn').setAttribute('aria-pressed', 'false');
-  $('sea-btn').textContent = 'Change sea level';
   if (seaLevel !== 0) setSeaLevel(0, { hash });
   else if (hash && wasOpen) writeSeaHash();
   updatePadding();
@@ -635,10 +761,10 @@ document.addEventListener('visibilitychange', () => { lastT = 0; });
 // ---------- ocean water (WOA23) ----------
 const water = new WaterUI({
   map, base: 'woa/',
-  beforeOpen: () => { if (seaOpen) closeSea(); if (profiling) setProfiling(false); },
+  beforeOpen: () => { if (seaOpen) closeSea(); if (profiling) setProfiling(false); if (marine.on) marine.set({ on: false }); },
   layout: () => updatePadding(),
   seafloorAt: async (lon, lat) => (await sampler.sample([[lon, lat]])).h[0],
-  onChange: () => renderWaterReadout(),
+  onChange: () => { renderWaterReadout(); syncWaterRow(); },
   underlay: (on) => {
     map.setPaintProperty('relief', 'color-relief-color', (on ? underlayExpression() : seaLevelExpression(seaLevel)) as never);
     seaApplied = seaLevel;
@@ -646,32 +772,52 @@ const water = new WaterUI({
   },
 });
 const waterReady = await water.init();
+// "Ocean water" is a tool (bottom panel) and also a row in the Layers drawer; both drive the same panel
+const tWater = $<HTMLInputElement>('t-water');
+function syncWaterRow() {
+  tWater.checked = water.open;
+  $('row-water').classList.toggle('on', water.open);
+  updateLayersBadge();
+}
+tWater.addEventListener('change', () => { if (tWater.checked) water.show(); else water.close(); });
+if (!waterReady) $('row-water').hidden = true;
 
 // ---------- keep the globe centred in the part of the screen the panels leave free ----------
 const touch = window.matchMedia('(hover: none)').matches;
-if (touch) $('readout-hint').textContent = 'Tap the seafloor to read its depth.';
+if (touch) $('readout-hint').textContent = 'Tap the seafloor to read its depth';
 const visible = (id: string) => !$(id).hidden && getComputedStyle($(id)).display !== 'none';
 const BOTTOM_PANELS = ['sea', 'water', 'profile'];
+const phone = () => window.innerWidth <= 760;
 function updatePadding() {
   const W = window.innerWidth, H = window.innerHeight;
   const r = (id: string) => $(id).getBoundingClientRect();
+  // drawers stop above the legend dock / readout that share their column
+  const ui = $('ui').style;
+  ui.setProperty('--legend-h', visible('legend') ? `${Math.round(r('legend').height) + 12}px` : '0px');
+  ui.setProperty('--readout-h', visible('readout') ? `${Math.round(r('readout').height) + 12}px` : '0px');
   let pad;
-  if (W < 760) {
-    const top = document.querySelector('.masthead')!.getBoundingClientRect().bottom;
-    // the free band is between the masthead and whatever is highest of readout / open card / open sheet
-    const tops = ['readout', 'story-card', 'feature-card', ...BOTTOM_PANELS].filter(visible).map((id) => r(id).top);
+  if (phone()) {
+    const top = $('topbar').getBoundingClientRect().bottom;
+    // the free band is between the top bar and whatever is highest of legend / readout / card / sheet / tabs
+    const tops = ['legend', 'readout', 'story-card', 'feature-card', 'stories', 'layers', 'toolbar', ...BOTTOM_PANELS].filter(visible).map((id) => r(id).top);
+    const tabs = document.querySelector('.tabs')!.getBoundingClientRect();
+    if (tabs.height) tops.push(tabs.top);
     pad = { top: Math.round(top), bottom: Math.round(H - Math.min(H, ...tops)), left: 0, right: 0 };
   } else {
-    // padding from where the panels really are: a bottom panel (sea level, ocean water, profile) pads the bottom,
-    // the same panel docked in the right column (short windows) pads the right
-    let bottom = 0, right = visible('layers') ? W - r('layers').left : 0;
+    // padding from where the panels really are: the open drawers pad the sides, the tool bar and an open bottom
+    // panel (sea level, ocean water, profile) pad the bottom, the same panel docked right (short windows) the right
+    let bottom = visible('toolbar') ? H - r('toolbar').top + 8 : 0;
+    let right = visible('layers') ? W - r('layers').left : 0;
+    let left = visible('stories') ? r('stories').right : 0;
+    // a tall open legend (several layers on) is treated like a side panel, so the globe centres beside it
+    if (visible('legend') && !$('legend').classList.contains('collapsed') && r('legend').height > 0.28 * H) left = Math.max(left, r('legend').right);
     for (const id of BOTTOM_PANELS) {
       if (!visible(id)) continue;
       const b = r(id);
       if (b.left > W * 0.55) right = Math.max(right, W - b.left);
       else bottom = Math.max(bottom, H - b.top + 12);
     }
-    pad = { top: 0, bottom: Math.round(bottom), left: Math.round(r('stories').right), right: Math.round(right) };
+    pad = { top: Math.round($('topbar').getBoundingClientRect().bottom + 4), bottom: Math.round(bottom), left: Math.round(left), right: Math.round(right) };
   }
   const cur = map.getPadding();
   if (cur.top === pad.top && cur.bottom === pad.bottom && cur.left === pad.left && cur.right === pad.right) return;
@@ -724,36 +870,179 @@ for (const id of BOTTOM_PANELS) {
   if (minStore()[id]) setMinimised(id, true);
 }
 
-/** QA: the globe disk vs the panels covering it. */
+/** QA: the globe disk vs the panels covering it (every visible piece of UI, top bar items included). */
+function uiRects(): (Rect & { id: string })[] {
+  const els: [string, Element][] = ['stories', 'layers', 'readout', 'story-card', 'feature-card', 'profile', 'sea', 'water', 'legend', 'toolbar', 'about', 'settings']
+    .filter(visible).map((id) => [id, $(id)]);
+  for (const sel of ['.brand', '.search', '#explore-btn', '#layers-btn', '#about-btn', '#settings-btn', '.tabs']) {
+    const e = document.querySelector(sel)!;
+    if (getComputedStyle(e).display !== 'none') els.push([sel, e]);
+  }
+  return els.map(([id, e]) => { const b = e.getBoundingClientRect(); return { id, left: b.left, top: b.top, right: b.right, bottom: b.bottom }; })
+    .filter((x) => x.right > x.left && x.bottom > x.top);
+}
 function layoutCheck() {
   const W = window.innerWidth, H = window.innerHeight;
   const d = disk();
-  const ids = ['stories', 'layers', 'readout', 'story-card', 'feature-card', 'profile', 'sea', 'water', 'search-input'];
-  const rects: (Rect & { id: string })[] = ids.filter(visible).map((id) => { const b = $(id).getBoundingClientRect(); return { id, left: b.left, top: b.top, right: b.right, bottom: b.bottom }; });
-  const credits = document.querySelector('.credits details')!.getBoundingClientRect();
-  rects.push({ id: 'credits', left: credits.left, top: credits.top, right: credits.right, bottom: credits.bottom });
+  const rects = uiRects();
   const cov = diskCoverage(d, rects, { left: 0, top: 0, right: W, bottom: H });
   const free = freeRect(W, H, map.getPadding());
   return { W, H, zoom: +map.getZoom().toFixed(2), disk: { cx: Math.round(d.cx), cy: Math.round(d.cy), r: Math.round(d.r) }, globeScale: isGlobeScale(d, W, H),
     pad: map.getPadding(), free, centreFree: inside(d.cx, d.cy, free) && !rects.some((rc) => inside(d.cx, d.cy, rc)),
     freeFrac: +cov.freeFrac.toFixed(3), panels: rects.map((x) => ({ id: x.id, top: Math.round(x.top), left: Math.round(x.left), h: Math.round(x.bottom - x.top), w: Math.round(x.right - x.left) })) };
 }
+/** QA: share of the window where the map is not under any UI (4 px grid, by hit testing). */
+function mapShare() {
+  const W = window.innerWidth, H = window.innerHeight, m = $('map');
+  let n = 0, covered = 0;
+  for (let y = 2; y < H; y += 4) for (let x = 2; x < W; x += 4) { n++; const e = document.elementFromPoint(x, y); if (e && !m.contains(e)) covered++; }
+  return +(1 - covered / n).toFixed(3);
+}
 {
   let raf = 0;
   const ro = new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(updatePadding); });
-  for (const id of ['ui', 'readout', 'stories', 'layers', 'profile', 'sea', 'water', 'story-card', 'feature-card']) ro.observe($(id));
+  for (const id of ['ui', 'topbar', 'readout', 'stories', 'layers', 'legend', 'toolbar', 'profile', 'sea', 'water', 'story-card', 'feature-card']) ro.observe($(id));
 }
-updatePadding();
 
-// ---------- phone tabs ----------
+// ---------- panels: drawers, legend dock, popovers, info notes (open state remembered in localStorage) ----------
+type UiKey = 'explore' | 'layers' | 'legend';
+const UI_KEY = 'sfa-ui';
+function uiStore(): Partial<Record<UiKey, boolean>> { try { return JSON.parse(localStorage.getItem(UI_KEY) ?? '{}'); } catch { return {}; } }
+function saveUi(k: UiKey, v: boolean) { try { localStorage.setItem(UI_KEY, JSON.stringify({ ...uiStore(), [k]: v })); } catch { /* storage blocked: state lasts until reload */ } }
+
+function setDrawer(name: 'explore' | 'layers', open: boolean, save = true) {
+  $('ui').classList.toggle(`${name}-open`, open);
+  $(`${name}-btn`).setAttribute('aria-expanded', String(open));
+  if (save) saveUi(name, open);
+  updatePadding();
+}
+for (const name of ['explore', 'layers'] as const) {
+  $(`${name}-btn`).addEventListener('click', () => {
+    const open = !$('ui').classList.contains(`${name}-open`);
+    setDrawer(name, open);
+    if (open) ($(name === 'explore' ? 'stories' : 'layers').querySelector('button, input') as HTMLElement | null)?.focus({ preventScroll: true });
+  });
+}
+document.querySelectorAll<HTMLButtonElement>('[data-drawer]').forEach((b) => b.addEventListener('click', () => {
+  if (phone()) { setTab('none'); return; }
+  const name = b.dataset.drawer === 'stories' ? 'explore' : 'layers';
+  setDrawer(name, false);
+  $(`${name}-btn`).focus();
+}));
+
+// legend dock: one section per layer on the map; hidden when nothing needs a key
+function setLegend(open: boolean, save = true) {
+  $('legend').classList.toggle('collapsed', !open);
+  $('legend-toggle').setAttribute('aria-expanded', String(open));
+  if (save) saveUi('legend', open);
+  updatePadding();
+}
+$('legend-toggle').addEventListener('click', () => setLegend($('legend').classList.contains('collapsed')));
+function legendSections() { return [...$('legend-body').children].filter((s) => !(s as HTMLElement).hidden) as HTMLElement[]; }
+function refreshLegend() {
+  const secs = legendSections();
+  $('legend').hidden = secs.length === 0;
+  $('legend-n').textContent = secs.length > 1 ? String(secs.length) : '';
+  updateLayersBadge();
+}
+new MutationObserver(refreshLegend).observe($('legend-body'), { subtree: true, attributes: true, attributeFilter: ['hidden'] });
+
+/** Count of switched-on layers on the Layers button (named features, on by default, is not counted). */
+function updateLayersBadge() {
+  const ids = [...document.querySelectorAll<HTMLInputElement>('#layers input[role="switch"]')].filter((t) => t.id !== 't-features' && t.checked && !t.closest('[hidden]'));
+  const b = $('layers-count');
+  b.hidden = ids.length === 0;
+  b.textContent = String(ids.length);
+  $('layers-btn').setAttribute('aria-label', ids.length ? `Layers, ${ids.length} on` : 'Layers');
+}
+
+// (i) notes in the layer rows
+document.querySelectorAll<HTMLButtonElement>('.info-btn').forEach((b) => b.addEventListener('click', () => {
+  const open = b.getAttribute('aria-expanded') !== 'true';
+  b.setAttribute('aria-expanded', String(open));
+  $(b.getAttribute('aria-controls')!).hidden = !open;
+}));
+
+// popovers: About this map, Map settings (one at a time; Esc or a click outside closes and returns focus)
+const POPS: Record<string, string> = { about: 'about-btn', settings: 'settings-btn' };
+let openPop: string | null = null;
+function setPopover(id: string | null, focusBack = false) {
+  const prev = openPop;
+  openPop = id;
+  for (const [p, b] of Object.entries(POPS)) { $(p).hidden = p !== id; $(b).setAttribute('aria-expanded', String(p === id)); }
+  if (id) {
+    const first = id === 'settings' ? $('exag') : $('about');
+    if (id === 'about') $('about').tabIndex = -1;
+    first.focus({ preventScroll: true });
+  } else if (focusBack && prev) $(POPS[prev]).focus();
+}
+for (const [p, b] of Object.entries(POPS)) $(b).addEventListener('click', () => setPopover(openPop === p ? null : p));
+document.addEventListener('pointerdown', (e) => {
+  if (!openPop) return;
+  const t = e.target as Node;
+  if (!$(openPop).contains(t) && !$(POPS[openPop]).contains(t)) setPopover(null);
+});
+
+// keyboard: Cmd/Ctrl+K or / focuses search, Esc closes a popover
+const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+if (!isMac) { $('search-key').textContent = 'Ctrl K'; $('about-cmd').textContent = 'Ctrl K'; }
+function focusSearch() { setPopover(null); input.focus(); input.select(); }
+document.addEventListener('keydown', (e) => {
+  const t = e.target as HTMLElement;
+  const typing = t.matches?.('input:not([type="checkbox"]):not([type="range"]), textarea, select') || t.isContentEditable;
+  if ((e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey)) { e.preventDefault(); focusSearch(); return; }
+  if (e.key === '/' && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); focusSearch(); return; }
+  if (e.key === 'Escape' && openPop) { e.preventDefault(); setPopover(null, true); }
+});
+
+// ---------- phone: tabs for the bottom sheet (Explore / Layers / Tools) ----------
 // tapping the open tab again folds the sheet away so more of the globe shows
+const TAB_PANEL: Record<string, string> = { stories: 'stories', layers: 'layers', tools: 'toolbar' };
+const tabButtons = [...document.querySelectorAll<HTMLButtonElement>('.tabs button')];
 function setTab(tab: string) {
   $('ui').dataset.tab = tab;
-  document.querySelectorAll<HTMLButtonElement>('.tabs button').forEach((x) => x.setAttribute('aria-selected', String(x.dataset.tab === tab)));
+  tabButtons.forEach((x) => { x.setAttribute('aria-selected', String(x.dataset.tab === tab)); x.tabIndex = x.dataset.tab === tab || (tab === 'none' && x === tabButtons[0]) ? 0 : -1; });
+  updatePadding();
 }
-document.querySelectorAll<HTMLButtonElement>('.tabs button').forEach((b) => b.addEventListener('click', () => {
-  setTab($('ui').dataset.tab === b.dataset.tab ? 'none' : b.dataset.tab!);
-}));
+tabButtons.forEach((b) => b.addEventListener('click', () => setTab($('ui').dataset.tab === b.dataset.tab ? 'none' : b.dataset.tab!)));
+$('ui').querySelector('.tabs')!.addEventListener('keydown', (e) => {
+  const k = (e as KeyboardEvent).key;
+  if (k !== 'ArrowLeft' && k !== 'ArrowRight') return;
+  const i = tabButtons.indexOf(document.activeElement as HTMLButtonElement);
+  const next = tabButtons[(i + (k === 'ArrowRight' ? 1 : tabButtons.length - 1)) % tabButtons.length];
+  next.focus(); setTab(next.dataset.tab!); e.preventDefault();
+});
+// the drawers and the tool list are tab panels only on a phone
+const phoneMq = window.matchMedia('(max-width: 760px)');
+const LABELLED: Record<string, string | null> = { stories: 'stories-title', layers: 'layers-title', toolbar: null };
+function applyPhoneRoles() {
+  for (const [tab, panel] of Object.entries(TAB_PANEL)) {
+    const el = $(panel);
+    if (phoneMq.matches) { el.setAttribute('role', 'tabpanel'); el.setAttribute('aria-labelledby', `tab-${tab}`); }
+    else { el.removeAttribute('role'); const l = LABELLED[panel]; if (l) el.setAttribute('aria-labelledby', l); else el.removeAttribute('aria-labelledby'); }
+  }
+}
+phoneMq.addEventListener('change', () => { applyPhoneRoles(); updatePadding(); });
+applyPhoneRoles();
+// on a phone a tool closes the sheet it was opened from
+for (const id of ['profile-btn', 'sea-btn', 'water-btn']) $(id).addEventListener('click', () => { if (phone()) setTab('none'); });
+
+// restore remembered panel state (desktop drawers closed and the legend open the first time; phone legend folded)
+{
+  const st = uiStore();
+  setDrawer('explore', st.explore ?? false, false);
+  setDrawer('layers', st.layers ?? false, false);
+  setLegend(st.legend ?? !phone(), false);
+  setTab('none');
+  refreshLegend();
+}
+updatePadding();
+// map first: the opening globe fills the free area (a deep-linked story or place moves the camera afterwards)
+{
+  const W = window.innerWidth, H = window.innerHeight, d = disk();
+  const target = 0.96 * fitRadius(freeRect(W, H, map.getPadding()));
+  if (isGlobeScale(d, W, H) && d.r < 0.97 * target) map.jumpTo({ zoom: zoomForRadius(map.getZoom(), d.r, target) });
+}
 
 // ---------- deep link ----------
 function storyFromHash() {
@@ -789,7 +1078,7 @@ Object.assign(window, {
   __seafloor: {
     map, meta, synthetic, idle, rasterTileSize, terrainTileSize,
     playStory: (id: string, instant = true) => { const s = stories.find((x) => x.id === id); if (s) playStory(s, instant); return !!s; },
-    setVeil, setPlates, setNew,
+    setVeil, setPlates, setNew, setFeatures,
     profile: async (a: [number, number], b: [number, number]) => { setProfiling(true); profileA = a; return runProfile(a, b); },
     hoverChart: (frac: number) => { const svg = $('profile-chart').querySelector('svg')!; const r = svg.getBoundingClientRect(); svg.dispatchEvent(new PointerEvent('pointermove', { clientX: r.left + 60 + frac * (r.width - 72), clientY: r.top + 40 })); },
     readout,
@@ -797,7 +1086,16 @@ Object.assign(window, {
     openSea, closeSea, setSeaLevel: (L: number) => setSeaLevel(L), play: setPlaying,
     seaLevel: () => seaLevel,
     layoutCheck,
+    mapShare,
     setMinimised,
+    ui: {
+      setDrawer: (name: 'explore' | 'layers', open: boolean) => setDrawer(name, open),
+      setLegend: (open: boolean) => setLegend(open),
+      setTab,
+      popover: (id: 'about' | 'settings' | null) => setPopover(id),
+      legend: () => ({ shown: !$('legend').hidden, collapsed: $('legend').classList.contains('collapsed'), sections: legendSections().map((x) => x.id) }),
+      exaggeration: () => ({ value: exagValue, auto: exagAuto, terrain: map.getTerrain()?.exaggeration ?? null }),
+    },
     overlays: {
       set: (id: Parameters<OverlayUI['set']>[0], on: boolean) => overlays.set(id, on),
       allWrecks: (on: boolean) => overlays.setAllWrecks(on),
@@ -821,6 +1119,26 @@ Object.assign(window, {
       });
       map.easeTo({ center: [c.lng + dLng, c.lat], duration: ms, easing: (t) => t });
     }),
+    certainty: {
+      ok: certaintyOk,
+      set: (id: CertaintyId, on: boolean) => setCertainty(id, on),
+      state: () => Object.fromEntries(CERTAINTY_IDS.map((id) => [id, certaintyOk[id] ? map.getLayoutProperty(CERTAINTY_LAYERS[id][0], 'visibility') : 'absent'])),
+      probe: async (id: 'disagree' | 'uncertainty', lon: number, lat: number) => {
+        const px = await probes[id].at(lon, lat);
+        if (!px) return null;
+        return id === 'disagree' ? { alpha: px[3], m: disagreeLg ? disagreeFromAlpha(px[3], disagreeLg) : null } : { alpha: px[3], cls: uncertaintyLg ? classFromAlpha(px[3], uncertaintyLg)?.label ?? null : null };
+      },
+      seals: () => { const src = map.getSource('seals') as GeoJSONSource | undefined; return src ? map.querySourceFeatures('seals').length : 0; },
+    },
+    marine: {
+      ready: marineReady,
+      set: (s: Parameters<MarineUI['set']>[0]) => marine.set(s),
+      value: (lon: number, lat: number) => marine.value(lon, lat),
+      card: (lon: number, lat: number) => marine.card(lon, lat),
+      state: () => ({ on: marine.on, mode: marine.mode, group: marine.group, renders: marine.stats.renders, lastMs: marine.stats.lastMs,
+        visibility: map.getLayer('marine') ? map.getLayoutProperty('marine', 'visibility') : null }),
+    },
+    extra: (lon: number, lat: number) => renderExtra(lon, lat),
     water: {
       ready: waterReady,
       show: (v?: 't' | 's' | 'd', depth?: number) => water.show({ v, depth }),
@@ -828,6 +1146,7 @@ Object.assign(window, {
       set: (s: Parameters<WaterUI['set']>[0]) => water.set(s),
       month: (m: number) => water.set({ month: m }),
       play: (on: boolean) => water.setPlaying(on),
+      preloadMonths: () => water.preloadMonths(),
       column: (lon: number, lat: number) => water.showColumn(lon, lat),
       value: (lon: number, lat: number) => water.readout(lon, lat),
       state: () => ({ open: water.open, v: water.v, depth: water.open ? water.depth : null, month: water.month, playing: water.playing,

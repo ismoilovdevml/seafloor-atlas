@@ -9,151 +9,268 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23374f8a'/%3E%3Cpath d='M1 18c5-2 8 3 15 1s9-6 15-3v4a15 15 0 0 1-30 0z' fill='%23140a22'/%3E%3C/svg%3E" />
 </head>
 <body>
+  <!-- icon set: 24 px grid, 1.75 px strokes, drawn once and referenced with <use> -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="m20 20-4.2-4.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+      <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="m15.2 8.8-1.9 4.5-4.5 1.9 1.9-4.5z" fill="currentColor"/></symbol>
+      <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 4 3.5 8.5 12 13l8.5-4.5z" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/><path d="m3.5 12.5 8.5 4.5 8.5-4.5M3.5 16.2 12 20.7l8.5-4.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"/></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M12 11v5.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><circle cx="12" cy="7.9" r="1.15" fill="currentColor"/></symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="15" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+      <symbol id="i-profile" viewBox="0 0 24 24"><path d="M3 7.5h18" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2 2.2" stroke-linecap="round"/><path d="M3 10.5c2 0 2.6 1.5 4 4.2s2 4.3 3.3 4.3 1.6-3 3-5.3c1.2-2 2.4-2.4 3.7-2.6S20 10.6 21 10.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-sea" viewBox="0 0 24 24"><path d="M3 9.5c1.5 0 1.5-1.3 3-1.3s1.5 1.3 3 1.3 1.5-1.3 3-1.3 1.5 1.3 3 1.3 1.5-1.3 3-1.3 1.5 1.3 3 1.3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 12.5v7M9.2 16.8 12 19.6l2.8-2.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-water" viewBox="0 0 24 24"><path d="M12 3.5c3.2 4 5.6 7.1 5.6 10.2a5.6 5.6 0 0 1-11.2 0C6.4 10.6 8.8 7.5 12 3.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9.3 14.2a2.8 2.8 0 0 0 2.6 2.7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="m6.5 6.5 11 11m0-11-11 11" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+      <symbol id="i-chev" viewBox="0 0 20 20"><path d="M5 7.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    </defs>
+  </svg>
+
   <div id="map" aria-label="Globe of the seafloor. Drag to rotate, scroll or pinch to zoom." role="application"></div>
 
-  <div class="ui" id="ui" data-tab="stories">
-    <header class="masthead">
-      <h1>Seafloor Atlas</h1>
-      <p class="lede">The shape of the whole ocean floor from GEBCO 2026, and how little of it ships have actually measured.</p>
-      <div class="search" role="search">
-        <label class="sr-only" for="search-input">Find an undersea feature, cable or shipwreck</label>
-        <input id="search-input" type="search" placeholder="Find a trench, seamount, cable, wreck…" autocomplete="off" spellcheck="false"
-               role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list" />
-        <ul id="search-results" class="search-results" role="listbox" hidden></ul>
+  <div class="ui" id="ui" data-tab="none">
+    <!-- ================= top bar ================= -->
+    <header class="topbar" id="topbar">
+      <div class="top-left">
+        <h1 class="brand"><span class="brand-mark" aria-hidden="true"></span>Seafloor Atlas</h1>
+        <div class="search" role="search">
+          <label class="sr-only" for="search-input">Search undersea features, cables, shipwrecks and guided views</label>
+          <svg class="search-ico" width="17" height="17" aria-hidden="true"><use href="#i-search"/></svg>
+          <input id="search-input" type="search" placeholder="Search the seafloor" autocomplete="off" spellcheck="false"
+                 role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list" aria-keyshortcuts="Meta+K Control+K /" />
+          <kbd class="search-key" id="search-key" aria-hidden="true">⌘K</kbd>
+          <ul id="search-results" class="search-results" role="listbox" aria-label="Search results" hidden></ul>
+        </div>
+        <button class="chip" id="explore-btn" type="button" aria-expanded="false" aria-controls="stories">
+          <svg width="18" height="18" aria-hidden="true"><use href="#i-compass"/></svg><span>Explore</span>
+        </button>
+      </div>
+      <div class="top-right">
+        <button class="chip" id="layers-btn" type="button" aria-expanded="false" aria-controls="layers">
+          <svg width="18" height="18" aria-hidden="true"><use href="#i-layers"/></svg><span>Layers</span><span class="badge" id="layers-count" hidden></span>
+        </button>
+        <button class="icon-btn" id="about-btn" type="button" aria-expanded="false" aria-controls="about" aria-label="About this map and its data">
+          <svg width="20" height="20" aria-hidden="true"><use href="#i-info"/></svg>
+        </button>
+        <button class="icon-btn" id="settings-btn" type="button" aria-expanded="false" aria-controls="settings" aria-label="Map settings">
+          <svg width="20" height="20" aria-hidden="true"><use href="#i-gear"/></svg>
+        </button>
       </div>
     </header>
 
-    <div class="tabs" role="tablist" aria-label="Panels">
-      <button role="tab" id="tab-stories" aria-controls="stories" aria-selected="true" data-tab="stories">Guided views</button>
-      <button role="tab" id="tab-layers" aria-controls="layers" aria-selected="false" data-tab="layers">Layers</button>
-    </div>
-
-    <section class="panel stories" id="stories" role="tabpanel" aria-labelledby="tab-stories">
-      <h2>Guided views</h2>
-      <ul class="story-list" id="story-list"></ul>
-    </section>
-
-    <section class="panel layers" id="layers" role="tabpanel" aria-labelledby="tab-layers">
-      <h2 class="sr-only-desktop">Layers</h2>
-
-      <div class="layer">
-        <label class="switch-row"><input type="checkbox" role="switch" id="t-veil" /> <span>What's actually measured</span></label>
-        <div class="layer-legend" id="veil-legend">
-          <p class="measured-stat" id="measured-stat">Loading coverage statistics…</p>
-          <div class="veil-key" aria-hidden="true">
-            <span class="veil-chip clear"></span><span>surveyed directly (mostly ship sonar)</span>
-            <span class="veil-chip dim"></span><span>estimated (gravity or interpolation)</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="layer" id="new-layer">
-        <label class="switch-row"><input type="checkbox" role="switch" id="t-new" /> <span>New in GEBCO 2026</span></label>
-        <div class="layer-legend">
-          <p class="measured-stat" id="new-stat"></p>
-          <div class="veil-key" aria-hidden="true">
-            <span class="veil-chip new"></span><span>newly counted as measured since the 2025 grid</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="layer">
-        <label class="switch-row"><input type="checkbox" role="switch" id="t-plates" /> <span>Plate boundaries</span></label>
-        <ul class="plate-key" id="plate-key"></ul>
-      </div>
-
-      <div class="layer">
-        <label class="switch-row"><input type="checkbox" role="switch" id="t-features" checked /> <span>Named features</span></label>
-      </div>
-
-      <section class="layer-group" aria-labelledby="hum-title">
-        <h3 class="group-title" id="hum-title">Human activity at sea</h3>
-        <div class="layer ov" id="ov-cables">
-          <label class="switch-row"><input type="checkbox" role="switch" id="t-cables" aria-controls="ovl-cables" /> <span>Internet cables</span></label>
-          <div class="ov-legend" id="ovl-cables" hidden>
-            <ul class="ov-key" id="ovk-cables"></ul>
-            <label class="check-row"><input type="checkbox" id="t-landing" checked /> <span>Landing points</span></label>
-            <p class="ov-note" id="ovn-cables"></p>
-          </div>
-        </div>
-        <div class="layer ov" id="ov-shipping">
-          <label class="switch-row"><input type="checkbox" role="switch" id="t-shipping" aria-controls="ovl-shipping" /> <span>Shipping traffic</span></label>
-          <div class="ov-legend" id="ovl-shipping" hidden>
-            <ul class="ov-key" id="ovk-shipping"></ul>
-            <p class="ov-note" id="ovn-shipping"></p>
-          </div>
-        </div>
-        <div class="layer ov" id="ov-wrecks">
-          <label class="switch-row"><input type="checkbox" role="switch" id="t-wrecks" aria-controls="ovl-wrecks" /> <span>Shipwrecks</span></label>
-          <div class="ov-legend" id="ovl-wrecks" hidden>
-            <ul class="ov-key" id="ovk-wrecks"></ul>
-            <label class="check-row"><input type="checkbox" id="t-wrecks-all" /> <span id="t-wrecks-all-label">Show all records</span></label>
-            <p class="ov-note" id="ovn-wrecks"></p>
-          </div>
-        </div>
-        <div class="layer ov" id="ov-platforms">
-          <label class="switch-row"><input type="checkbox" role="switch" id="t-platforms" aria-controls="ovl-platforms" /> <span>Oil &amp; gas platforms</span></label>
-          <div class="ov-legend" id="ovl-platforms" hidden>
-            <ul class="ov-key" id="ovk-platforms"></ul>
-            <p class="ov-note" id="ovn-platforms"></p>
-          </div>
-        </div>
-        <div class="layer ov" id="ov-pipelines">
-          <label class="switch-row"><input type="checkbox" role="switch" id="t-pipelines" aria-controls="ovl-pipelines" /> <span>Subsea pipelines</span></label>
-          <div class="ov-legend" id="ovl-pipelines" hidden>
-            <ul class="ov-key" id="ovk-pipelines"></ul>
-            <p class="ov-note" id="ovn-pipelines"></p>
-          </div>
-        </div>
-        <div class="layer ov" id="ov-wind">
-          <label class="switch-row"><input type="checkbox" role="switch" id="t-wind" aria-controls="ovl-wind" /> <span>Offshore wind farms</span></label>
-          <div class="ov-legend" id="ovl-wind" hidden>
-            <ul class="ov-key" id="ovk-wind"></ul>
-            <p class="ov-note" id="ovn-wind"></p>
-          </div>
-        </div>
-      </section>
-
-      <div class="layer exag">
+    <!-- ================= popovers (top right) ================= -->
+    <section class="popover settings" id="settings" role="dialog" aria-labelledby="settings-title" hidden>
+      <h2 id="settings-title">Map settings</h2>
+      <div class="exag">
         <div class="exag-head">
           <label for="exag">Vertical exaggeration</label>
           <output id="exag-out" for="exag">×40</output>
         </div>
         <input type="range" id="exag" min="1" max="80" step="1" value="40" />
         <label class="check-row"><input type="checkbox" id="exag-auto" checked /> <span>Adjust with zoom</span></label>
+        <p class="pop-note">Relief is stretched vertically so ridges and trenches read on a whole-Earth globe. Zoomed in, less stretch looks truer.</p>
       </div>
-
-      <button class="tool" id="profile-btn" aria-pressed="false">Draw a depth profile</button>
-      <button class="tool" id="sea-btn" aria-pressed="false" aria-controls="sea">Change sea level</button>
-      <button class="tool" id="water-btn" aria-pressed="false" aria-controls="water">Show ocean water</button>
-
-      <figure class="depth-legend" id="depth-legend" aria-labelledby="depth-legend-cap">
-        <figcaption id="depth-legend-cap">Depth below sea level</figcaption>
-        <div class="ramp" id="ramp"></div>
-        <p class="ramp-note">Steps are closer near the surface, where shelves and canyons sit.</p>
-      </figure>
-
     </section>
 
-    <div class="readout" id="readout" aria-live="polite">
-      <span class="hint" id="readout-hint">Point at the seafloor to read its depth.</span>
-      <dl class="readout-grid" id="readout-grid" hidden>
-        <div><dt id="r-depth-dt">Depth</dt><dd id="r-depth"></dd></div>
-        <div><dt id="r-meas-dt">Measured by ship</dt><dd id="r-meas"></dd></div>
-        <div><dt>Latitude</dt><dd id="r-lat"></dd></div>
-        <div><dt>Longitude</dt><dd id="r-lon"></dd></div>
-      </dl>
-    </div>
+    <section class="popover about" id="about" role="dialog" aria-labelledby="about-title" hidden>
+      <h2 id="about-title">About this map</h2>
+      <p class="about-lede">The shape of the whole ocean floor from GEBCO 2026, and how little of it ships have actually measured.</p>
+      <dl class="about-stats" id="about-stats"></dl>
+      <details class="about-sources">
+        <summary>Data sources and licences</summary>
+        <div class="credits-body" id="credits-body"></div>
+      </details>
+      <p class="about-keys"><kbd>/</kbd> or <kbd id="about-cmd">⌘K</kbd> search <kbd>Esc</kbd> close</p>
+    </section>
 
+    <!-- ================= Explore (guided views) ================= -->
+    <section class="drawer stories" id="stories" aria-labelledby="stories-title">
+      <header class="drawer-head">
+        <h2 id="stories-title">Guided views</h2>
+        <button class="close" type="button" data-drawer="stories" aria-label="Close guided views"><svg width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
+      </header>
+      <ul class="story-list" id="story-list"></ul>
+    </section>
+
+    <!-- ================= Layers ================= -->
+    <section class="drawer layers" id="layers" aria-labelledby="layers-title">
+      <header class="drawer-head">
+        <h2 id="layers-title">Layers</h2>
+        <button class="close" type="button" data-drawer="layers" aria-label="Close layers"><svg width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
+      </header>
+
+      <section class="group" aria-labelledby="g-seafloor">
+        <h3 class="group-title" id="g-seafloor">Seafloor</h3>
+        <ul class="rows">
+          <li class="row base on" id="row-relief">
+            <span class="row-main"><span class="base-dot" aria-hidden="true"></span><span class="row-name">Relief</span><span class="tag">Base</span></span>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-relief" aria-label="About relief"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="info" id="info-relief" hidden>
+              <p>The GEBCO 2026 grid with hillshade and 3D terrain. Pale is shallow shelf, violet-black the deepest trenches; land is grey.</p>
+              <p class="src">GEBCO Compilation Group (2026), 1′ to zoom 5, full 15″ grid at zoom 6–7. Vertical stretch is in Map settings.</p>
+            </div>
+          </li>
+          <li class="row" id="row-veil">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-veil" /> <span class="row-name">What’s actually measured</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-veil" aria-label="About what’s actually measured"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="info" id="info-veil" hidden>
+              <p class="stat" id="measured-stat">Loading coverage statistics…</p>
+              <p>Dims every cell that ships have not surveyed directly; those depths are estimated from satellite gravity or interpolation.</p>
+              <p class="src">GEBCO 2026 type identifier grid, codes 10–17 = direct survey.</p>
+            </div>
+          </li>
+          <li class="row" id="new-layer">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-new" /> <span class="row-name">New in GEBCO 2026</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-new" aria-label="About new in GEBCO 2026"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="info" id="info-new" hidden>
+              <p class="stat" id="new-stat"></p>
+              <p>Seafloor newly counted as directly measured since the 2025 grid: new surveys, and older ones newly shared.</p>
+              <p class="src">GEBCO 2025 and 2026 type identifier grids, compared cell by cell.</p>
+            </div>
+          </li>
+          <li class="row" id="row-plates">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-plates" /> <span class="row-name">Plate boundaries</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-plates" aria-label="About plate boundaries"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="info" id="info-plates" hidden>
+              <p>Where tectonic plates meet, coloured by how they move. Click a boundary for the two plates and their speed.</p>
+              <p class="src">Bird (2003) PB2002, ODC-By 1.0.</p>
+            </div>
+          </li>
+          <li class="row on" id="row-features">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-features" checked /> <span class="row-name">Named features</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-features" aria-label="About named features"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="info" id="info-features" hidden>
+              <p class="stat" id="features-stat"></p>
+              <p>Trenches, ridges, seamounts and basins, larger ones first. Click a name for its card.</p>
+              <p class="src">IHO-IOC GEBCO Gazetteer of Undersea Feature Names.</p>
+            </div>
+          </li>
+          <li class="subgroup" id="sub-certainty">Depth certainty</li>
+          <li class="row" id="row-disagree">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-disagree" /> <span class="row-name">Model disagreement</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-disagree" aria-label="About model disagreement"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="info" id="info-disagree" hidden>
+              <p class="stat" id="disagree-stat"></p>
+              <p>A second global model (AUST_2026_BAT) minus GEBCO 2026, shown only deeper than 1 km and where most of the cell is unmeasured. Both lean on satellite gravity, so agreement does not prove a depth right: read it as a lower bound on the uncertainty.</p>
+              <p class="src" id="disagree-src">Yuan &amp; Yang (2026), doi:10.5281/zenodo.22711109, CC BY 4.0.</p>
+            </div>
+          </li>
+          <li class="row" id="row-uncertainty">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-uncertainty" /> <span class="row-name">Prediction confidence</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-uncertainty" aria-label="About prediction confidence"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="info" id="info-uncertainty" hidden>
+              <p class="stat" id="uncertainty-stat"></p>
+              <p>How sure a machine-learning model using SWOT satellite gravity is of its own predicted depth, in three classes. It describes that model, not the GEBCO grid; cells with a ship sounding are left clear.</p>
+              <p class="src" id="uncertainty-src">Nilsson, Phrampus, Sandwell et al. (2025), doi:10.5281/zenodo.17673974, CC BY 4.0.</p>
+            </div>
+          </li>
+          <li class="row" id="row-seals">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-seals" /> <span class="row-name">Seal soundings</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-seals" aria-label="About seal soundings"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="info" id="info-seals" hidden>
+              <p class="stat" id="seals-stat">Southern Ocean seals carrying depth tags, compared with the chart.</p>
+              <p>Coloured dots: places where seals dived more than 20 m deeper than GEBCO 2026 allows, beyond each dive’s position error. Faint dots: where seals dived at all. A dive can show the chart is too shallow, never too deep. Click a dot for its numbers.</p>
+              <p class="src" id="seals-src">SO-ABBA v1.0 (Hindell, McMahon, Jonsen et al. 2026), doi:10.5281/zenodo.19121676, CC BY 4.0.</p>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <section class="group" aria-labelledby="g-ocean">
+        <h3 class="group-title" id="g-ocean">Ocean</h3>
+        <ul class="rows">
+          <li class="row" id="row-water">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-water" aria-controls="water" /> <span class="row-name">Ocean water</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-water" aria-label="About ocean water"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="info" id="info-water" hidden>
+              <p>Temperature, salinity and density at 11 depths, averaged over 1991–2020. Switching it on opens the Ocean water tool.</p>
+              <p class="src">World Ocean Atlas 2023, NOAA NCEI.</p>
+            </div>
+          </li>
+          <li class="row" id="row-marine">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-marine" /> <span class="row-name">Marine life</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-marine" aria-label="About marine life"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="row-sub marine-sub">
+              <fieldset class="radio-list" id="marine-mode">
+                <legend class="sr-only">What to show</legend>
+                <label class="check-row"><input type="radio" name="marine-mode" value="aquamaps" checked /> <span>Where species live <span class="muted">model</span></span></label>
+                <label class="check-row"><input type="radio" name="marine-mode" value="es50" /> <span>Species diversity, corrected <span class="muted">ES50</span></span></label>
+                <label class="check-row"><input type="radio" name="marine-mode" value="records" /> <span>Where nobody has looked <span class="muted">records</span></span></label>
+              </fieldset>
+              <label class="select-row" for="marine-group"><span>Group</span>
+                <select id="marine-group"><option value="">All marine life</option></select>
+              </label>
+              <p class="sub-note" id="marine-group-note" hidden>A group shows where its OBIS records are, per 1.4° cell.</p>
+            </div>
+            <div class="info" id="info-marine" hidden>
+              <p class="stat" id="marine-stat"></p>
+              <p>Records show where people looked as much as where life is: coasts, rich countries and research cruises dominate. ES50 corrects for the number of records, not for where or what was sampled. AquaMaps is a model, smooth by design. Click the map for a cell’s most-recorded species.</p>
+              <p class="src">OBIS (2026) www.obis.org; OBIS speciesgrids (OBIS + GBIF), CC BY-NC 4.0; <a href="https://www.aquamaps.org" target="_blank" rel="noopener">AquaMaps</a> (version 10/2019), CC BY-NC 3.0.</p>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <section class="group" aria-labelledby="g-human">
+        <h3 class="group-title" id="g-human">Human activity</h3>
+        <ul class="rows">
+          <li class="row ov" id="ov-cables">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-cables" /> <span class="row-name">Internet cables</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-cables" aria-label="About internet cables"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="row-sub"><label class="check-row"><input type="checkbox" id="t-landing" checked /> <span>Landing points</span></label></div>
+            <div class="info" id="info-cables" hidden>
+              <p class="stat" id="ovn-cables">Submarine telecom cables as of 14 November 2022, with the points where they come ashore.</p>
+            </div>
+          </li>
+          <li class="row ov" id="ov-shipping">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-shipping" /> <span class="row-name">Shipping traffic</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-shipping" aria-label="About shipping traffic"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="info" id="info-shipping" hidden>
+              <p class="stat" id="ovn-shipping">Ship position reports per km², a measure of relative traffic.</p>
+            </div>
+          </li>
+          <li class="row ov" id="ov-wrecks">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-wrecks" /> <span class="row-name">Shipwrecks</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-wrecks" aria-label="About shipwrecks"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="row-sub"><label class="check-row"><input type="checkbox" id="t-wrecks-all" /> <span id="t-wrecks-all-label">Show all records</span></label></div>
+            <div class="info" id="info-wrecks" hidden>
+              <p class="stat" id="ovn-wrecks">Wrecks recorded in Wikidata; names appear as you zoom in.</p>
+            </div>
+          </li>
+          <li class="row ov" id="ov-platforms">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-platforms" /> <span class="row-name">Oil &amp; gas platforms</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-platforms" aria-label="About oil and gas platforms"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="info" id="info-platforms" hidden>
+              <p class="stat" id="ovn-platforms">Offshore platforms mapped in OpenStreetMap.</p>
+            </div>
+          </li>
+          <li class="row ov" id="ov-pipelines">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-pipelines" /> <span class="row-name">Subsea pipelines</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-pipelines" aria-label="About subsea pipelines"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="info" id="info-pipelines" hidden>
+              <p class="stat" id="ovn-pipelines">Subsea oil and gas lines mapped in OpenStreetMap.</p>
+            </div>
+          </li>
+          <li class="row ov" id="ov-wind">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-wind" /> <span class="row-name">Offshore wind farms</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-wind" aria-label="About offshore wind farms"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="info" id="info-wind" hidden>
+              <p class="stat" id="ovn-wind">Offshore wind farms mapped in OpenStreetMap.</p>
+            </div>
+          </li>
+        </ul>
+      </section>
+    </section>
+
+    <!-- ================= cards ================= -->
     <article class="card story-card" id="story-card" hidden aria-live="polite">
-      <button class="close" aria-label="Close" data-close="story-card">×</button>
+      <button class="close" aria-label="Close" data-close="story-card"><svg width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
       <h2 id="story-title"></h2>
       <p id="story-blurb"></p>
       <button class="text-btn" id="story-veil" hidden>Show what's measured here</button>
     </article>
 
     <article class="card feature-card" id="feature-card" hidden aria-live="polite">
-      <button class="close" aria-label="Close" data-close="feature-card">×</button>
+      <button class="close" aria-label="Close" data-close="feature-card"><svg width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
       <figure class="f-photo" id="f-photo" hidden><img id="f-img" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" /><figcaption id="f-img-cap"></figcaption></figure>
       <p class="kind" id="f-kind"></p>
       <h2 id="f-name"></h2>
@@ -164,7 +281,76 @@
       <p class="f-source" id="f-source"></p>
     </article>
 
-    <section class="profile" id="profile" hidden aria-labelledby="profile-title">
+    <!-- ================= legend dock (bottom left): only what is on the map ================= -->
+    <aside class="legend" id="legend" aria-labelledby="legend-title">
+      <button class="legend-head" id="legend-toggle" type="button" aria-expanded="true" aria-controls="legend-body">
+        <span id="legend-title">Legend</span><span class="legend-n" id="legend-n"></span>
+        <svg class="chev" width="16" height="16" aria-hidden="true"><use href="#i-chev"/></svg>
+      </button>
+      <div class="legend-body" id="legend-body">
+        <section class="lg" id="depth-legend" aria-labelledby="depth-legend-cap">
+          <h3 id="depth-legend-cap">Depth below sea level</h3>
+          <div class="ramp" id="ramp"></div>
+        </section>
+        <section class="lg" id="lg-veil" hidden aria-labelledby="lg-veil-t">
+          <h3 id="lg-veil-t">What’s actually measured</h3>
+          <ul class="key">
+            <li><span class="veil-chip clear" aria-hidden="true"></span><span>Surveyed directly, mostly ship sonar</span></li>
+            <li><span class="veil-chip dim" aria-hidden="true"></span><span>Estimated, gravity or interpolation</span></li>
+          </ul>
+        </section>
+        <section class="lg" id="lg-new" hidden aria-labelledby="lg-new-t">
+          <h3 id="lg-new-t">New in GEBCO 2026</h3>
+          <ul class="key"><li><span class="veil-chip new" aria-hidden="true"></span><span>Newly counted as measured since 2025</span></li></ul>
+        </section>
+        <section class="lg" id="lg-plates" hidden aria-labelledby="lg-plates-t">
+          <h3 id="lg-plates-t">Plate boundaries</h3>
+          <ul class="key plate-key" id="plate-key"></ul>
+        </section>
+        <section class="lg" id="lg-disagree" hidden aria-labelledby="lg-disagree-t">
+          <h3 id="lg-disagree-t">Model disagreement</h3>
+          <div class="ramp-bar" id="disagree-bar"></div><div class="ramp-ticks" id="disagree-ticks" aria-hidden="true"></div>
+          <p class="ov-unit">Depth difference between two models, log scale; clear where under 50 m</p>
+        </section>
+        <section class="lg" id="lg-uncertainty" hidden aria-labelledby="lg-uncertainty-t">
+          <h3 id="lg-uncertainty-t">Prediction confidence</h3>
+          <ul class="key" id="uncertainty-key"></ul>
+        </section>
+        <section class="lg" id="lg-seals" hidden aria-labelledby="lg-seals-t">
+          <h3 id="lg-seals-t">Seal soundings</h3>
+          <div class="ramp-bar" id="seals-bar"></div><div class="ramp-ticks" id="seals-ticks" aria-hidden="true"></div>
+          <p class="ov-unit">Largest dive beyond the chart depth in a 0.1° bin</p>
+          <ul class="key"><li><span class="seal-dot" aria-hidden="true"></span><span>Seals dived here, chart not contradicted</span></li></ul>
+        </section>
+        <section class="lg" id="lg-marine" hidden aria-labelledby="lg-marine-t">
+          <h3 id="lg-marine-t">Marine life</h3>
+          <div class="ramp-bar" id="marine-bar"></div><div class="ramp-ticks" id="marine-ticks" aria-hidden="true"></div>
+          <p class="ov-unit" id="marine-unit"></p>
+          <ul class="key" id="marine-masked"><li><span class="veil-chip" aria-hidden="true"></span><span id="marine-masked-t"></span></li></ul>
+        </section>
+        <section class="lg" id="ovl-cables" hidden aria-labelledby="lg-cables-t"><h3 id="lg-cables-t">Internet cables</h3><ul class="key ov-key" id="ovk-cables"></ul></section>
+        <section class="lg" id="ovl-shipping" hidden aria-labelledby="lg-shipping-t"><h3 id="lg-shipping-t">Shipping traffic</h3><div class="ov-key" id="ovk-shipping"></div></section>
+        <section class="lg" id="ovl-wrecks" hidden aria-labelledby="lg-wrecks-t"><h3 id="lg-wrecks-t">Shipwrecks</h3><ul class="key ov-key" id="ovk-wrecks"></ul></section>
+        <section class="lg" id="ovl-platforms" hidden aria-labelledby="lg-platforms-t"><h3 id="lg-platforms-t">Oil &amp; gas platforms</h3><ul class="key ov-key" id="ovk-platforms"></ul></section>
+        <section class="lg" id="ovl-pipelines" hidden aria-labelledby="lg-pipelines-t"><h3 id="lg-pipelines-t">Subsea pipelines</h3><ul class="key ov-key" id="ovk-pipelines"></ul></section>
+        <section class="lg" id="ovl-wind" hidden aria-labelledby="lg-wind-t"><h3 id="lg-wind-t">Offshore wind farms</h3><ul class="key ov-key" id="ovk-wind"></ul></section>
+      </div>
+    </aside>
+
+    <!-- ================= readout (bottom right) ================= -->
+    <div class="readout" id="readout" aria-live="polite">
+      <span class="hint" id="readout-hint">Point at the seafloor to read its depth</span>
+      <dl class="readout-grid" id="readout-grid" hidden>
+        <div class="r-depth"><dt id="r-depth-dt">Depth</dt><dd id="r-depth"></dd></div>
+        <div class="r-meas"><dt id="r-meas-dt">Measured by ship</dt><dd id="r-meas"></dd></div>
+        <div class="r-pos"><dt class="sr-only">Latitude</dt><dd id="r-lat"></dd></div>
+        <div class="r-pos"><dt class="sr-only">Longitude</dt><dd id="r-lon"></dd></div>
+        <div class="r-extra" id="r-extra" hidden><dt id="r-extra-dt"></dt><dd id="r-extra-dd"></dd></div>
+      </dl>
+    </div>
+
+    <!-- ================= tool panels (bottom centre, one at a time) ================= -->
+    <section class="profile tool-panel" id="profile" hidden aria-labelledby="profile-title">
       <header class="profile-head">
         <h2 id="profile-title">Depth profile</h2>
         <p class="profile-status" id="profile-status">Click a start point on the globe.</p>
@@ -173,19 +359,19 @@
           <div><dt>Deepest</dt><dd id="p-min"></dd></div>
           <div><dt>Measured along line</dt><dd id="p-meas"></dd></div>
         </dl>
-        <button class="min-btn" id="profile-min" aria-expanded="true" aria-controls="profile" aria-label="Minimise depth profile"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M5 7.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        <button class="close" id="profile-close" aria-label="Close depth profile">×</button>
+        <button class="min-btn" id="profile-min" aria-expanded="true" aria-controls="profile" aria-label="Minimise depth profile"><svg width="18" height="18" aria-hidden="true"><use href="#i-chev"/></svg></button>
+        <button class="close" id="profile-close" aria-label="Close depth profile"><svg width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
       </header>
       <div class="chart" id="profile-chart"></div>
     </section>
 
-    <section class="sea" id="sea" hidden aria-labelledby="sea-title">
+    <section class="sea tool-panel" id="sea" hidden aria-labelledby="sea-title">
       <header class="sea-head">
         <h2 id="sea-title">Sea level</h2>
         <output class="sea-value" id="sea-out" for="sea-range">0 m</output>
         <p class="sea-stat" id="sea-stat"></p>
-        <button class="min-btn" id="sea-min" aria-expanded="true" aria-controls="sea" aria-label="Minimise sea level"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M5 7.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        <button class="close" id="sea-close" aria-label="Close and return to today's sea level">×</button>
+        <button class="min-btn" id="sea-min" aria-expanded="true" aria-controls="sea" aria-label="Minimise sea level"><svg width="18" height="18" aria-hidden="true"><use href="#i-chev"/></svg></button>
+        <button class="close" id="sea-close" aria-label="Close and return to today's sea level"><svg width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
       </header>
       <div class="sea-control">
         <button class="sea-play" id="sea-play" aria-pressed="false" aria-label="Play sea-level animation">
@@ -200,16 +386,16 @@
       </div>
       <div class="sea-presets" id="sea-presets" role="group" aria-label="Sea-level presets"></div>
       <p class="sea-note" id="sea-note" aria-live="polite"></p>
-      <p class="sea-foot">Land areas are computed from the GEBCO 2026 1′ grid (cell means). Ice sheets count as land at their surface height, and today’s terrain is simply flooded or drained: no rebound of the crust, ice loading or sediment change, so past and future coastlines are approximate.</p>
+      <p class="sea-foot">Land areas from the GEBCO 2026 1′ grid (cell means). Ice sheets count as land at their surface; today’s terrain is simply flooded or drained, with no rebound of the crust, ice loading or sediment change, so past and future coastlines are approximate.</p>
     </section>
 
-    <section class="water" id="water" hidden aria-labelledby="water-title" data-col="empty">
+    <section class="water tool-panel" id="water" hidden aria-labelledby="water-title" data-col="empty">
       <header class="water-head">
         <h2 id="water-title">Ocean water</h2>
         <p class="water-sub" id="water-sub">World Ocean Atlas 2023, average of 1991–2020</p>
         <p class="water-sum" id="water-sum" aria-live="polite"></p>
-        <button class="min-btn" id="water-min" aria-expanded="true" aria-controls="water" aria-label="Minimise ocean water"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M5 7.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        <button class="close" id="water-close" aria-label="Close ocean water">×</button>
+        <button class="min-btn" id="water-min" aria-expanded="true" aria-controls="water" aria-label="Minimise ocean water"><svg width="18" height="18" aria-hidden="true"><use href="#i-chev"/></svg></button>
+        <button class="close" id="water-close" aria-label="Close ocean water"><svg width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
       </header>
       <div class="water-body">
         <div class="water-controls">
@@ -249,12 +435,25 @@
       </div>
     </section>
 
-    <footer class="credits">
-      <details>
-        <summary>Data sources</summary>
-        <div class="credits-body" id="credits-body"></div>
-      </details>
-    </footer>
+    <!-- ================= tools: bottom centre on desktop, the Tools tab on a phone ================= -->
+    <nav class="toolbar" id="toolbar" aria-label="Tools">
+      <button class="tool" id="profile-btn" type="button" aria-pressed="false" aria-controls="profile">
+        <svg width="20" height="20" aria-hidden="true"><use href="#i-profile"/></svg><span>Depth profile</span>
+      </button>
+      <button class="tool" id="sea-btn" type="button" aria-pressed="false" aria-controls="sea">
+        <svg width="20" height="20" aria-hidden="true"><use href="#i-sea"/></svg><span>Sea level</span>
+      </button>
+      <button class="tool" id="water-btn" type="button" aria-pressed="false" aria-controls="water">
+        <svg width="20" height="20" aria-hidden="true"><use href="#i-water"/></svg><span>Ocean water</span>
+      </button>
+    </nav>
+
+    <!-- ================= phone: tabs for the bottom sheet ================= -->
+    <div class="tabs" role="tablist" aria-label="Panels">
+      <button role="tab" id="tab-stories" aria-controls="stories" aria-selected="false" data-tab="stories"><svg width="18" height="18" aria-hidden="true"><use href="#i-compass"/></svg>Explore</button>
+      <button role="tab" id="tab-layers" aria-controls="layers" aria-selected="false" data-tab="layers"><svg width="18" height="18" aria-hidden="true"><use href="#i-layers"/></svg>Layers</button>
+      <button role="tab" id="tab-tools" aria-controls="toolbar" aria-selected="false" data-tab="tools"><svg width="18" height="18" aria-hidden="true"><use href="#i-profile"/></svg>Tools</button>
+    </div>
   </div>
 
   <script type="module" src="/src/main.ts"></script>

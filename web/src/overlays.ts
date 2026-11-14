@@ -374,7 +374,7 @@ export function windCard(p: WindProps): CardModel {
 }
 
 // ---------- search ----------
-export type SearchKind = 'feature' | 'cable' | 'wreck';
+export type SearchKind = 'story' | 'feature' | 'cable' | 'wreck';
 export interface SearchEntry { name: string; label: string; kind: SearchKind; key: string; n: string }
 export const normName = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 /** Prefix matches first, then any substring match; alphabetical within each group. */

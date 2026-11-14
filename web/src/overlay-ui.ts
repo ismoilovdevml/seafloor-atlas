@@ -195,7 +195,7 @@ export class OverlayUI {
   private renderStaticLegends() {
     const att = (id: OverlayId) => `<p class="ov-att">${OVERLAY_ATTRIBUTION[id]}</p>`;
     $('ovk-cables').innerHTML = keyRow(lineKey(OV_COLOR.cable, '', 1.8), 'In service')
-      + keyRow(lineKey(OV_COLOR.cable, '5 3.5', 1.8), 'Planned at the snapshot')
+      + keyRow(lineKey(OV_COLOR.cable, '5 3.5', 1.8), 'Planned in 2022')
       + keyRow(`<svg width="28" height="10" aria-hidden="true"><circle cx="14" cy="5" r="3.6" fill="${OV_COLOR.cable}" stroke="${OV_COLOR.casing}" stroke-width="1"/></svg>`, 'Landing point');
     $('ovn-cables').insertAdjacentHTML('afterend', att('cables'));
     $('ovk-pipelines').innerHTML = keyRow(lineKey(OV_COLOR.gas), 'Gas')
@@ -205,11 +205,11 @@ export class OverlayUI {
     $('ovk-platforms').innerHTML = keyRow(iconImg(ICONS.oil, 11), 'Oil') + keyRow(iconImg(ICONS.oilGas, 11), 'Oil and gas')
       + keyRow(iconImg(ICONS.gas, 11), 'Gas') + keyRow(iconImg(ICONS.windSub, 11), 'Wind-farm substation')
       + keyRow(iconImg(ICONS.other, 11), 'Other or not tagged')
-      + keyRow('<span class="ov-cluster" aria-hidden="true">24</span>', 'Group of platforms; click to zoom in');
+      + keyRow('<span class="ov-cluster" aria-hidden="true">24</span>', 'Group, click to zoom in');
     $('ovn-platforms').insertAdjacentHTML('afterend', att('platforms'));
-    $('ovk-wind').innerHTML = keyRow(`<span class="ov-wind-sizes">${iconImg(ICONS.windFarm, 11)}${iconImg(ICONS.windFarm, 16)}${iconImg(ICONS.windFarm, 22)}</span>`, 'Larger symbol = more capacity (MW)');
+    $('ovk-wind').innerHTML = keyRow(`<span class="ov-wind-sizes">${iconImg(ICONS.windFarm, 11)}${iconImg(ICONS.windFarm, 16)}${iconImg(ICONS.windFarm, 22)}</span>`, 'Larger symbol, more capacity');
     $('ovn-wind').insertAdjacentHTML('afterend', att('wind'));
-    $('ovk-wrecks').innerHTML = keyRow(iconImg(ICONS.wreck, 17), 'Wreck (names appear as you zoom in)');
+    $('ovk-wrecks').innerHTML = keyRow(iconImg(ICONS.wreck, 17), 'Wreck, named as you zoom in');
     $('ovn-wrecks').insertAdjacentHTML('afterend', att('wrecks'));
     $('ovn-shipping').insertAdjacentHTML('afterend', att('shipping'));
     this.renderShippingLegend();
@@ -226,7 +226,7 @@ export class OverlayUI {
     const ticks = lg.stops.filter((s) => Number.isInteger(s.log10) && s.log10 % 1 === 0 && s.log10 >= Math.ceil(lg.log10Min))
       .map((s) => `<span style="left:${pos(s.log10)}%">10${sup(s.log10)}</span>`).join('');
     const [y0, y1] = lg.period.split('/').map((x) => x.slice(0, 4));
-    $('ovk-shipping').innerHTML = `<div class="ov-bar" style="background:linear-gradient(90deg, ${grad})"></div><div class="ov-ticks" aria-hidden="true">${ticks}</div>`;
+    $('ovk-shipping').innerHTML = `<div class="ov-bar" style="background:linear-gradient(90deg, ${grad})"></div><div class="ov-ticks" aria-hidden="true">${ticks}</div><p class="ov-unit">Ship position reports per km² per year, ${y0}–${y1}</p>`;
     $('ovn-shipping').textContent = `AIS position reports per km² per year, ${y0}–${y1}. Read it as relative traffic: busy lanes, ports and fishing grounds glow.`;
   }
 

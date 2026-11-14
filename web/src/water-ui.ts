@@ -119,7 +119,6 @@ export class WaterUI {
     $('water').hidden = false;
     $('ui').classList.add('water-open');
     $('water-btn').setAttribute('aria-pressed', 'true');
-    $('water-btn').textContent = 'Hide ocean water';
     this.ensureLayer();
     this.host.map.setLayoutProperty('water', 'visibility', 'visible');
     this.host.underlay(true);
@@ -135,7 +134,6 @@ export class WaterUI {
     $('water').hidden = true;
     $('ui').classList.remove('water-open');
     $('water-btn').setAttribute('aria-pressed', 'false');
-    $('water-btn').textContent = 'Show ocean water';
     if (this.added) this.host.map.setLayoutProperty('water', 'visibility', 'none');
     this.host.underlay(false);
     this.host.map.getSource<import('maplibre-gl').GeoJSONSource>('water-point')?.setData({ type: 'FeatureCollection', features: [] });
@@ -294,6 +292,11 @@ export class WaterUI {
       this.month = Math.round(this.monthPos) % 12 + 1;
       if (this.open) { this.renderControls(); this.draw(); }
     }
+  }
+  /** Fetch the twelve monthly surface-temperature layers (about 6.6 MB); resolves with how many loaded. */
+  async preloadMonths(): Promise<number> {
+    const gs = await Promise.all(Array.from({ length: 12 }, (_, i) => this.grid(layerKey('t', 0, i + 1))));
+    return gs.filter(Boolean).length;
   }
   private busy = false;
   private tick(ts: number) {
