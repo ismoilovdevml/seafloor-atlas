@@ -15,10 +15,15 @@ A map of the whole Earth's ocean floor, built from the open **GEBCO_2026** grid.
 * **Depth profile:** click two points and get the depth along the line (here: across Challenger Deep, 227 km, deepest −10,721 m).
 * **Guided views:** 11 places such as Challenger Deep, the Hawaiian–Emperor bend, the Mid-Atlantic Ridge and the MH370 search area.
 * **Search** 5,412 named undersea features; **plate boundaries** with spreading rates.
+* **Change sea level** from −6,000 m to +100 m, with an animation and presets: at the ice-age −120 m, Beringia, Sundaland, Sahul and Doggerland are dry land and Earth has **21.8 million km²** more land than today; at +70 m (about all land ice melted) it has **15.8 million km²** less. Areas are computed from the 1′ grid (`pipeline/hypsometry.py`; today 148.2 million km², 29.0 % of Earth, ice surfaces counted as land).
 
 | Measured vs estimated | Depth profile across the Mariana Trench |
 |---|---|
 | ![coverage](web/screenshots/desktop-2-coverage.png) | ![profile](web/screenshots/desktop-5-profile-mariana.png) |
+
+| Sea level −120 m (last ice age): Beringia is dry land | Sea level +70 m (all land ice melted): Bengal delta flooded |
+|---|---|
+| ![-120 m](web/screenshots/sea-2-lgm-beringia.png) | ![+70 m](web/screenshots/sea-8-plus70-bangladesh.png) |
 
 Runs in the browser with no server and no tracking. Built with MapLibre GL; code in [web/](web/).
 
@@ -117,6 +122,7 @@ pipeline/fetch_data.sh                    # inputs (~470 MB, needs GDAL)
 .venv/bin/python pipeline/tiles.py        # web tiles              (~10 min)
 .venv/bin/python pipeline/features.py     # undersea feature names
 .venv/bin/python pipeline/plates.py       # plate boundaries
+.venv/bin/python pipeline/hypsometry.py   # land area vs sea level for the viewer (~5 s)
 .venv/bin/python pipeline/change.py       # 2025 -> 2026 comparison (needs the 2025 TID grid)
 .venv/bin/python pipeline/tiles.py --only new2026
 .venv/bin/python pipeline/figures.py      # README figures

@@ -7,8 +7,13 @@ import type { GeoJSONSource, MapGeoJSONFeature } from 'maplibre-gl';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { buildStyle, DOT_IMAGE, FEATURE_LAYERS, makeDot, type Meta } from './style';
 import { TileSampler } from './sampler';
+import { configureTiles, maxZoomFor, PROTOCOL, protocolHandler } from './tilesource';
 import { ProfileChart } from './profile-chart';
-import { BATHY_STOPS, PLATE_STYLE } from './palette';
+import { BATHY_STOPS, EXPOSED_HIGH, EXPOSED_LOW, FLOODED_DEEP, FLOODED_SHALLOW, PLATE_STYLE, seaLevelExpression } from './palette';
+import {
+  KNEE_LEVEL, PRESETS, SEA_MAX, SEA_MIN, SLIDER_MAX, formatLevel, hashWithSea, landAreaAt, levelToPos, posToLevel, presetFor, seaFromHash, snapLevel,
+  type Hypsometry,
+} from './sealevel';
 import { formatDepth, formatLat, formatLon, greatCircle, haversineKm, profileZoom, unwrapPath } from './geo';
 
 maplibregl.setWorkerUrl(workerUrl);
@@ -35,7 +40,11 @@ if (!meta) {
 }
 const synthetic = tilesBase === 'tiles-synthetic';
 const dataBase = synthetic ? 'tiles-synthetic/data' : 'data';
-const sampler = new TileSampler(tilesBase, meta);
+// static z0..meta.maxzoom next to the page, PMTiles above it when meta.hires is set (tilesource.ts)
+configureTiles(tilesBase, meta.maxzoom, synthetic ? null : meta.hires);
+maplibregl.addProtocol(PROTOCOL, protocolHandler);
+const demMaxZoom = maxZoomFor('dem');
+const sampler = new TileSampler(tilesBase, { ...meta, maxzoom: demMaxZoom });
 
 // ---------- map ----------
 const AUTO_EXAG: [number, number][] = [[0, 60], [2, 50], [3.5, 30], [5, 14], [6.5, 6], [8, 3]];
@@ -176,6 +185,7 @@ function markStory(id: string | null) {
 }
 let currentStory: Story | null = null;
 function playStory(s: Story, instant = false) {
+  closeSea(false); // stories are told at today's sea level
   currentStory = s;
   markStory(s.id);
   show('feature-card', false);
@@ -243,6 +253,7 @@ input.addEventListener('blur', () => setTimeout(() => { results.hidden = true; i
 
 // ---------- hover readout ----------
 let readToken = 0;
+let lastRead: { h: number; f: number | null } | null = null;
 async function readout(lon: number, lat: number) {
   const t = ++readToken;
   const { h, f } = await sampler.sample([[lon, lat]]);
@@ -250,8 +261,19 @@ async function readout(lon: number, lat: number) {
   $('readout-hint').hidden = true; $('readout-grid').hidden = false;
   $('r-lat').textContent = formatLat(lat);
   $('r-lon').textContent = formatLon(lon);
-  $('r-depth').textContent = Number.isFinite(h[0]) ? formatDepth(h[0]) : 'n/a';
+  lastRead = { h: h[0], f: f[0] };
+  renderDepth();
   $('r-meas').textContent = f[0] === null ? 'land' : Number.isNaN(f[0]) ? 'n/a' : `${Math.round(f[0] * 100)}%`;
+}
+/** Depth relative to the sea level shown; with a changed sea level, today's value is kept beside it. */
+function renderDepth() {
+  if (!lastRead) return;
+  const h = lastRead.h, L = seaLevel;
+  $('r-depth-dt').innerHTML = L === 0 ? 'Depth' : `Depth<span class="dt-sea">, sea at ${formatLevel(L)}</span>`;
+  const dd = $('r-depth');
+  if (!Number.isFinite(h)) { dd.textContent = 'n/a'; return; }
+  dd.textContent = formatDepth(h - L);
+  if (L !== 0) dd.insertAdjacentHTML('beforeend', `<span class="was">today ${formatDepth(h)}</span>`);
 }
 let pending: maplibregl.LngLat | null = null;
 map.on('mousemove', (e) => {
@@ -278,6 +300,7 @@ function setProfileSource(a: [number, number] | null, b: [number, number] | null
   (map.getSource('profile') as GeoJSONSource).setData({ type: 'FeatureCollection', features: feats });
 }
 function setProfiling(on: boolean) {
+  if (on) closeSea();
   profiling = on;
   $('profile-btn').setAttribute('aria-pressed', String(on));
   $('profile-btn').textContent = on ? 'Stop drawing profiles' : 'Draw a depth profile';
@@ -294,7 +317,7 @@ async function runProfile(a: [number, number], b: [number, number]) {
   setProfileSource(a, b);
   const pts = greatCircle(a, b, SAMPLES);
   const len = haversineKm(a, b);
-  const z = profileZoom(len, SAMPLES, meta!.maxzoom, meta!.tileSize);
+  const z = profileZoom(len, SAMPLES, demMaxZoom, meta!.tileSize);
   $('profile-status').textContent = 'Reading depths…';
   const { h, f } = await sampler.sample(pts, z);
   const dist = pts.map((_, i) => (len * i) / (SAMPLES - 1));
@@ -331,6 +354,158 @@ for (const id of FEATURE_LAYERS) {
   map.on('mouseleave', id, () => { if (!profiling) map.getCanvas().style.cursor = ''; });
 }
 
+// ---------- sea level ----------
+// The relief ramp is rebuilt for a sea level L (palette.seaLevelExpression) and swapped in with
+// setPaintProperty. At most one swap is in flight: the next one waits for the map's 'render' event, so a
+// fast drag or the animation never queues more ramp rebuilds than the GPU draws.
+const hypso = await getJSON<Hypsometry>('data/hypsometry.json');
+// legend chips use the same tint colours as the map ramp
+for (const [k, v] of Object.entries({ '--exposed-lo': EXPOSED_LOW, '--exposed-hi': EXPOSED_HIGH, '--flooded-lo': FLOODED_DEEP, '--flooded-hi': FLOODED_SHALLOW })) document.documentElement.style.setProperty(k, v);
+let seaLevel = 0;
+let seaApplied = 0;
+let seaRenderPending = false;
+let seaOpen = false;
+const seaRange = $<HTMLInputElement>('sea-range');
+const seaStats = { applies: 0, frames: [] as number[], applyToRender: [] as number[] };
+
+function applySeaPaint() {
+  if (seaRenderPending || seaApplied === seaLevel) return;
+  seaApplied = seaLevel;
+  seaRenderPending = true;
+  const t0 = performance.now();
+  map.setPaintProperty('relief', 'color-relief-color', seaLevelExpression(seaLevel) as never);
+  seaStats.applies++;
+  map.once('render', () => {
+    seaStats.applyToRender.push(performance.now() - t0);
+    seaRenderPending = false;
+    if (seaApplied !== seaLevel) applySeaPaint();
+  });
+}
+
+const mkm = (km2: number) => (km2 / 1e6).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+function renderSeaStat() {
+  if (!hypso) { $('sea-stat').textContent = 'Land-area figures are not available.'; return; }
+  const a = landAreaAt(hypso, seaLevel), d = a - hypso.today_km2;
+  const pct = (100 * a / hypso.earth_km2).toFixed(1);
+  const change = Math.abs(d) < 5e4 ? 'The same as today'
+    : `${mkm(Math.abs(d))} million km² ${d > 0 ? 'more' : 'less'} than today`;
+  const key = seaLevel < 0 ? '<span class="sea-key"><span class="sea-chip exposed"></span>newly exposed sea floor</span>'
+    : seaLevel > 0 ? '<span class="sea-key"><span class="sea-chip flooded"></span>flooded land</span>' : '';
+  $('sea-stat').innerHTML = `<span class="sea-area"><strong>${mkm(a)}</strong> million km² above the sea, <strong>${pct}%</strong> of Earth</span><span class="sea-change">${change}${key}</span>`;
+}
+
+let hashTimer = 0;
+function writeSeaHash() {
+  clearTimeout(hashTimer);
+  hashTimer = window.setTimeout(() => {
+    const h = hashWithSea(location.hash, seaOpen ? seaLevel : null);
+    if (h !== location.hash && !(h === '' && location.hash === '')) history.replaceState(null, '', h || location.pathname + location.search);
+  }, 250);
+}
+
+function setSeaLevel(level: number, opts: { fromSlider?: boolean; hash?: boolean } = {}) {
+  seaLevel = snapLevel(level);
+  if (!opts.fromSlider) seaRange.value = String(Math.round(levelToPos(seaLevel)));
+  seaRange.setAttribute('aria-valuetext', formatLevel(seaLevel));
+  $('sea-out').textContent = formatLevel(seaLevel);
+  $('sea').dataset.dir = seaLevel < 0 ? 'down' : seaLevel > 0 ? 'up' : 'today';
+  renderSeaStat();
+  const pre = presetFor(seaLevel);
+  $('sea-presets').querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.level) === seaLevel)));
+  $('sea-note').textContent = pre ? pre.note
+    : `Drag the slider or press play. Water is coloured by its depth below a sea ${seaLevel < 0 ? 'lowered' : 'raised'} by ${formatLevel(Math.abs(seaLevel))}.`;
+  $('sea-marker').style.left = `${(100 * levelToPos(seaLevel)) / SLIDER_MAX}%`;
+  $('depth-legend-cap').textContent = seaLevel === 0 ? 'Depth below sea level' : `Depth below the sea at ${formatLevel(seaLevel)}`;
+  renderDepth();
+  applySeaPaint();
+  if (opts.hash !== false) writeSeaHash();
+}
+
+// presets, tick labels and the land-share curve, all placed by the slider's own mapping
+{
+  const order = [...PRESETS].sort((a, b) => a.level - b.level);
+  $('sea-presets').innerHTML = order.map((p) =>
+    `<button type="button" data-level="${p.level}" aria-pressed="false" aria-label="${p.name}, ${formatLevel(p.level)}">${p.name}${/^[+−-]?\d/.test(p.name) ? '' : `<span>${formatLevel(p.level).replace(' m', '')}</span>`}</button>`).join('');
+  const ticks = [SEA_MIN, -2500, -1000, -200, -120, 0, 70, SEA_MAX];
+  $('sea-ticks').innerHTML = ticks.map((L) =>
+    `<span class="${L === 0 ? 'today' : [SEA_MIN, KNEE_LEVEL, SEA_MAX].includes(L) ? '' : 'minor'}" style="left:${((100 * levelToPos(L)) / SLIDER_MAX).toFixed(2)}%">${L === 0 ? 'today' : formatLevel(L).replace(' m', '')}</span>`).join('');
+  let curve = '';
+  if (hypso) {
+    // land share of Earth vs slider position; y from 24 % (bottom) to 100 % (top) on a square-root scale,
+    // which spreads out the 25-45 % range the fine part of the slider covers
+    const pts: string[] = [];
+    for (let p = 0; p <= SLIDER_MAX; p += 1) {
+      const frac = landAreaAt(hypso, posToLevel(p)) / hypso.earth_km2;
+      pts.push(`${p},${(40 * (1 - Math.sqrt(Math.max(0, frac - 0.24) / 0.76))).toFixed(2)}`);
+    }
+    curve = `<svg viewBox="0 0 ${SLIDER_MAX} 40" preserveAspectRatio="none"><path class="land" d="M0,40 L${pts.join(' L')} L${SLIDER_MAX},40 Z"/><path class="edge" d="M${pts.join(' L')}" vector-effect="non-scaling-stroke"/></svg>`;
+  }
+  $('sea-curve').innerHTML = `${curve}<span class="sea-marker" id="sea-marker"></span><span class="sea-curve-label">share of Earth that is land</span>`;
+}
+
+// animation: the slider position moves at constant speed and bounces at the ends, so the fine
+// -200..+100 m part of the scale plays slowly and the deep part quickly
+const SWEEP_S = 18; // seconds for one end-to-end pass
+let playing = false, playDir = -1, playPos = 0, lastT = 0;
+function tick(t: number) {
+  if (!playing) return;
+  if (lastT) {
+    const dt = Math.min(0.1, (t - lastT) / 1000);
+    if (seaStats.frames.length < 5000) seaStats.frames.push(t - lastT);
+    playPos += playDir * (SLIDER_MAX / SWEEP_S) * dt;
+    if (playPos <= 0) { playPos = 0; playDir = 1; } else if (playPos >= SLIDER_MAX) { playPos = SLIDER_MAX; playDir = -1; }
+    seaRange.value = String(Math.round(playPos));
+    setSeaLevel(posToLevel(playPos), { fromSlider: true, hash: false });
+  }
+  lastT = t;
+  requestAnimationFrame(tick);
+}
+function setPlaying(on: boolean) {
+  if (on === playing) return;
+  playing = on;
+  $('sea-play').setAttribute('aria-pressed', String(on));
+  $('sea-play').setAttribute('aria-label', on ? 'Pause sea-level animation' : 'Play sea-level animation');
+  if (on) {
+    playPos = levelToPos(seaLevel);
+    if (playPos <= 0) playDir = 1; else if (playPos >= SLIDER_MAX) playDir = -1;
+    lastT = 0;
+    requestAnimationFrame(tick);
+  } else writeSeaHash();
+}
+
+function openSea(level?: number) {
+  if (profiling) setProfiling(false);
+  seaOpen = true;
+  show('sea', true);
+  $('ui').classList.add('sea-open');
+  $('sea-btn').setAttribute('aria-pressed', 'true');
+  $('sea-btn').textContent = 'Return to today’s sea level';
+  setSeaLevel(level ?? seaLevel);
+  updatePadding();
+}
+function closeSea(hash = true) {
+  setPlaying(false);
+  const wasOpen = seaOpen;
+  seaOpen = false;
+  show('sea', false);
+  $('ui').classList.remove('sea-open');
+  $('sea-btn').setAttribute('aria-pressed', 'false');
+  $('sea-btn').textContent = 'Change sea level';
+  if (seaLevel !== 0) setSeaLevel(0, { hash });
+  else if (hash && wasOpen) writeSeaHash();
+  updatePadding();
+}
+$('sea-btn').addEventListener('click', () => (seaOpen ? closeSea() : openSea()));
+$('sea-close').addEventListener('click', () => closeSea());
+$('sea-play').addEventListener('click', () => setPlaying(!playing));
+seaRange.addEventListener('input', () => { setPlaying(false); setSeaLevel(posToLevel(Number(seaRange.value)), { fromSlider: true }); });
+$('sea-presets').addEventListener('click', (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-level]');
+  if (b) { setPlaying(false); setSeaLevel(Number(b.dataset.level)); }
+});
+// a hidden tab gets no animation frames; resume cleanly instead of jumping
+document.addEventListener('visibilitychange', () => { lastT = 0; });
+
 // ---------- keep the globe centred in the part of the screen the panels leave free ----------
 const touch = window.matchMedia('(hover: none)').matches;
 if (touch) $('readout-hint').textContent = 'Tap the seafloor to read its depth.';
@@ -344,7 +519,9 @@ function updatePadding() {
     const tops = ['readout', 'story-card', 'feature-card'].filter((id) => !$(id).hidden && getComputedStyle($(id)).display !== 'none').map((id) => r(id).top);
     pad = { top: Math.round(top), bottom: Math.round(H - Math.min(...tops)), left: 0, right: 0 };
   } else {
-    pad = { top: 0, bottom: 0, left: Math.round(r('stories').right), right: Math.round(W - r('layers').left) };
+    // the sea-level panel sits over the bottom of the globe: keep the view centred above it
+    const bottom = seaOpen ? Math.round(H - r('sea').top + 12) : 0;
+    pad = { top: 0, bottom, left: Math.round(r('stories').right), right: Math.round(W - r('layers').left) };
   }
   const cur = map.getPadding();
   if (cur.top === pad.top && cur.bottom === pad.bottom && cur.left === pad.left && cur.right === pad.right) return;
@@ -353,7 +530,7 @@ function updatePadding() {
 {
   let raf = 0;
   const ro = new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(updatePadding); });
-  for (const id of ['ui', 'readout', 'stories', 'layers', 'profile', 'story-card', 'feature-card']) ro.observe($(id));
+  for (const id of ['ui', 'readout', 'stories', 'layers', 'profile', 'sea', 'story-card', 'feature-card']) ro.observe($(id));
 }
 updatePadding();
 
@@ -373,11 +550,16 @@ function storyFromHash() {
   return m ? stories.find((s) => s.id === m[1]) : undefined;
 }
 const linked = storyFromHash();
+const linkedSea = seaFromHash(location.hash); // read before playStory rewrites the hash
 if (linked) playStory(linked, true);
-// a pasted or edited #story= link in an already open tab does not reload the page
+// #sea=<metres> opens the sea-level panel at that level (after a story, which resets it)
+if (linkedSea !== null) openSea(linkedSea);
+// a pasted or edited #story= / #sea= link in an already open tab does not reload the page
 window.addEventListener('hashchange', () => {
   const s = storyFromHash();
   if (s && s.id !== currentStory?.id) playStory(s);
+  const sea = seaFromHash(location.hash);
+  if (sea !== null && (!seaOpen || sea !== seaLevel)) { setPlaying(false); openSea(sea); }
 });
 
 // ---------- test/capture hooks ----------
@@ -391,5 +573,15 @@ Object.assign(window, {
     hoverChart: (frac: number) => { const svg = $('profile-chart').querySelector('svg')!; const r = svg.getBoundingClientRect(); svg.dispatchEvent(new PointerEvent('pointermove', { clientX: r.left + 60 + frac * (r.width - 72), clientY: r.top + 40 })); },
     readout,
     current: () => currentStory?.id ?? null,
+    openSea, closeSea, setSeaLevel: (L: number) => setSeaLevel(L), play: setPlaying,
+    seaLevel: () => seaLevel,
+    /** frame-time summary since the last call (rAF intervals while playing, ramp swap -> next render) */
+    seaStats: () => {
+      const q = (xs: number[], p: number) => { const a = [...xs].sort((x, y) => x - y); return a.length ? +a[Math.min(a.length - 1, Math.floor(p * a.length))].toFixed(2) : null; };
+      const out = { frames: seaStats.frames.length, frameMedianMs: q(seaStats.frames, 0.5), frameP95Ms: q(seaStats.frames, 0.95), frameMaxMs: q(seaStats.frames, 1),
+        applies: seaStats.applies, applyToRenderMedianMs: q(seaStats.applyToRender, 0.5), applyToRenderP95Ms: q(seaStats.applyToRender, 0.95) };
+      seaStats.frames = []; seaStats.applyToRender = []; seaStats.applies = 0;
+      return out;
+    },
   },
 });

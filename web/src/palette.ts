@@ -27,10 +27,77 @@ export const LAND_STOPS: [number, string][] = [
   [6000, '#747168'],
 ];
 
-/** MapLibre color-relief ramp over ['elevation']. */
+/** MapLibre color-relief ramp over ['elevation'] for today's sea level. */
 export function colorReliefExpression(): unknown[] {
+  return seaLevelExpression(0);
+}
+
+// ---------- sea level ----------
+// A changed sea level L is drawn by rebuilding the ramp: cells below L are water, coloured by their depth
+// below L (the bathymetric ramp shifted by L); cells at or above L are land in the usual greys. Two tints
+// make the change obvious: sea floor that is dry at L < 0 ("newly exposed"), and land that is under water
+// at L > 0 ("flooded"). color-relief only accepts a linear interpolate over ['elevation'], so the hard
+// coastline is a pair of stops SEA_EPS apart (MapLibre packs stops in the DEM encoding, 1/256 m steps).
+
+/** Gap between the last water stop and the first land stop, metres. */
+export const SEA_EPS = 0.05;
+/** Newly exposed sea floor: muted sand, darker at the new coast, lighter toward today's coast. */
+export const EXPOSED_LOW = '#6b5f45';
+export const EXPOSED_HIGH = '#8c7b56';
+/** Flooded land: a clearly bluer water than the teal-green shelf, so the old coastline stays visible. */
+export const FLOODED_DEEP = '#4f86c6';
+export const FLOODED_SHALLOW = '#93bfec';
+
+type Rgb = [number, number, number];
+function hexToRgb(hex: string): Rgb {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function rgbToHex([r, g, b]: Rgb): string {
+  return `#${[r, g, b].map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('')}`;
+}
+/** Linear RGB-space interpolation of a stop list (what MapLibre does between ramp stops), clamped at the ends. */
+export function rampColorAt(stops: [number, string][], h: number): string {
+  if (h <= stops[0][0]) return stops[0][1];
+  const last = stops[stops.length - 1];
+  if (h >= last[0]) return last[1];
+  let i = 1;
+  while (stops[i][0] < h) i++;
+  const [h0, c0] = stops[i - 1], [h1, c1] = stops[i];
+  const t = (h - h0) / (h1 - h0), a = hexToRgb(c0), b = hexToRgb(c1);
+  return rgbToHex([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]);
+}
+
+/**
+ * Ramp stops for sea level L (metres, integer; L = 0 is today). Elevations strictly increase.
+ * Water: elevation < L, colour = BATHY at (elevation - L). Land: elevation >= L, colour = LAND greys at the
+ * cell's own elevation, except the tinted bands [L, 0) when L < 0 and [0, L) when L > 0.
+ */
+export function seaLevelStops(level: number): [number, string][] {
+  const L = Math.round(level);
+  const s: [number, string][] = [];
+  const waterTop = Math.min(0, L) - SEA_EPS; // highest elevation that keeps its plain ocean colour
+  // ocean (today's sea floor still under water): bathymetric ramp shifted down/up by L
+  for (const [h, c] of BATHY_STOPS) if (h + L < waterTop) s.push([h + L, c]);
+  s.push([waterTop, rampColorAt(BATHY_STOPS, waterTop - L)]);
+  if (L > 0) {
+    // flooded land, 0 <= elevation < L
+    s.push([0, FLOODED_DEEP], [L - SEA_EPS, FLOODED_SHALLOW]);
+  } else if (L < 0) {
+    // newly exposed sea floor, L <= elevation < 0
+    s.push([L, EXPOSED_LOW], [-SEA_EPS, EXPOSED_HIGH]);
+  }
+  // land above the new (or today's) coast, in the usual greys by absolute elevation
+  const landFrom = Math.max(0, L);
+  s.push([landFrom, rampColorAt(LAND_STOPS, landFrom)]);
+  for (const [h, c] of LAND_STOPS) if (h > landFrom) s.push([h, c]);
+  return s;
+}
+
+/** MapLibre color-relief ramp for sea level L. */
+export function seaLevelExpression(level: number): unknown[] {
   const e: unknown[] = ['interpolate', ['linear'], ['elevation']];
-  for (const [h, c] of [...BATHY_STOPS, ...LAND_STOPS]) e.push(h, c);
+  for (const [h, c] of seaLevelStops(level)) e.push(h, c);
   return e;
 }
 

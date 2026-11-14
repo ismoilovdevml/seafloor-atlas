@@ -1,6 +1,7 @@
 // MapLibre style built entirely from our own tiles and GeoJSON. No external servers: glyphs come from a
 // bundled font file via `font-faces`, there is no sprite and no basemap.
 import type { LayerSpecification, StyleSpecification } from 'maplibre-gl';
+import { maxZoomFor, tileTemplate, type HiresMeta } from './tilesource';
 import { colorReliefExpression, plateColorExpression, SURVEY_LINE } from './palette';
 import labelFontUrl from '@fontsource-variable/atkinson-hyperlegible-next/files/atkinson-hyperlegible-next-latin-wght-normal.woff2?url';
 
@@ -12,6 +13,8 @@ export interface Meta {
   change2025to2026?: { measured_2025_frac: number; measured_2026_frac: number; newly_measured_km2: number;
     no_longer_measured_km2: number; net_km2: number } | null;
   tiles?: Record<string, number>;
+  /** z6+ archives (PMTiles on Hugging Face); absent = static z0..maxzoom only */
+  hires?: HiresMeta | null;
 }
 
 export const LABEL_FONT = 'Atkinson Label';
@@ -56,8 +59,8 @@ export function buildStyle(tilesBase: string, dataBase: string, meta: Meta): Sty
   const abs = (p: string) => new URL(p, window.location.href).href;
   // resolve the directory only: new URL() would percent-encode the {z}/{x}/{y} template braces
   const tiles = abs(`${tilesBase}/`);
-  const demTiles = [`${tiles}dem/{z}/{x}/{y}.webp`];
-  const dem = { type: 'raster-dem' as const, tiles: demTiles, tileSize: meta.tileSize, minzoom: meta.minzoom, maxzoom: meta.maxzoom, encoding: 'terrarium' as const };
+  // dem + coverage go through the sfa:// protocol (static z0-5, PMTiles above); see tilesource.ts
+  const dem = { type: 'raster-dem' as const, tiles: [tileTemplate('dem')], tileSize: meta.tileSize, minzoom: meta.minzoom, maxzoom: maxZoomFor('dem'), encoding: 'terrarium' as const };
   return {
     version: 8,
     'font-faces': { [LABEL_FONT]: abs(labelFontUrl) },
@@ -76,7 +79,7 @@ export function buildStyle(tilesBase: string, dataBase: string, meta: Meta): Sty
     sources: {
       'dem-terrain': dem,
       'dem-relief': { ...dem },
-      veil: { type: 'raster', tiles: [`${tiles}coverage/{z}/{x}/{y}.webp`], tileSize: meta.tileSize, minzoom: meta.minzoom, maxzoom: meta.maxzoom },
+      veil: { type: 'raster', tiles: [tileTemplate('coverage')], tileSize: meta.tileSize, minzoom: meta.minzoom, maxzoom: maxZoomFor('coverage') },
       new2026: { type: 'raster', tiles: [`${tiles}new2026/{z}/{x}/{y}.webp`], tileSize: meta.tileSize, minzoom: meta.minzoom, maxzoom: meta.maxzoom },
       plates: { type: 'geojson', data: abs(`${dataBase}/plates.geojson`) },
       features: { type: 'geojson', data: abs(`${dataBase}/features.geojson`) },

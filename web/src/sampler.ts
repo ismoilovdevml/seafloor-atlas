@@ -1,3 +1,4 @@
+import { fetchTile } from './tilesource';
 // Reads our own DEM + coverage tiles directly (not from the GL renderer) so hover readouts and profiles
 // get exact values: Terrarium decoded per pixel at a chosen zoom, bilinear for depth, nearest pixel for
 // the measured fraction (a fraction of one ~1 arc-minute cell; blending it across land edges would invent
@@ -18,7 +19,8 @@ export class TileSampler {
   private cache = new Map<string, Promise<Grid | null>>();
   private ready = new Map<string, Grid | null>();
   private order: string[] = [];
-  constructor(private base: string, private meta: SamplerMeta, private capacity = 96) {}
+  // tiles come from tilesource.fetchTile (static or PMTiles); the first argument is kept for call-site compatibility
+  constructor(_base: string, private meta: SamplerMeta, private capacity = 96) {}
 
   private key(kind: Kind, z: number, x: number, y: number) { return `${kind}/${z}/${x}/${y}`; }
 
@@ -27,9 +29,9 @@ export class TileSampler {
     let p = this.cache.get(k);
     if (p) return p;
     p = (async () => {
-      const res = await fetch(`${this.base}/${kind}/${z}/${x}/${y}.webp`);
-      if (!res.ok) return null;
-      const bmp = await createImageBitmap(await res.blob(), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+      const buf = await fetchTile(kind, z, x, y);
+      if (!buf) return null;
+      const bmp = await createImageBitmap(new Blob([buf], { type: 'image/webp' }), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
       const S = this.meta.tileSize;
       const cv = new OffscreenCanvas(S, S);
       const ctx = cv.getContext('2d', { willReadFrequently: true })!;

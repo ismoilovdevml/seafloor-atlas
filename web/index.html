@@ -76,6 +76,7 @@
       </div>
 
       <button class="tool" id="profile-btn" aria-pressed="false">Draw a depth profile</button>
+      <button class="tool" id="sea-btn" aria-pressed="false" aria-controls="sea">Change sea level</button>
 
       <figure class="depth-legend" aria-labelledby="depth-legend-cap">
         <figcaption id="depth-legend-cap">Depth below sea level</figcaption>
@@ -88,7 +89,7 @@
     <div class="readout" id="readout" aria-live="polite">
       <span class="hint" id="readout-hint">Point at the seafloor to read its depth.</span>
       <dl class="readout-grid" id="readout-grid" hidden>
-        <div><dt>Depth</dt><dd id="r-depth"></dd></div>
+        <div><dt id="r-depth-dt">Depth</dt><dd id="r-depth"></dd></div>
         <div><dt>Measured by ship</dt><dd id="r-meas"></dd></div>
         <div><dt>Latitude</dt><dd id="r-lat"></dd></div>
         <div><dt>Longitude</dt><dd id="r-lon"></dd></div>
@@ -123,6 +124,29 @@
         <button class="close" id="profile-close" aria-label="Close depth profile">×</button>
       </header>
       <div class="chart" id="profile-chart"></div>
+    </section>
+
+    <section class="sea" id="sea" hidden aria-labelledby="sea-title">
+      <header class="sea-head">
+        <h2 id="sea-title">Sea level</h2>
+        <output class="sea-value" id="sea-out" for="sea-range">0 m</output>
+        <p class="sea-stat" id="sea-stat"></p>
+        <button class="close" id="sea-close" aria-label="Close and return to today's sea level">×</button>
+      </header>
+      <div class="sea-control">
+        <button class="sea-play" id="sea-play" aria-pressed="false" aria-label="Play sea-level animation">
+          <svg class="i-play" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M6 3.5v13l11-6.5z" fill="currentColor"/></svg>
+          <svg class="i-pause" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M5 3.5h3.5v13H5zM11.5 3.5H15v13h-3.5z" fill="currentColor"/></svg>
+        </button>
+        <div class="sea-scale">
+          <div class="sea-curve" id="sea-curve" aria-hidden="true"></div>
+          <input type="range" id="sea-range" min="0" max="545" step="1" value="445" aria-label="Sea level" />
+          <div class="sea-ticks" id="sea-ticks" aria-hidden="true"></div>
+        </div>
+      </div>
+      <div class="sea-presets" id="sea-presets" role="group" aria-label="Sea-level presets"></div>
+      <p class="sea-note" id="sea-note" aria-live="polite"></p>
+      <p class="sea-foot">Land areas are computed from the GEBCO 2026 1′ grid (cell means). Ice sheets count as land at their surface height, and today’s terrain is simply flooded or drained: no rebound of the crust, ice loading or sediment change, so past and future coastlines are approximate.</p>
     </section>
 
     <footer class="credits">

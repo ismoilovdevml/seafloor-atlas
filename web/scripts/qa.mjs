@@ -92,6 +92,32 @@ const shot = (page, f) => page.screenshot({ path: `${outdir}/${f}` });
   ok('search Enter flies to Challenger Deep', Math.abs(c.lat - 11.37) < 2 && Math.abs(c.lng - 142.59) < 3, `${c.lng.toFixed(2)}, ${c.lat.toFixed(2)}`);
   await shot(page, 'search-challenger.png');
 
+  // sea level: presets change the land statistic, animation stays smooth, stories reset to 0
+  if (await page.evaluate(() => typeof window.__seafloor.setSeaLevel === 'function')) {
+    await page.evaluate(() => { const s = window.__seafloor; s.openSea(); s.map.jumpTo({ center: [-170, 63], zoom: 2.6, pitch: 0, bearing: 0 }); });
+    const stat = {};
+    for (const L of [0, -120, 70]) {
+      await page.evaluate((L) => window.__seafloor.setSeaLevel(L), L);
+      await settle(600);
+      stat[L] = await page.textContent('#sea-stat');
+      await shot(page, `sea-${L}.png`);
+    }
+    const km = (t) => Number((/([\d.]+)\s*million/.exec(t || '') || [])[1]);
+    ok('sea level -120 m exposes more land than today, +70 m less', km(stat[-120]) > km(stat[0]) && km(stat[70]) < km(stat[0]),
+      `today ${km(stat[0])}, -120 ${km(stat[-120])}, +70 ${km(stat[70])} M km2`);
+    await page.evaluate(() => { window.__seafloor.seaStats(); window.__seafloor.play(true); });
+    await page.waitForTimeout(4000);
+    const fs = await page.evaluate(() => { const s = window.__seafloor; s.play(false); return s.seaStats(); });
+    ok('sea-level animation frame time p95 < 50 ms', fs.frameP95Ms !== null && fs.frameP95Ms < 50, JSON.stringify(fs));
+    await page.evaluate(() => window.__seafloor.playStory('challenger-deep', true));
+    await settle(500);
+    ok('a story resets sea level to 0', (await page.evaluate(() => window.__seafloor.seaLevel())) === 0);
+    await page.evaluate(() => { location.hash = '#sea=-120'; });
+    await page.waitForTimeout(800);
+    ok('#sea=-120 link sets the level', (await page.evaluate(() => window.__seafloor.seaLevel())) === -120);
+    await page.evaluate(() => window.__seafloor.closeSea());
+  }
+
   // deep link changed in an open tab
   await page.evaluate(() => { location.hash = '#story=drake-passage'; });
   await page.waitForTimeout(800);
