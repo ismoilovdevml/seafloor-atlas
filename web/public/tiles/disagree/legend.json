@@ -1,0 +1,62 @@
+{
+ "layer": "disagree",
+ "title": "Where two seafloor models disagree",
+ "units": "m (|AUST_2026_BAT − GEBCO_2026|)",
+ "description": "Absolute depth difference between two independent-ish global models, shown only where less than half of the 1′ cell is directly measured (TID 10–17) and the seafloor is deeper than 1,000 m (on shelves and slopes AUST is biased deep, so differences there are not shown). Large values mean the depth there is genuinely uncertain; small values do not prove it is right, because both models use satellite gravity.",
+ "scale": "log10",
+ "vmin": 50.0,
+ "vmax": 1000.0,
+ "transparentBelow": 50.0,
+ "alphaMin": 110,
+ "alphaMax": 235,
+ "colormap": "matplotlib plasma from 0.12",
+ "stops": [
+  {
+   "value": 50,
+   "log10": 1.699,
+   "color": "#4903a0"
+  },
+  {
+   "value": 100,
+   "log10": 2.0,
+   "color": "#9814a0"
+  },
+  {
+   "value": 200,
+   "log10": 2.301,
+   "color": "#d14e72"
+  },
+  {
+   "value": 500,
+   "log10": 2.699,
+   "color": "#fca537"
+  },
+  {
+   "value": 1000,
+   "log10": 3.0,
+   "color": "#f0f921"
+  }
+ ],
+ "mask": "ocean (GEBCO TID != 0 and 1' elevation < 0), GEBCO depth >= 1000 m, measured fraction < 0.5, 75 S - 75 N, Caspian and Baikal excluded",
+ "headline": {
+  "unmeasured_median_abs_m": 60.5,
+  "unmeasured_p95_abs_m": 402.5,
+  "unmeasured_share_gt_100m": 0.3513,
+  "unmeasured_share_gt_200m": 0.1664,
+  "measured_median_abs_m": 46.5,
+  "depthFromM": 1000.0
+ },
+ "tileSize": 512,
+ "minzoom": 0,
+ "maxzoom": 5,
+ "format": "webp (lossy RGBA)",
+ "sourceResolutionArcsec": 60,
+ "source": "AUST_2026_BAT (Zenodo 22711109) and GEBCO_2026",
+ "sourceUrl": "https://zenodo.org/records/22711109",
+ "citation": "Yuan, J. & Yang, C. (2026) AUST_2026_BAT: A Global Bathymetry Model Derived from Multi-Scale Marine Gravity Anomalies Using Fully Connected Deep Neural Networks and Adaptive Multi-Factor Spatial Partitioning (v2026). Zenodo. doi:10.5281/zenodo.22711109",
+ "licence": "CC BY 4.0 (AUST_2026_BAT); OGL v3 (GEBCO_2026)",
+ "attribution": "Model disagreement: AUST_2026_BAT (Yuan & Yang 2026, doi:10.5281/zenodo.22711109, CC BY 4.0) minus GEBCO_2026 (OGL v3)",
+ "tiles": 1365,
+ "emptyTiles": 660,
+ "bytes": 41585982
+}

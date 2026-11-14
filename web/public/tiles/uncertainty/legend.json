@@ -1,0 +1,60 @@
+{
+ "layer": "uncertainty",
+ "title": "Confidence of satellite-predicted depth (SWOT ML model)",
+ "units": "predicted depth error (file gives no unit; class thresholds 80 / 150 are consistent with metres)",
+ "description": "Where the seafloor depth is predicted from SWOT satellite gravity rather than measured, how confident the prediction is: high (predicted error < 80), medium (80–150), low (> 150). Cells containing a ship sounding and land are transparent. Confidence of the authors' SWOT machine-learning bathymetry, which is related to but not the same grid as GEBCO_2026.",
+ "classes": [
+  {
+   "class": 1,
+   "label": "High confidence",
+   "range": [
+    null,
+    80.0
+   ],
+   "color": "#4fb3bf",
+   "alpha": 70
+  },
+  {
+   "class": 2,
+   "label": "Medium confidence",
+   "range": [
+    80.0,
+    150.0
+   ],
+   "color": "#f2b705",
+   "alpha": 160
+  },
+  {
+   "class": 3,
+   "label": "Low confidence",
+   "range": [
+    150.0,
+    null
+   ],
+   "color": "#e03e52",
+   "alpha": 225
+  }
+ ],
+ "transparent": "class 0 (contains a sounding), class 4 (land), beyond 80 deg",
+ "lowerZooms": "pixels are the mean predicted_error of the non-sounding cells underneath, then classed",
+ "shareOfOcean": {
+  "0": 0.2624,
+  "1": 0.4276,
+  "2": 0.2403,
+  "3": 0.0672,
+  "4": 0.0025
+ },
+ "tileSize": 512,
+ "minzoom": 0,
+ "maxzoom": 5,
+ "format": "webp (lossless RGBA)",
+ "sourceResolutionArcsec": 60,
+ "source": "Bathymetry_Prediction_Confidence_Level_v1.1.nc (Zenodo 17673974)",
+ "sourceUrl": "https://zenodo.org/records/17673974",
+ "citation": "Nilsson, B., Phrampus, B. J., Salajegheh, F., Liu, B., Yu, Y., Sandwell, D., Harper, H., Andersen, O. B., Smith, W. H. F., Elmore, P., Kirby, J., Beale, J., Roberts, J. & Altamirano, L. (2025) Bathymetry Prediction with SWOT Gravity Anomaly using Machine Learning Methods: Paper 2 - Model Evaluation and Uncertainty Analysis [Bathymetry_Prediction_Confidence_Level_v1.1]. Zenodo. doi:10.5281/zenodo.17673974",
+ "licence": "CC BY 4.0",
+ "attribution": "Prediction confidence: Nilsson, Phrampus, Sandwell et al. (2025), SWOT ML bathymetry confidence level v1.1, doi:10.5281/zenodo.17673974, CC BY 4.0",
+ "tiles": 1365,
+ "emptyTiles": 429,
+ "bytes": 9114582
+}
