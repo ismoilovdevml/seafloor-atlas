@@ -1,5 +1,7 @@
 # Seafloor Atlas
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24228190.svg)](https://doi.org/10.5281/zenodo.24228190)
+
 An interactive 3D globe of the whole ocean floor, built from open data. It shows the shape of the seafloor, **how much of it has actually been measured**, how sure we are of the rest, the water above it, the life in it and what people have built on it.
 
 **Open it: https://ismoilovdevml.github.io/seafloor-atlas/** (runs in the browser, no server, no tracking)
@@ -142,3 +144,7 @@ Every other layer has its own script in `pipeline/` (one per data source, each d
 | Platforms, pipelines, wind farms | © OpenStreetMap contributors | ODbL |
 
 Code: MIT. Some data layers are non-commercial (NC); the site is non-commercial.
+
+## Cite
+
+Ismoilov, O. (2026). *Seafloor Atlas: an interactive globe of the whole ocean floor and how much of it has been measured* (v1.0.0). Zenodo. [doi:10.5281/zenodo.24228191](https://doi.org/10.5281/zenodo.24228191). All versions: [doi:10.5281/zenodo.24228190](https://doi.org/10.5281/zenodo.24228190). Please also cite the data sources above.
