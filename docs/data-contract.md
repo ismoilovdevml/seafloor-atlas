@@ -717,7 +717,7 @@ GitHub Pages serves both gzipped (0.89 MB and 1.01 MB on the wire).
     paper: ~270 m). SIO-only seamounts: GEBCO relief is 591 m lower than the VGG height (median), and 30 % show less
     than 200 m of GEBCO relief; 202 lie within 10 km of a candidate SDUST rejected by visual inspection.
   * Spot checks: Vema Seamount (8.36° E, 31.64° S) height 4,520 m, but its GEBCO_2026 summit cell is +29 m with
-    TID 0 (land) — published surveys put the shallowest point at about 21.5 to 22 m below sea level (and 26 m in the 1965 survey), so these are GEBCO cells coded as land (two cells, +29 m and +6 m, near 8.3771 E, 31.6104 S); reported to Seabed 2030.
+    TID 0 (land) — published surveys put the shallowest point at 22 m below sea level (Bergstad et al. 2019; 26 m in the 1965 survey), so these are GEBCO cells coded as land (two cells, +29 m and +6 m, near 8.3771 E, 31.6104 S); reported to Seabed 2030.
     SG̲áan K̲ínghlas-Bowie: summit 83 m, multibeam (published shallowest ~24 m; 15″ cells average). Davidson: 1,393 m,
     multibeam (KW-17785). Kamaʻehuakanaloa (Lōʻihi): a layer seamount 1.4 km from 18.92° N 155.27° W, summit 1,033 m (published ~975 m).
 * Caveats: catalogue positions and heights come from satellite gravity; small seamounts (< ~1 km) are incomplete
