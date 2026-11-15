@@ -259,7 +259,7 @@ Limitations of these analyses: AUST_2026_BAT shares training data and gravity in
 
 # Data and code availability
 
-The code is MIT-licensed at https://github.com/ismoilovdevml/seafloor-atlas (data files keep their source licences, listed in LICENSES.md) and archived on Zenodo [@ismoilov2026atlas]; this paper uses version 1.2.0 (concept DOI for all versions: 10.5281/zenodo.24228190). The live viewer is at https://seaflooratlas.org/. The numbers in this paper come from the following scripts and outputs:
+The code is MIT-licensed at https://github.com/ismoilovdevml/seafloor-atlas (data files keep their source licences, listed in LICENSES.md) and archived on Zenodo [@ismoilov2026atlas]; this paper uses version 1.2.0, doi:10.5281/zenodo.24260821 (concept DOI for all versions: 10.5281/zenodo.24228190). The live viewer is at https://seaflooratlas.org/. The numbers in this paper come from the following scripts and outputs:
 
 - `pipeline/coverage.py` → `data/derived/stats.json`
 - `pipeline/history.py` → `data/derived/history_stats.json` and `web/public/history/manifest.json`
