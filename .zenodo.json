@@ -1,7 +1,7 @@
 {
   "title": "Seafloor Atlas: an interactive globe of the whole ocean floor and how much of it has been measured",
   "upload_type": "software",
-  "description": "<p>An interactive 3D globe of the whole ocean floor built from open data (GEBCO_2026), with the code and data pipeline behind it. It shows the shape of the seafloor, which parts were directly measured by ships (GEBCO type identifier grid), how sure the depth is elsewhere (model disagreement with AUST_2026_BAT, SWOT prediction confidence, seal dives from SO-ABBA), the water above it (World Ocean Atlas 2023 temperature, salinity, TEOS-10 density), marine life (OBIS, ES50, AquaMaps) and human activity at sea (cables, shipping, wrecks, platforms, pipelines, wind farms).</p><p>Key results computed in the repository: 30.8 % of the seafloor directly measured (GEBCO_2026), +4.1 million km&sup2; between the 2025 and 2026 grids; median error of 10 m at the 14 deepest places against published surveys; ocean volume 1.338 billion km&sup3;; national waters 38.0 % vs high seas 26.4 % measured.</p><p>Live viewer: https://ismoilovdevml.github.io/seafloor-atlas/ . Zoom 6&ndash;7 tiles: https://huggingface.co/datasets/ismoilovdev/seafloor-atlas-tiles . Code is MIT; data layers keep their own licences (per-file table in LICENSES.md); some are non-commercial or ShareAlike.</p>",
+  "description": "<p>An interactive 3D globe of the whole ocean floor built from open data (GEBCO_2026), with the code and data pipeline behind it. It shows the shape of the seafloor, which parts were directly measured by ships (GEBCO type identifier grid), how sure the depth is elsewhere (model disagreement with AUST_2026_BAT, SWOT prediction confidence, seal dives from SO-ABBA), the water above it (World Ocean Atlas 2023 temperature, salinity, TEOS-10 density), marine life (OBIS, ES50, AquaMaps) and human activity at sea (cables, shipping, wrecks, platforms, pipelines, wind farms).</p><p>Key results computed in the repository: 30.8 % of the seafloor directly measured (GEBCO_2026), +4.1 million km&sup2; between the 2025 and 2026 grids; median error of 10 m at the 14 deepest places against published surveys; ocean volume 1.338 billion km&sup3;; national waters 38.0 % vs high seas 26.4 % measured.</p><p>Live viewer: https://seaflooratlas.org/ . Zoom 6&ndash;7 tiles: https://huggingface.co/datasets/ismoilovdev/seafloor-atlas-tiles . Code is MIT; data layers keep their own licences (per-file table in LICENSES.md); some are non-commercial or ShareAlike.</p>",
   "creators": [
     {
       "name": "Ismoilov, Otabek",
@@ -25,7 +25,7 @@
   ],
   "related_identifiers": [
     {
-      "identifier": "https://ismoilovdevml.github.io/seafloor-atlas/",
+      "identifier": "https://seaflooratlas.org/",
       "relation": "isDocumentedBy",
       "resource_type": "other"
     },

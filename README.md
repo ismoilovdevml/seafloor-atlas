@@ -4,7 +4,7 @@
 
 An interactive 3D globe of the whole ocean floor, built from open data. It shows the shape of the seafloor, **how much of it has actually been measured**, how sure we are of the rest, the water above it, the life in it and what people have built on it.
 
-**Open it: https://ismoilovdevml.github.io/seafloor-atlas/** (runs in the browser, no server, no tracking)
+**Open it: https://seaflooratlas.org/** (runs in the browser, no server, no tracking)
 
 ![Seafloor Atlas](docs/img/hero.jpg)
 

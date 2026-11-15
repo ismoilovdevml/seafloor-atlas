@@ -35,7 +35,7 @@ tags:
 # Seafloor Atlas tiles
 
 High-zoom web map tiles (Web Mercator, zoom 6-7, 512 px) for
-[Seafloor Atlas](https://ismoilovdevml.github.io/seafloor-atlas/) ([code](https://github.com/ismoilovdevml/seafloor-atlas)).
+[Seafloor Atlas](https://seaflooratlas.org/) ([code](https://github.com/ismoilovdevml/seafloor-atlas)).
 Zoom 0-5 is served from GitHub Pages; these archives are read by the browser with HTTP range requests.
 
 | File | Content |
@@ -51,12 +51,12 @@ Open Government Licence v3; attribution required. Not for navigation.
 
 
 def check_url(url: str) -> dict:
-    req = urllib.request.Request(url, headers={"Range": "bytes=0-126", "Origin": "https://ismoilovdevml.github.io"})
+    req = urllib.request.Request(url, headers={"Range": "bytes=0-126", "Origin": "https://seaflooratlas.org"})
     with urllib.request.urlopen(req, timeout=60) as r:
         body = r.read()
         status, acao = r.status, r.headers.get("Access-Control-Allow-Origin")
     assert status == 206, f"{url}: expected 206, got {status}"
-    assert acao in ("*", "https://ismoilovdevml.github.io"), f"{url}: CORS header {acao!r}"
+    assert acao in ("*", "https://seaflooratlas.org"), f"{url}: CORS header {acao!r}"
     assert body[:7] == b"PMTiles" and body[7] == 3, f"{url}: not a PMTiles v3 archive"
     return {"status": status, "cors": acao, "min_zoom": body[100], "max_zoom": body[101]}
 
