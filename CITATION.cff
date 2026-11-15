@@ -7,12 +7,15 @@ authors:
     given-names: Otabek
     alias: ismoilovdevml
     affiliation: Independent researcher
-version: 1.0.0
-doi: "10.5281/zenodo.24228191"
+version: 1.1.0
+doi: "10.5281/zenodo.24228190"
 identifiers:
   - type: doi
     value: "10.5281/zenodo.24228190"
-    description: "Concept DOI, all versions"
+    description: "Concept DOI, resolves to the latest version"
+  - type: doi
+    value: "10.5281/zenodo.24228191"
+    description: "Version 1.0.0"
 date-released: 2026-11-15
 # Code is MIT; data files keep their source licences (see LICENSES.md), some non-commercial or ShareAlike.
 license:
