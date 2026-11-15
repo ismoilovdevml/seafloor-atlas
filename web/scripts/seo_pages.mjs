@@ -15,8 +15,8 @@ const SITE = 'https://seaflooratlas.org';
 const REPO = 'https://github.com/ismoilovdevml/seafloor-atlas';
 const ORCID = 'https://orcid.org/0009-0008-2785-3691';
 const DOI_CONCEPT = '10.5281/zenodo.24228190';
-const VERSION = '1.1.1';
-const DOI_VERSION = '10.5281/zenodo.24254651';
+const VERSION = '1.2.0';
+const DOI_VERSION = '10.5281/zenodo.24260821';
 const UPDATED = '2026-11-16';
 
 export const KEY = {
