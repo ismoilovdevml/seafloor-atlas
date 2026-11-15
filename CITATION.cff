@@ -8,7 +8,7 @@ authors:
     alias: ismoilovdevml
     orcid: "https://orcid.org/0009-0008-2785-3691"
     affiliation: Independent researcher
-version: 1.1.0
+version: 1.1.1
 doi: "10.5281/zenodo.24228190"
 identifiers:
   - type: doi
