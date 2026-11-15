@@ -43,16 +43,21 @@ function windIcon() {
   return c;
 }
 /** Nautical-chart wreck sign: a hull line crossed by three masts. */
+// A listing ship silhouette (hull, cabin, mast). The nautical-chart wreck symbol (a line with three
+// ticks) read as "+++" to users at map size, so a recognisable sinking ship is used instead.
 function wreckIcon() {
-  const [c, g] = canvas(34, 22);
-  g.lineCap = 'round';
-  const draw = () => {
-    g.beginPath(); g.moveTo(4, 11); g.lineTo(30, 11);
-    for (const x of [10, 17, 24]) { g.moveTo(x, 4.5); g.lineTo(x, 17.5); }
-    g.stroke();
-  };
-  g.strokeStyle = OV_COLOR.casing; g.lineWidth = 6.4; draw();
-  g.strokeStyle = OV_COLOR.wreck; g.lineWidth = 2.6; draw();
+  const [c, g] = canvas(36, 28);
+  g.translate(18, 15);
+  g.rotate(-0.32);
+  g.lineJoin = 'round'; g.lineCap = 'round';
+  const hull = () => { g.beginPath(); g.moveTo(-15, -1.5); g.lineTo(15, -1.5); g.lineTo(10.5, 6.5); g.lineTo(-11, 6.5); g.closePath(); };
+  const cabin = () => { g.beginPath(); g.rect(-7, -7.5, 9, 6); };
+  const mast = () => { g.beginPath(); g.moveTo(8, -1.5); g.lineTo(8, -11.5); };
+  g.strokeStyle = OV_COLOR.casing; g.lineWidth = 4.2;
+  hull(); g.stroke(); cabin(); g.stroke(); mast(); g.stroke();
+  g.fillStyle = OV_COLOR.wreck;
+  hull(); g.fill(); cabin(); g.fill();
+  g.strokeStyle = OV_COLOR.wreck; g.lineWidth = 2.2; mast(); g.stroke();
   return c;
 }
 const ICON_DRAW: Record<string, () => HTMLCanvasElement> = {
@@ -209,7 +214,7 @@ export class OverlayUI {
     $('ovn-platforms').insertAdjacentHTML('afterend', att('platforms'));
     $('ovk-wind').innerHTML = keyRow(`<span class="ov-wind-sizes">${iconImg(ICONS.windFarm, 11)}${iconImg(ICONS.windFarm, 16)}${iconImg(ICONS.windFarm, 22)}</span>`, 'Larger symbol, more capacity');
     $('ovn-wind').insertAdjacentHTML('afterend', att('wind'));
-    $('ovk-wrecks').innerHTML = keyRow(iconImg(ICONS.wreck, 17), 'Wreck, named as you zoom in');
+    $('ovk-wrecks').innerHTML = keyRow(iconImg(ICONS.wreck, 18), 'Wreck, named as you zoom in');
     $('ovn-wrecks').insertAdjacentHTML('afterend', att('wrecks'));
     $('ovn-shipping').insertAdjacentHTML('afterend', att('shipping'));
     this.renderShippingLegend();

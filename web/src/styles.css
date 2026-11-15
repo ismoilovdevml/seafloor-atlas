@@ -1,7 +1,7 @@
 :root {
   /* surfaces: taken from the abyssal end of the bathymetric ramp so the UI sits "in" the water */
   --abyss: #070d18;
-  --panel: rgba(8, 16, 30, 0.88);
+  --panel: rgba(8, 16, 30, 0.96); /* 0.88 let white map labels show through the drawers */
   --panel-solid: #0b1626;
   --line: rgba(150, 196, 214, 0.15);
   --line-strong: rgba(150, 196, 214, 0.32);

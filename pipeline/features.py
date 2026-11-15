@@ -162,6 +162,8 @@ def main() -> None:
                 if not (0 <= r < src.height):
                     continue
                 typ = (p.get("TYPE") or "").strip()
+                if typ.upper() == "UNKNOWN":  # gazetteer placeholder, not a feature type
+                    typ = ""
                 if typ in LOWS:
                     win = elev[max(0, r - 2):r + 3, max(0, c - 2):c + 3]
                     depth = int(win.min())
