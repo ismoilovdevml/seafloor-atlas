@@ -726,3 +726,116 @@ GitHub Pages serves both gzipped (0.89 MB and 1.01 MB on the wire).
   plateau (Great Meteor: the nearest pick is SIO-only, height 600 m = the "below 700 m" class). SIO-only entries
   (`src = 1`) have weaker bathymetric support. "Measured summit" = one 460 m cell holds any sounding, not a full
   survey. SDUST2026SM's paper is still under review; the dataset itself is a published, versioned Zenodo record.
+
+## Mapping history (web/public/history/, `pipeline/history.py`)
+
+Which seafloor was **directly measured** (TID 10-17) in each GEBCO release 2019-2026, for the timeline slider.
+
+### Inputs (data/raw/gebco_<year>/, gitignored)
+
+* `gebco_<year>_tid.tif` for 2019-2026: Int8, 86400 x 43200 (15"), north-up, same transform as `gebco_2026_tid.tif`.
+  2019-2024 are converted by `history.py convert` from the official CEDA zips
+  `https://dap.ceda.ac.uk/bodc/gebco/global/gebco_<year>/type_identifier_grid/netcdf/gebco_<year>_tid.zip`
+  (90-107 MB each; inside: `GEBCO_<year>_TID.nc`, netCDF-4/HDF5 for 2019/2021/2023/2024, classic netCDF for
+  2020/2022; 2019 is a 7.5 GB Int16 file, the others 3.7 GB Int8). `gdal_translate` flips them north-up; an
+  orientation check (45° N: inner Asia land, North Pacific ocean) runs before the .nc and .zip are deleted.
+  `gebco_<year>_tid_meta.json` keeps the netCDF global attributes (title, DOI).
+* Ocean mask for **every** year: GEBCO_2026 TID != 0 and GEBCO_2026 1' elevation < 0 (same as `coverage.py`).
+  Areas: exact spherical area of each 15" cell (authalic sphere, R = 6371.0072 km), as in `change.py`.
+
+### Files
+
+* `first-measured_1arcmin.bin` (14.4 MB): 1' grid, 21600 x 10800, **row 0 = northernmost** (89.99167° N cell
+  centre), column 0 = 179.99167° W, row-major, zlib-deflated **uint8** (one byte plane). Codes:
+  `0` = land / outside the mask / never measured; `19..26` = first release (GEBCO_2019..2026) in which any ocean
+  15" sub-cell of the 1' cell is TID 10-17, still measured in GEBCO_2026; `119..125` = first measured in
+  20(code − 100) but **not** measured in GEBCO_2026 (re-coded to an indirect / unknown class).
+  Threshold for year Y: measured-by-Y = `19 <= v <= Y-2000 || 119 <= v <= Y-2000+100` (the second branch is
+  "measured at some point, later re-coded"; the exact per-year state is in the tiles' G channel).
+  *Why "any sub-cell" and not a fraction*: single-beam tracks are one 15" cell wide and would vanish under a
+  fraction threshold at 1'; the per-year area numbers are exact 15" sums, never 1' counts.
+  *Why no per-year fractions*: eight 1' planes deflate to ~17 MB more (bitmask alone, tested), the tiles carry it.
+* `tiles/{z}/{x}/{y}.webp`, z0-5, 512 px, Web Mercator XYZ, **lossless WebP RGBA (exact)**:
+  R = first-measured code (as above), G = year bitmask (bit i = measured in GEBCO_(2019 + i), bit 7 = 2026),
+  B = 0 (unused: a measured-share channel tripled the tile size, 159 → 51 kB on a z5 tile, and `tiles/coverage/`
+  already has it), A = 255 ocean / 0 land. Base level z5 built directly from the 1' grids (every pixel ORs all 1'
+  rows/columns it overlaps, at least one, so tracks are never dropped); lower zooms OR the bitmask. At z0-3 nearly
+  every pixel touched by one track lights up: combine with the coverage layer for opacity. Use `nearest`
+  resampling, never interpolate codes.
+* `manifest.json`: grid description, codes, `cells_per_code`, `tiles` block, `stats` (below), citation, licence,
+  attribution, caveats, `sizes_bytes`.
+* `manifest.stats.years[]` per release: `measured_km2` / `measured_frac` (same mask), `measured_frac_own_mask`
+  (that year's own TID != 0), `ever_measured_km2/frac` (this or any earlier release), `first_measured_km2`,
+  `new_vs_previous_km2`, `no_longer_measured_vs_previous_km2`, `no_longer_measured_now_coded` (km² by the TID code
+  the lost cells got), `lat_measured_frac` (10° bands), `doi`, and the official Seabed 2030 figure with date,
+  quote and URL.
+
+### Numbers (build of 2026-11-15; ocean = 361.7 M km²)
+
+| Release | Ours (TID 10-17) | Official | New vs previous (M km²) | Re-coded away (M km²) | Ever measured |
+|---|---|---|---|---|---|
+| 2019 | 12.43 % | 15 % | | | 12.43 % |
+| 2020 | 18.24 % | 19 % | 25.65 | 4.62 | 19.52 % |
+| 2021 | 21.91 % | 20.6 % | 17.35 | 4.06 | 23.49 % |
+| 2022 | 25.35 % | 23.4 % | 14.48 | 2.07 | 26.82 % |
+| 2023 | 26.27 % | 24.9 % | 7.83 | 4.48 | 28.70 % |
+| 2024 | 28.54 % | 26.1 % | 10.00 | 1.80 | 30.39 % |
+| 2025 | 29.69 % | 27.3 % | 4.92 | 0.76 | 31.47 % |
+| 2026 | 30.81 % | 28.7 % | 6.57 | 2.51 | 33.04 % |
+
+Cross-checks: 2026 = `coverage.py` (30.81 %); 2025→2026 new/lost = `change.py` (6.57 / 2.51 M km²; `change.py`
+uses the union mask, hence 2.513 vs 2.506). Bookkeeping m(y) = m(y−1) + new − lost holds to < 5 km² every year.
+
+Official figures (each read on the cited page, 2026-11-15): 2019 15 % (GEBCO press release, 13 Jun 2019),
+2020 19 % (Nippon Foundation, 21 Jun 2020), 2021 20.6 % (GEBCO, 1 Aug 2021), 2022 23.4 % (GEBCO, 22 Sep 2022),
+2023 24.9 % (Seabed 2030, 2 May 2023), 2024 26.1 % (GEBCO, 24 Jul 2024), 2025 27.3 % (GEBCO, 6 Aug 2025),
+2026 28.7 % (GEBCO, 27 Apr 2026). URLs and quotes in `OFFICIAL` (pipeline/history.py) and the manifest.
+
+### Citation, licence, attribution
+
+GEBCO Compilation Group (2019 ... 2026) GEBCO_<year> Grid. DOIs: 2019 10.5285/836f016a-33be-6ddc-e053-6c86abc0788e,
+2020 10.5285/a29c5465-b138-234d-e053-6c86abc040b9, 2021 10.5285/c6612cbe-50b3-0cff-e053-6c86abc09f8f,
+2022 10.5285/e0f0bb80-ab44-2739-e053-6c86abc0289c, 2023 10.5285/f98b053b-0cbc-6c23-e053-6c86abc0af7b,
+2024 10.5285/1c44ce99-0a0d-5f4f-e063-7086abc0ea0f, 2025 10.5285/37c52e96-24ea-67ce-e063-7086abc05f29,
+2026 10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa (2019-2024 read from each netCDF's `references`).
+Licence: GEBCO Grid terms of use (in every zip): public domain, free to copy/adapt/commercially use, must
+acknowledge the source, must not imply GEBCO endorsement or misrepresent the grid. CEDA lists OGL v3 for
+2025/2026 and "contact CEDA" for 2019-2022; the bundled terms of use are the same text every year.
+Attribution text: "Mapping history from the GEBCO_2019-GEBCO_2026 Type Identifier grids (GEBCO Compilation
+Group); official percentages from Seabed 2030 / GEBCO announcements".
+
+### Caveats
+
+* Ours is not the official metric: Seabed 2030 counts cells holding data on its depth-dependent target grid
+  (100 m to 800 m cells, Mayer et al. 2018, Geosciences 8:63; the release notes do not give the exact method), so a 15" TID share is expected to differ (ours is 2.6 pp lower in 2019, 0.8 pp lower in 2020,
+  1.3-2.4 pp higher from 2021 on).
+* TID codes change between releases for reasons other than surveys: 2.5-4.6 M km² per release stop being
+  "measured", mostly to 40 (satellite-gravity predicted), 41 (interpolated), 44 (mixed gridded) or 70
+  (pre-generated grid). By 2026, 33.0 % has been measured in at least one release vs 30.8 % in GEBCO_2026.
+* "First measured in 20YY" = first appears as TID 10-17 in a GEBCO release, not the survey year: a release can
+  add surveys collected years earlier (newly shared or newly gridded).
+* One mask for all years ignores coastline / ice-shelf changes between releases (own-mask shares differ by
+  ≤ 0.02 pp).
+
+## Sea level since the Last Glacial Maximum (`data/sea-level-history.json`, `pipeline/sealevel_history.py`)
+
+* Source: Lambeck, K., Rouby, H., Purcell, A., Sun, Y. & Sambridge, M. (2014). Sea level and global ice volumes
+  from the Last Glacial Maximum to the Holocene. *PNAS* 111(43), 15296-15303, doi:10.1073/pnas.1411762111,
+  **SI Appendix Table S3**: best-estimate ice-volume equivalent sea level (esl) and its 2σ accuracy, 0-35 ka.
+  Read with `pdftotext -layout` from the authors' copy of paper + SI (ANU,
+  `http://rses.anu.edu.au/~malcolm/papers/pdf/Lambeck-etal-2014.pdf`, sha256 pinned in the script).
+* Format: `{title, quantity, years_bp_reference, citation, source_url, source_sha256, licence, attribution, n, lgm,
+  caveats, points: [{years_bp, sea_level_m, lo, hi}]}`; 276 points 0-26,065 yr BP at irregular 70-170 yr steps,
+  `lo/hi = esl ∓ 2σ`. Interpolate linearly.
+* Spot checks (`sealevel_history.py check`, `tests/test_history.py`): 0 BP 0 m; 7 ka −5.4 m; 11.7 ka −61.8 m;
+  14.0 ka −86.9 m; 14.65 ka −102.2 m (**Meltwater Pulse 1A**: +15.8 m between 14.6 and 14.0 ka); 16 ka −116.8 m;
+  19 ka −125.8 m; **LGM minimum −134.3 m at 20.5 ka**; 21 ka −134.0 m; 24 ka −130.9 m; 26 ka −128.8 m.
+* Licence: the article is free to read (PNAS open access option); the SI table has **no separate open data
+  licence**. The values are reproduced as factual scientific data with full citation. Fallback with explicitly
+  open terms: Spratt & Lisiecki (2016) sea-level stack (NOAA NCEI, doi:10.25921/rd66-5820), but it is 1 kyr
+  resolution and reads +8.5 m at 0 ka, so it was not used.
+* Attribution text: "Sea level: Lambeck et al. (2014) PNAS, doi:10.1073/pnas.1411762111".
+* Caveats: esl is a **global** ice-volume number, not relative sea level at a coast; glacial isostatic adjustment
+  shifts local sea level by up to tens of metres (most near former ice sheets). The viewer floods present-day
+  topography (no sedimentation, erosion, reef growth or tectonics since). The 2σ band is Lambeck et al.'s own
+  accuracy estimate, narrower than the spread between reconstructions (LGM −120 to −135 m).
