@@ -8,7 +8,7 @@ terrain), built only from this project's own tiles: no basemap, no external tile
 Map first: the globe gets the window, everything else floats at the edges and folds away.
 
 * **Top bar**: the name, a search box (`⌘K` / `Ctrl K` or `/`; finds undersea features, cables, notable wrecks and
-  guided views), **Explore** (the guided views drawer, left) and **Layers** (right, with a count of layers that are on),
+  guided views), **Explore** (the guided views drawer, left), **Tour** (the guided tour, below) and **Layers** (right, with a count of layers that are on),
   then **About this map** (headline numbers, data sources and licences, shortcuts) and **Map settings** (vertical
   exaggeration and its auto mode). Popovers close with `Esc` or a click outside and give focus back.
 * **Layers drawer**, in three groups: *Seafloor* (Relief as the base; What's actually measured, New in GEBCO 2026,
@@ -134,10 +134,20 @@ What it answers:
   MapLibre tile events for the other sources) within a burst; shown only after 300 ms, 100 % and a fade when the map is
   idle; no pointer events; announced once per burst to screen readers.
 * **About** adds Privacy, Disclaimer and Accessibility notes (folded).
+* **Tour** (top bar; `tour.ts`, scenes in `tour-chapters.ts`, words in `tour-text-en.ts`, helpers in `tour-model.ts`):
+  12 chapters in which a small guide, Ping (a sonar buoy), drives the real UI: it flies the camera, switches layers,
+  opens the tools and the Time panel, sets the sea level, and puts a ring around the control it is talking about (never
+  in the way of the pointer). Back / Pause-Play / Next / Exit, chapter dots, Left / Right, Space, Esc; it moves on after
+  the reading time (200 words a minute, at least 6 s) once the camera has settled, and pauses when you move the map.
+  Read-aloud through the browser's speech synthesis, off by default. `#tour=5` opens chapter 5. Exiting restores the
+  layers, tool, sea level, exaggeration and drawers you had (the camera stays). Reduced motion: jumps instead of
+  flights, no pulsing ring. On a phone the guide is a compact sheet in place of the tabs and an open tool shows only its
+  header. Every number in the words is checked against its source file in `test/tour.test.ts`; another language is
+  another `tour-text-<lang>.ts`. Screenshots: `node scripts/capture_tour.mjs screenshots <url>`.
 * Guided views (`public/data/stories.json`), deep-linkable as `#story=<id>` (a story resets the sea level to today and
   closes Time).
-* Code for the new layers, Time and the history layer is split into chunks loaded on first use; their data is fetched when
-  switched on. With them off the first load requests nothing new (`qa.mjs` checks).
+* Code for the new layers, Time, the history layer and the tour is split into chunks loaded on first use; their data is
+  fetched when switched on. With them off the first load requests nothing new (`qa.mjs` checks).
 
 ## Run
 
@@ -167,6 +177,7 @@ node scripts/capture_views.mjs screenshots '' http://localhost:5173/
 node scripts/capture_sea.mjs screenshots http://localhost:4173/   # sea-level views, frame timing, deep link checks
 node scripts/capture_infra.mjs screenshots http://localhost:4173/ # overlay views + pan frame times (infra-frames.json)
 node scripts/capture_time.mjs screenshots http://localhost:4173/  # Time, flow, loading screenshots + frame times (time-frames.json)
+node scripts/capture_tour.mjs screenshots http://localhost:4173/  # guided tour, four desktop chapters and one phone
 node scripts/qa.mjs http://localhost:4173/ qa-out                 # end-to-end checks against `vite preview`
 
 `qa.mjs` waits for explicit ready signals before asserting (`overlays.ready(id)`, `marine.drawn()`, `events.ready(id)`,
@@ -182,6 +193,9 @@ one tool at a time, the settings popover changing the exaggeration, `⌘K` and `
 the map share of the default 1440×900 view (≥ 85 %), and the depth-certainty and marine-life layers at known places
 (140° W 20° S disagreement 300–1,000 m, a confidence class at 120° W 30° S, Antarctic seal bins and a seal card,
 Coral Triangle AquaMaps > 2,000 species, ES50 vs records in the Coral Triangle and North Sea, a whale-filtered cell card).
+The guided tour is checked chapter by chapter (layers on the map, the tool panel, the camera near its target, the
+spotlit control on screen and uncovered), plus auto-advance, pause, Back, quick Next presses, keys and Tab order, Exit
+restoring a prepared state, `#tour=5`, reduced motion, the phone sheet (≥ 50 % of the globe visible) and frame time.
 The monthly ocean-water animation check first loads all 12 monthly layers (~6.6 MB) and then measures, so on a slow
 connection it times the drawing, not the download.
 ```

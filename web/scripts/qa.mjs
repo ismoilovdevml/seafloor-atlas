@@ -1,4 +1,4 @@
-// End-to-end browser QA: every story, every layer, profile, readout, search, deep links, both poles, phone,
+// End-to-end browser QA: every story, every layer, profile, readout, search, deep links, both poles, phone, the guided tour,
 // and the panel shell (layer groups and (i) notes, legend dock, tool bar, settings popover, keyboard search, phone tabs).
 // Isolated headless Chrome with GPU (playwright-core), never the user's browser.
 // usage: node scripts/qa.mjs [baseUrl=http://localhost:4173/] [outdir=qa-out]
@@ -64,8 +64,8 @@ async function quietFrames(page, ms) {
   await settle(2500);
   await shot(page, 'globe.png');
   // first load with the new layers off: none of their code chunks or data files is requested
-  const lazy = firstLoad.filter((u) => /\/(events-ui|ocean-ui|time-ui|history-ui)-[\w-]+\.js|quakes\.json|seamounts\.json|cables-osm|\/chl\/|\/flow\/|\/history\/|sea-level-history|earthquake\.usgs/.test(u));
-  ok('first load: new layers lazy (no Time / flow / quake / seamount / history code or data requested)', lazy.length === 0, lazy.length ? lazy.slice(0, 5).join(' ') : `${firstLoad.length} requests, none for the new layers`);
+  const lazy = firstLoad.filter((u) => /\/(events-ui|ocean-ui|time-ui|history-ui)-[\w-]+\.js|\/tour-[\w-]{8}\.(js|css)(\?|$)|quakes\.json|seamounts\.json|cables-osm|\/chl\/|\/flow\/|\/history\/|sea-level-history|earthquake\.usgs/.test(u));
+  ok('first load: new layers lazy (no Time / flow / quake / seamount / history / tour code or data requested)', lazy.length === 0, lazy.length ? lazy.slice(0, 5).join(' ') : `${firstLoad.length} requests, none for the new layers or the tour`);
 
   // ---------- panel shell ----------
   const share = await page.evaluate(() => window.__seafloor.mapShare());
@@ -789,6 +789,207 @@ for (const [w, h] of [[1440, 900], [1280, 720], [1920, 1080]]) {
   const rt = await page.evaluate(() => { const t = window.__seafloor.time; t.play(false); return { st: t.state(), stats: t.stats() }; });
   ok('reduced motion: winds drawn as still streaks (no advection frames), Time plays in 1,000-year steps', rm.st.running === false && rm.cpu.frames === 0 && rm.n > 0 && rt.stats.steps >= 3 && (20000 - rt.st.ago) % 1000 === 0 && rt.st.ago < 20000,
     `flow ${JSON.stringify(rm.cpu)}; time ${rt.stats.steps} steps to ${rt.st.ago} years ago`);
+  await page.close();
+}
+
+// ---------------- guided tour: drives the real UI, spotlights real controls, restores what was on ----------------
+// Map layer ids behind each layer token, and the panel each tool opens.
+const TOUR_LAYER_IDS = { veil: 'veil', plates: 'plates', new2026: 'new2026', quakes: 'quakes', seamounts: 'seamounts', chl: 'chl', winds: 'flow-wind', currents: 'flow-currents',
+  cables: 'cables', shipping: 'shipping', wrecks: 'wrecks', platforms: 'platforms', pipelines: 'pipelines', wind: 'wind' };
+const TOUR_CHUNK = /\/tour-[\w-]{8}\.(js|css)(\?|$)/;
+const sorted = (xs) => [...xs].sort().join(',');
+/** One chapter's expected state against what the page shows: layers, tool panel, camera, spotlight. */
+async function tourChapterCheck(page, scene, phone) {
+  return page.evaluate(([sc, ids, phone]) => {
+    const s = window.__seafloor, st = s.tour.state(), map = s.map;
+    const shown = (id) => { const e = document.getElementById(id); return !!e && !e.hidden && getComputedStyle(e).display !== 'none'; };
+    const layersOn = sc.layers.filter((t) => ids[t]).map((t) => [t, !!map.getLayer(ids[t]) && map.getLayoutProperty(ids[t], 'visibility') !== 'none']);
+    const panel = { none: null, profile: 'profile', sea: 'sea', water: 'water', time: 'time' }[sc.tool.kind];
+    const others = ['profile', 'sea', 'water', 'time'].filter((p) => p !== panel && shown(p));
+    const zt = phone ? (sc.camera.phoneZoom ?? sc.camera.zoom - 0.6) : sc.camera.zoom;
+    const c = st.camera, span = 360 / 2 ** zt;
+    let dLng = Math.abs(c.lng - sc.camera.center[0]) % 360; if (dLng > 180) dLng = 360 - dLng;
+    const near = dLng * Math.cos(sc.camera.center[1] * Math.PI / 180) <= 0.1 * span && Math.abs(c.lat - sc.camera.center[1]) <= 0.1 * span && c.zoom <= zt + 0.05 && c.zoom >= zt - 1.6;
+    // spotlight: a listed control, on screen, not covered at its centre, ringed, and never taking the pointer
+    const sp = st.spot, t = sp.target, r = sp.ring;
+    const el = sp.id && document.getElementById(sp.id);
+    const top = t && document.elementFromPoint(t.left + t.w / 2, t.top + t.h / 2);
+    const spotOk = !!sp.id && sc.spotlight.includes(sp.id) && sp.shown && !!el && (el === top || el.contains(top)) && sp.pointerEvents === 'none'
+      && r.left <= t.left && r.top <= t.top && r.left + r.w >= t.left + t.w && r.top + r.h >= t.top + t.h;
+    const tool = st.tool;
+    const toolOk = tool.kind === sc.tool.kind && (!panel || shown(panel)) && others.length === 0
+      && (sc.tool.kind !== 'sea' || tool.level === sc.tool.level)
+      && (sc.tool.kind !== 'time' || (tool.state.mode === sc.tool.state.mode && (tool.state.mode !== 'years' || tool.state.set === sc.tool.state.set) && (tool.state.mode !== 'months' || tool.state.month === sc.tool.state.month)))
+      && (sc.tool.kind !== 'water' || (tool.v === sc.tool.v && tool.depth === sc.tool.depth));
+    return { id: st.id, settled: st.settled, layers: st.layers, layersOn, toolOk, tool: tool.kind, near, camera: { lng: +c.lng.toFixed(2), lat: +c.lat.toFixed(2), zoom: +c.zoom.toFixed(2) }, zt,
+      spotOk, spot: sp.id, hash: st.hash, flyMs: st.stats.lastFlyMs, retries: st.stats.retries };
+  }, [scene, TOUR_LAYER_IDS, phone]);
+}
+{
+  const reqs = [];
+  const { page, settle } = await session('tour', { width: 1440, height: 900 }, { onPage: (p) => p.on('request', (r) => reqs.push(r.url())) });
+  await settle(1500);
+  ok('tour: its code is not loaded before Tour is pressed', !reqs.some((u) => TOUR_CHUNK.test(u)) && !(await page.evaluate(() => window.__seafloor.tour.loaded())),
+    `${reqs.length} requests, none for the tour chunk`);
+  // ---- phase A: from the default view. Frame time on chapter 1's view without and with the tour panel
+  // (its 200 ms timer, the pulsing spotlight ring, Ping's arcs)
+  await page.evaluate(() => window.__seafloor.map.jumpTo({ center: [-150, 8], zoom: 2.05, pitch: 0, bearing: 0 }));
+  await settle(1000);
+  const framesOff = await quietFrames(page, 3000);
+  await page.click('#tour-btn');
+  await page.waitForFunction(() => window.__seafloor.tour.state()?.settled, null, { timeout: 30000 });
+  const s0 = await page.evaluate(() => ({ ...window.__seafloor.tour.state(), pressed: document.getElementById('tour-btn').getAttribute('aria-pressed'),
+    live: document.getElementById('tour-say')?.getAttribute('aria-live'), region: document.getElementById('tour')?.getAttribute('aria-label') }));
+  ok('tour: Tour button loads the tour chunk and starts at chapter 1, focus in the tour controls, text in a polite live region',
+    reqs.some((u) => TOUR_CHUNK.test(u)) && s0.active && s0.index === 0 && s0.focus === 'tour-play' && s0.pressed === 'true' && s0.live === 'polite' && /(^#|&)tour=1(&|$)/.test(s0.hash),
+    `chapter ${s0.index + 1} "${s0.title}", focus ${s0.focus}, live ${s0.live}, hash ${s0.hash}`);
+  await page.evaluate(() => window.__seafloor.tour.play(false));
+  const framesOn = await quietFrames(page, 3000);
+  await page.evaluate(() => window.__seafloor.tour.play(true));
+  // auto-advance after the reading time (playing), and pause stops the clock
+  const auto0 = await page.evaluate(() => window.__seafloor.tour.state());
+  await page.waitForFunction(() => window.__seafloor.tour.state()?.index === 1, null, { timeout: auto0.totalMs + 15000 }).catch(() => {});
+  const auto1 = await page.evaluate(() => window.__seafloor.tour.state());
+  ok('tour: moves on by itself after the reading time (200 wpm, >= 6 s) once settled', auto1.index === 1 && auto0.totalMs >= 6000, `chapter 1 reading time ${auto0.totalMs} ms -> now chapter ${auto1.index + 1}`);
+  await page.waitForFunction(() => window.__seafloor.tour.state()?.settled, null, { timeout: 30000 });
+  await page.keyboard.press('Space'); // focus is still on Pause: Space presses it
+  const e1 = await page.evaluate(() => window.__seafloor.tour.state());
+  await page.waitForTimeout(1500);
+  const e2 = await page.evaluate(() => window.__seafloor.tour.state());
+  ok('tour: Pause stops the auto-advance clock (Space on the focused Pause button)', !e1.playing && e2.elapsedMs === e1.elapsedMs && e2.index === e1.index, `playing ${e1.playing}, elapsed ${e1.elapsedMs} -> ${e2.elapsedMs} ms`);
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => window.__seafloor.tour.state()?.active === false, null, { timeout: 30000 });
+  ok('tour: frame time with the tour open stays within budget (p95 < 20 ms) and close to the same view without it', framesOn.p95Ms < 20 && framesOn.medianMs < framesOff.medianMs + 2,
+    `chapter 1 view without tour median ${framesOff.medianMs} / p95 ${framesOff.p95Ms} ms; with tour (paused, spotlight pulsing) median ${framesOn.medianMs} / p95 ${framesOn.p95Ms} ms (${framesOn.frames} frames)`);
+
+  // ---- phase B: a state of the viewer's own, which Exit must bring back
+  await page.evaluate(async () => { const s = window.__seafloor; s.setVeil(true); await s.overlays.set('cables', true); await s.overlays.ready('cables'); s.openSea(10); s.ui.setDrawer('layers', true); });
+  await settle(800);
+  const before = await page.evaluate(() => window.__seafloor.tour.snapshot());
+  await page.evaluate(() => window.__seafloor.tour.start(1));
+  await page.evaluate(() => window.__seafloor.tour.play(false));
+  ok('tour: drawers are closed while touring (the Layers drawer was open)', await page.evaluate(() => !document.getElementById('ui').classList.contains('layers-open')));
+  // every chapter reaches its state
+  const scenes = await page.evaluate(() => window.__seafloor.tour.chapters());
+  const shotsAt = { globe: 'tour-desktop-1-globe.png', profile: 'tour-desktop-4-profile.png', monsoon: 'tour-desktop-8-monsoon.png', mapping: 'tour-desktop-11-mapping.png' };
+  for (let i = 0; i < scenes.length; i++) {
+    await page.evaluate((i) => window.__seafloor.tour.go(i), i);
+    await page.waitForTimeout(300);
+    const r = await tourChapterCheck(page, scenes[i], false);
+    const layersExact = sorted(r.layers) === sorted(scenes[i].layers) && r.layersOn.every(([, v]) => v);
+    ok(`tour chapter ${i + 1} ${scenes[i].id}: layers, tool panel, camera and spotlight as described`, r.settled && r.id === scenes[i].id && layersExact && r.toolOk && r.near && r.spotOk,
+      `layers [${r.layers}] ${JSON.stringify(r.layersOn)}; tool ${r.tool} ${r.toolOk ? 'ok' : 'WRONG'}; camera ${JSON.stringify(r.camera)} target z ${r.zt} ${r.near ? 'near' : 'FAR'}; spotlight #${r.spot} ${r.spotOk ? 'ok' : 'WRONG'}; fly ${r.flyMs} ms`);
+    if (shotsAt[scenes[i].id]) await shot(page, shotsAt[scenes[i].id]);
+  }
+  const flights = await page.evaluate(() => window.__seafloor.tour.state().stats);
+  // rapid Next across chapters with different tools (water -> Time months -> none -> none): only the last one's state remains
+  await page.evaluate(() => window.__seafloor.tour.go(5));
+  for (let i = 0; i < 4; i++) { await page.click('#tour-next'); await page.waitForTimeout(120); }
+  await page.waitForFunction(() => window.__seafloor.tour.state()?.settled && window.__seafloor.tour.state().index === 9, null, { timeout: 40000 }).catch(() => {});
+  await page.waitForTimeout(800);
+  const rq = await tourChapterCheck(page, scenes[9], false);
+  ok('tour: four quick Next presses land on chapter 10 with only its own layers and no tool panel left open', rq.id === scenes[9].id && rq.toolOk && sorted(rq.layers) === sorted(scenes[9].layers) && rq.near,
+    JSON.stringify({ id: rq.id, layers: rq.layers, tool: rq.tool, toolOk: rq.toolOk, near: rq.near }));
+  // Back, keys
+  await page.evaluate(() => window.__seafloor.tour.go(5));
+  await page.click('#tour-back');
+  await page.waitForFunction(() => window.__seafloor.tour.state()?.settled && window.__seafloor.tour.state().index === 4, null, { timeout: 30000 });
+  const rb = await tourChapterCheck(page, scenes[4], false);
+  ok('tour: Back returns to the previous chapter and its state (sea level closed, plates on)', rb.id === scenes[4].id && rb.toolOk && sorted(rb.layers) === sorted(scenes[4].layers) && rb.spotOk, JSON.stringify({ id: rb.id, layers: rb.layers, tool: rb.tool, spot: rb.spot }));
+  await page.evaluate(() => document.activeElement.blur());
+  await page.keyboard.press('ArrowRight');
+  await page.waitForFunction(() => window.__seafloor.tour.state()?.settled, null, { timeout: 30000 });
+  const k1 = await page.evaluate(() => window.__seafloor.tour.state().index);
+  await page.keyboard.press('ArrowLeft');
+  await page.waitForFunction(() => window.__seafloor.tour.state()?.settled, null, { timeout: 30000 });
+  const k2 = await page.evaluate(() => window.__seafloor.tour.state().index);
+  const p0 = await page.evaluate(() => window.__seafloor.tour.state().playing);
+  await page.keyboard.press('Space');
+  const p1 = await page.evaluate(() => window.__seafloor.tour.state().playing);
+  await page.keyboard.press('Space');
+  const p2 = await page.evaluate(() => window.__seafloor.tour.state().playing);
+  await page.evaluate(() => window.__seafloor.tour.play(false));
+  // Tab reaches every control, each with a visible focus ring (keyboard focus: Shift+Tab out, Tab back in)
+  const tabbed = [];
+  await page.focus('#tour-exit');
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+  for (let i = 0; i < 6; i++) {
+    tabbed.push(await page.evaluate(() => { const a = document.activeElement, cs = getComputedStyle(a); return `${a.id || a.className}:${cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) >= 2 ? 'ring' : 'NO-RING'}`; }));
+    await page.keyboard.press('Tab');
+  }
+  ok('tour keys: Right = next, Left = back, Space = pause/play; Tab reaches Exit, chapter dot, Back, Pause, Next, Read aloud with a focus ring',
+    k1 === 5 && k2 === 4 && p0 === false && p1 === true && p2 === false && tabbed.every((t) => t.endsWith(':ring')) && ['tour-exit', 'tour-dot', 'tour-back', 'tour-play', 'tour-next', 'tour-voice'].every((id, i) => tabbed[i].startsWith(id)),
+    `right -> ${k1 + 1}, left -> ${k2 + 1}, space ${p0} -> ${p1} -> ${p2}; tab: ${tabbed.join(' ')}`);
+  // read aloud: off by default, toggles, never throws
+  const v = await page.evaluate(async () => { const t = window.__seafloor.tour; const s0 = t.state(); t.voice(true); const b = document.getElementById('tour-voice'); const on = b.getAttribute('aria-pressed'); t.voice(false); return { def: s0.voice, can: s0.canSpeak, on, off: b.getAttribute('aria-pressed'), hidden: b.hidden }; });
+  ok('tour: read aloud is off by default and toggles (hidden where speech synthesis is missing)', v.def === false && (v.can ? v.on === 'true' && v.off === 'false' : v.hidden), JSON.stringify(v));
+  // Exit (Esc) restores the viewer's state and gives focus back to the Tour button
+  await page.evaluate(() => window.__seafloor.tour.go(7)); // leave from a chapter with a tool and layers of its own
+  await page.evaluate(() => document.activeElement.blur());
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => window.__seafloor.tour.state()?.active === false, null, { timeout: 30000 });
+  await page.waitForTimeout(600);
+  const after = await page.evaluate(() => ({ ...window.__seafloor.tour.snapshot(), focus: document.activeElement.id, hash: location.hash, panel: !!document.getElementById('tour') && !document.getElementById('tour').hidden,
+    pressed: document.getElementById('tour-btn').getAttribute('aria-pressed'), visible: { veil: window.__seafloor.map.getLayoutProperty('veil', 'visibility'), cables: window.__seafloor.map.getLayoutProperty('cables', 'visibility') }, sea: !document.getElementById('sea').hidden, time: !document.getElementById('time').hidden }));
+  const same = sorted(after.layers) === sorted(before.layers) && JSON.stringify(after.tool) === JSON.stringify(before.tool) && JSON.stringify(after.drawers) === JSON.stringify(before.drawers) && after.exaggeration === before.exaggeration;
+  ok('tour: Esc exits and restores layers, sea level, drawers and exaggeration; focus back on Tour; #tour= removed', same && after.focus === 'tour-btn' && !/tour=/.test(after.hash) && !after.panel && after.pressed === 'false' && after.visible.veil === 'visible' && after.visible.cables === 'visible' && after.sea && !after.time,
+    `before ${JSON.stringify(before)} | after ${JSON.stringify({ layers: after.layers, tool: after.tool, drawers: after.drawers, exaggeration: after.exaggeration })}; focus ${after.focus}; hash "${after.hash}"`);
+  ok('tour: flights reach their chapter without being interrupted by layout changes', flights.retries === 0, JSON.stringify(flights));
+  await page.close();
+}
+// #tour=5 deep link
+{
+  const { page } = await session('tour-link', { width: 1440, height: 900 }, { query: '#tour=5' });
+  await page.waitForFunction(() => window.__seafloor.tour.state()?.settled, null, { timeout: 60000 });
+  const scenes = await page.evaluate(() => window.__seafloor.tour.chapters());
+  const r = await tourChapterCheck(page, scenes[4], false);
+  ok('tour: #tour=5 opens the tour at chapter 5 with its state', r.id === scenes[4].id && sorted(r.layers) === sorted(scenes[4].layers) && r.layersOn.every(([, v]) => v) && r.near && r.spotOk && /tour=5/.test(r.hash),
+    JSON.stringify({ id: r.id, layers: r.layersOn, camera: r.camera, spot: r.spot, hash: r.hash }));
+  await page.close();
+}
+// reduced motion: the camera jumps, the spotlight does not pulse, Ping does not ping
+{
+  const { page } = await session('tour-reduced', { width: 1280, height: 800 }, { onPage: (p) => p.emulateMedia({ reducedMotion: 'reduce' }) });
+  await page.evaluate(() => window.__seafloor.tour.start(2));
+  const scenes = await page.evaluate(() => window.__seafloor.tour.chapters());
+  const r = await tourChapterCheck(page, scenes[1], false);
+  await page.evaluate(() => window.__seafloor.tour.go(8));
+  const r2 = await tourChapterCheck(page, scenes[8], false);
+  const anim = await page.evaluate(() => ({ spot: window.__seafloor.tour.state().spot.animation, arc: getComputedStyle(document.querySelector('.tav-arc')).animationName }));
+  ok('tour reduced motion: jumpTo instead of flyTo (camera there at once), no pulsing spotlight, no avatar animation',
+    r.near && r2.near && r.flyMs < 400 && r2.flyMs < 400 && anim.spot === 'none' && anim.arc === 'none', `fly ${r.flyMs} / ${r2.flyMs} ms; spotlight animation ${anim.spot}, avatar ${anim.arc}`);
+  await page.evaluate(() => window.__seafloor.tour.exit());
+  await page.close();
+}
+// phone: a compact bottom sheet that leaves the globe visible
+{
+  const { page, settle } = await session('tour-phone', { width: 390, height: 844 });
+  await settle(1500);
+  await page.click('#tour-btn');
+  await page.waitForFunction(() => window.__seafloor.tour.state()?.settled, null, { timeout: 60000 });
+  await page.evaluate(() => window.__seafloor.tour.play(false));
+  const scenes = await page.evaluate(() => window.__seafloor.tour.chapters());
+  const rows = [];
+  let worst = 1, fails = [];
+  for (let i = 0; i < scenes.length; i++) {
+    await page.evaluate((i) => window.__seafloor.tour.go(i), i);
+    await page.waitForTimeout(300);
+    const r = await tourChapterCheck(page, scenes[i], true);
+    const m = await page.evaluate(() => { const s = window.__seafloor, l = s.layoutCheck(), t = document.getElementById('tour').getBoundingClientRect();
+      return { share: s.mapShare(), globe: l.globeScale ? l.freeFrac : null, sheet: { top: Math.round(t.top), bottom: Math.round(t.bottom) }, h: innerHeight, over: document.documentElement.scrollWidth > innerWidth }; });
+    const visibleShare = m.globe ?? m.share; // whole globe in view: share of its disk left free; zoomed in: share of the screen showing map
+    worst = Math.min(worst, visibleShare);
+    if (!(visibleShare >= 0.5 && m.sheet.bottom <= m.h + 1 && !m.over && r.toolOk && r.near)) fails.push(`${i + 1}:${JSON.stringify({ m, tool: r.toolOk, near: r.near })}`);
+    rows.push(`${i + 1} ${(100 * visibleShare).toFixed(0)}%`);
+    if (scenes[i].id === 'sea-level') await shot(page, 'tour-phone-6-sea-level.png');
+  }
+  ok('tour phone 390x844: every chapter leaves >= 50% of the globe (or of the screen, zoomed in) visible, sheet on screen, no sideways scroll, state reached', fails.length === 0,
+    `${rows.join(', ')}; worst ${(100 * worst).toFixed(1)}%${fails.length ? ' | ' + fails.join(' | ') : ''}`);
+  await page.evaluate(() => window.__seafloor.tour.exit());
+  await page.waitForTimeout(500);
+  const back = await page.evaluate(() => ({ tabs: getComputedStyle(document.querySelector('.tabs')).display, focus: document.activeElement.id }));
+  ok('tour phone: exit brings the tab bar back and focus to Tour', back.tabs !== 'none' && back.focus === 'tour-btn', JSON.stringify(back));
   await page.close();
 }
 

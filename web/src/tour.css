@@ -1,0 +1,135 @@
+/* Guided tour (loaded with tour.ts). Desktop: a speech-bubble panel at the top of the left column, the globe
+   centred beside it. Phone: a compact bottom sheet in place of the tab bar; an open tool shows only its header. */
+
+.tour {
+  grid-column: 1; grid-row: 2 / 5; align-self: start; justify-self: start;
+  width: 344px; max-width: calc(100vw - 32px); max-height: calc(100% - var(--legend-h, 0px));
+  display: flex; flex-direction: column; gap: 9px; padding: 10px 12px 12px; overflow: auto; overscroll-behavior: contain;
+  background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--r-panel); box-shadow: var(--shadow);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+}
+.tour:not([hidden]) { animation: tour-in 0.24s var(--ease); }
+@keyframes tour-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+.tour-head { display: flex; align-items: center; gap: 10px; }
+.tour-avatar { flex: none; display: grid; place-items: center; }
+.tour-avatar svg { display: block; overflow: visible; }
+.tav-bg { fill: rgba(168, 224, 194, 0.1); stroke: rgba(168, 224, 194, 0.45); stroke-width: 1; }
+.tav-mast { stroke: var(--shelf); stroke-width: 2; stroke-linecap: round; }
+.tav-light { fill: #ffc95c; }
+.tav-hull { fill: var(--shelf); }
+.tav-eye { fill: var(--on-shelf); }
+.tav-wave { fill: none; stroke: #62b8b1; stroke-width: 1.8; stroke-linecap: round; }
+.tav-arc { fill: none; stroke: var(--shelf); stroke-width: 1.7; stroke-linecap: round; opacity: 0.75; }
+/* while the tour plays, Ping pings: the arcs fade outwards in turn */
+.tour.playing .tav-arc { animation: tour-ping 2.4s ease-out infinite; }
+.tour.playing .tav-arc.a2 { animation-delay: 0.35s; }
+.tour.playing .tav-light { animation: tour-blink 2.4s steps(1) infinite; }
+@keyframes tour-ping { 0% { opacity: 0.15; } 25% { opacity: 0.95; } 100% { opacity: 0.15; } }
+@keyframes tour-blink { 0%, 85% { opacity: 1; } 86%, 100% { opacity: 0.35; } }
+
+.tour-count { flex: 1; min-width: 0; margin: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.tour-name { font-size: 12px; font-weight: 600; color: var(--ink-3); letter-spacing: 0.02em; }
+#tour-count { font-size: 13.5px; font-weight: 600; color: var(--ink-2); }
+.tour-exit { margin-right: -4px; }
+
+/* the speech bubble: its tail points up at Ping */
+.tour-bubble {
+  position: relative; padding: 10px 12px 9px; border-radius: 10px;
+  background: rgba(168, 224, 194, 0.06); border: 1px solid rgba(168, 224, 194, 0.22);
+}
+.tour-bubble::before {
+  content: ''; position: absolute; left: 15px; top: -7px; width: 12px; height: 12px; transform: rotate(45deg);
+  background: #0f2130; border-left: 1px solid rgba(168, 224, 194, 0.22); border-top: 1px solid rgba(168, 224, 194, 0.22);
+}
+.tour-title { font: 500 19px/1.2 var(--serif); font-variation-settings: 'opsz' 36; margin: 0 0 5px; color: var(--ink); position: relative; }
+.tour-text { margin: 0; font-size: 14.5px; line-height: 1.5; color: var(--ink); }
+.tour-src { margin: 7px 0 0; font-size: 12px; line-height: 1.4; color: var(--ink-3); }
+
+.tour-timer { height: 2px; border-radius: 1px; background: var(--line); overflow: hidden; }
+.tour-timer span { display: block; height: 100%; background: var(--shelf); transform: scaleX(0); transform-origin: left; }
+.tour:not(.playing) .tour-timer span { background: var(--ink-3); }
+
+.tour-dots { display: flex; flex-wrap: wrap; gap: 0; margin: -4px -4px 0; }
+.tour-dot { width: 24px; height: 24px; border: 0; padding: 0; background: none; border-radius: 12px; display: grid; place-items: center; }
+.tour-dot::before { content: ''; width: 7px; height: 7px; border-radius: 4px; background: var(--line-strong); transition: width 0.18s var(--ease), background-color 0.18s; }
+.tour-dot.seen::before { background: var(--ink-3); }
+.tour-dot[aria-current='step']::before { width: 18px; background: var(--shelf); }
+.tour-dot:hover::before { background: var(--ink-2); }
+.tour-dot[aria-current='step']:hover::before { background: var(--shelf); }
+
+.tour-ctrl { display: flex; gap: 6px; align-items: center; }
+.tour-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 36px; padding: 0 11px; flex: none;
+  border-radius: var(--r-ctl); border: 1px solid var(--line-strong); background: transparent; color: var(--ink);
+  font-weight: 600; font-size: 13.5px; transition: border-color 0.15s, background-color 0.15s;
+}
+.tour-btn:hover:not(:disabled) { border-color: var(--shelf); }
+.tour-btn:disabled { opacity: 0.4; cursor: default; }
+.tour-btn.primary { background: var(--shelf); border-color: var(--shelf); color: var(--on-shelf); margin-left: auto; }
+.tour-btn.primary:hover { background: #c2ecd5; }
+.tour-btn.icon { width: 36px; padding: 0; }
+.tour-btn.icon[aria-pressed='true'] { color: var(--shelf); border-color: var(--shelf); background: rgba(168, 224, 194, 0.12); }
+.tour-play .i-pause { display: block; }
+.tour-play .i-play, .tour-play.paused .i-pause { display: none; }
+.tour-play.paused .i-play { display: block; }
+.tour-btn.primary:focus-visible { outline-offset: 3px; }
+
+/* the spotlight: a ring around the control a chapter talks about; never takes the pointer */
+.tour-spot {
+  position: fixed; left: 0; top: 0; z-index: 40; pointer-events: none; border-radius: 10px;
+  box-shadow: 0 0 0 2px var(--shelf), 0 0 0 6px rgba(168, 224, 194, 0.22), 0 0 20px 6px rgba(168, 224, 194, 0.28);
+  transition: transform 0.28s var(--ease), width 0.28s var(--ease), height 0.28s var(--ease);
+  animation: tour-glow 1.8s ease-in-out infinite;
+}
+@keyframes tour-glow {
+  50% { box-shadow: 0 0 0 2px var(--shelf), 0 0 0 10px rgba(168, 224, 194, 0.1), 0 0 28px 10px rgba(168, 224, 194, 0.2); }
+}
+
+/* while touring: no Time offer popping up, no guided-view drawer under the bubble */
+.ui.touring .time-offer { display: none !important; }
+
+@media (min-width: 761px) and (max-height: 760px) {
+  .tour { gap: 7px; padding: 8px 10px 10px; }
+  .tour-text { font-size: 14px; line-height: 1.45; }
+}
+
+/* phone: a compact sheet where the tabs were; the globe keeps the middle of the screen */
+@media (max-width: 760px) {
+  .tour {
+    grid-area: tabs; width: auto; max-width: none; justify-self: stretch; align-self: end;
+    max-height: none; overflow: visible; gap: 6px; padding: 8px 10px 10px; background: rgba(8, 16, 30, 0.95);
+  }
+  .tour-head { gap: 8px; }
+  .tour-avatar svg { width: 30px; height: 30px; }
+  .tour-name { display: none; }
+  .tour-bubble { max-height: 112px; overflow: auto; overscroll-behavior: contain; padding: 7px 10px 9px;
+    -webkit-mask-image: linear-gradient(#000 calc(100% - 12px), transparent); mask-image: linear-gradient(#000 calc(100% - 12px), transparent); }
+  .tour-bubble::before { display: none; }
+  .tour-title { font-size: 17px; margin-bottom: 3px; }
+  .tour-text { font-size: 14px; line-height: 1.45; }
+  .tour-src { font-size: 11.5px; margin-top: 4px; }
+  .tour-dots { display: none; }
+  .tour-btn { height: 44px; padding: 0 12px; }
+  .tour-btn.icon { width: 44px; }
+  .ui.touring .tabs, .ui.touring .readout, .ui.touring .stories, .ui.touring .layers, .ui.touring .card { display: none !important; }
+  /* an open tool keeps only its header bar, so sheet + header leave the globe most of the screen */
+  .ui.touring .tool-panel > :not(header) { display: none !important; }
+  .ui.touring .tool-panel { padding-top: 6px; padding-bottom: 6px; max-height: 22vh; }
+  .ui.touring .tool-panel .min-btn { display: none; }
+  .ui.touring .sea-change, .ui.touring .water-sub { display: none; }
+  .ui:has(.legend.collapsed).touring {
+    grid-template-rows: auto minmax(0, 1fr) 0 auto minmax(0, auto) auto;
+    grid-template-areas: "top top" "card card" ". ." "legend legend" "panel panel" "tabs tabs";
+  }
+  .ui.touring .legend.collapsed { justify-self: start; }
+}
+@media (max-width: 370px) {
+  .tour-btn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .tour-btn { padding: 0 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-spot, .tour.playing .tav-arc, .tour.playing .tav-light { animation: none !important; }
+  .tour-spot { transition: none; }
+}

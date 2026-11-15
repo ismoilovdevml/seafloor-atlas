@@ -21,13 +21,15 @@ import { OverlayUI } from './overlay-ui';
 import { CERTAINTY_IDS, CERTAINTY_LAYERS, RasterProbe, SEAL_STOPS, certaintyRasterLayers, certaintySources, classFromAlpha, disagreeFromAlpha, formatDisagree, loadSeals, sealCard, sealLayers,
   type CertaintyId, type DisagreeLegend, type SealProps, type UncertaintyLegend } from './certainty';
 import { MarineUI } from './marine-ui';
-import { ATTRIBUTION, hashWithLayers, layersFromHash, normName, searchRank, type CardModel, type LayerState, type SearchEntry } from './overlays';
+import { ATTRIBUTION, hashWithLayers, layersFromHash, layersToken, normName, searchRank, type CardModel, type LayerState, type SearchEntry } from './overlays';
 import { LoadMeter } from './loading';
 import { hashWithTime, parseSeaHistory, timeFromHash, type TimeMode, type TimeState, type YearSet } from './timeline';
 import type { EventsUI } from './events-ui';
 import type { OceanUI } from './ocean-ui';
 import type { HistoryUI } from './history-ui';
 import type { MonthId, MonthTarget, TimeUI, YearTarget } from './time-ui';
+import { tourFromHash, type TourTool } from './tour-model';
+import type { Tour, TourHost } from './tour';
 
 maplibregl.setWorkerUrl(workerUrl);
 
@@ -93,6 +95,8 @@ const map = new maplibregl.Map({
 });
 map.setMissingStyleImageResolver((id) => { if (id === DOT_IMAGE && !map.hasImage(DOT_IMAGE)) map.addImage(DOT_IMAGE, makeDot(), { pixelRatio: 2 }); });
 let exagAuto = true;
+/** the guided tour is running (tour.ts sets it through its host) */
+let touring = false;
 let exagValue = autoExaggeration(map.getZoom());
 function applyExaggeration(v: number) {
   exagValue = Math.round(v);
@@ -836,6 +840,8 @@ const touch = window.matchMedia('(hover: none)').matches;
 if (touch) $('readout-hint').textContent = 'Tap the seafloor to read its depth';
 const visible = (id: string) => !$(id).hidden && getComputedStyle($(id)).display !== 'none';
 const BOTTOM_PANELS = ['sea', 'water', 'profile', 'time'];
+/** The tour's panel when it is on screen (it exists only once the tour chunk has loaded). */
+function tourEl(): HTMLElement | null { const t = document.getElementById('tour'); return t && !t.hidden && getComputedStyle(t).display !== 'none' ? t : null; }
 const phone = () => window.innerWidth <= 760;
 function updatePadding() {
   const W = window.innerWidth, H = window.innerHeight;
@@ -851,6 +857,8 @@ function updatePadding() {
     const tops = ['legend', 'readout', 'story-card', 'feature-card', 'stories', 'layers', 'toolbar', 'time-offer', ...BOTTOM_PANELS].filter(visible).map((id) => r(id).top);
     const tabs = document.querySelector('.tabs')!.getBoundingClientRect();
     if (tabs.height) tops.push(tabs.top);
+    const tour = tourEl();
+    if (tour) tops.push(tour.getBoundingClientRect().top);
     pad = { top: Math.round(top), bottom: Math.round(H - Math.min(H, ...tops)), left: 0, right: 0 };
   } else {
     // padding from where the panels really are: the open drawers pad the sides, the tool bar and an open bottom
@@ -858,6 +866,8 @@ function updatePadding() {
     let bottom = visible('toolbar') ? H - r('toolbar').top + 8 : 0;
     let right = visible('layers') ? W - r('layers').left : 0;
     let left = visible('stories') ? r('stories').right : 0;
+    const tour = tourEl();
+    if (tour) left = Math.max(left, tour.getBoundingClientRect().right); // the tour's bubble sits in the left column
     // a tall open legend (several layers on) is treated like a side panel, so the globe centres beside it
     if (visible('legend') && !$('legend').classList.contains('collapsed') && r('legend').height > 0.28 * H) left = Math.max(left, r('legend').right);
     for (const id of BOTTOM_PANELS) {
@@ -927,7 +937,9 @@ for (const id of BOTTOM_PANELS) {
 function uiRects(): (Rect & { id: string })[] {
   const els: [string, Element][] = ['stories', 'layers', 'readout', 'story-card', 'feature-card', 'profile', 'sea', 'water', 'time', 'time-offer', 'legend', 'toolbar', 'about', 'settings']
     .filter(visible).map((id) => [id, $(id)]);
-  for (const sel of ['.brand', '.search', '#explore-btn', '#layers-btn', '#about-btn', '#settings-btn', '.tabs']) {
+  const tour = tourEl();
+  if (tour) els.push(['tour', tour]);
+  for (const sel of ['.brand', '.search', '#explore-btn', '#tour-btn', '#layers-btn', '#about-btn', '#settings-btn', '.tabs']) {
     const e = document.querySelector(sel)!;
     if (getComputedStyle(e).display !== 'none') els.push([sel, e]);
   }
@@ -1172,7 +1184,7 @@ function hideOffer() { clearTimeout(offerTimer); if (!$('time-offer').hidden) { 
 /** A time-aware layer went on: offer the Time panel once per layer and session (the tool-bar dot stays). */
 function offerTime(what: YearSet | 'months') {
   updateTimeDot();
-  if (timeUI?.open || seaOpen || water.open || profiling) return;
+  if (touring || timeUI?.open || seaOpen || water.open || profiling) return;
   try { if (sessionStorage.getItem(`sfa-offer-${what}`)) return; sessionStorage.setItem(`sfa-offer-${what}`, '1'); } catch { /* storage blocked: offer every time */ }
   offerWhat = what;
   $('time-offer-text').textContent = OFFER[what];
@@ -1372,6 +1384,111 @@ map.on('dataloading', (e) => { const d = e as unknown as { dataType?: string; ti
 map.on('data', (e) => { const d = e as unknown as { dataType?: string; tile?: unknown; sourceId?: string }; if (d.dataType === 'source' && d.tile && !PROTOCOL_SOURCES.has(d.sourceId ?? '')) loadFinish(); });
 map.on('idle', loadEnd);
 
+// ---------- guided tour (tour.ts and its chapters load on first use) ----------
+// The tour drives the same functions as the controls: layers by their #layers= tokens (plus the seafloor
+// switches), one tool at a time, the camera, the exaggeration and the drawers. Exiting puts them back.
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+/** Every layer that is on, as tokens (veil, plates, new2026, the depth-certainty ids, marine, and #layers= tokens). */
+function layerTokens(): string[] {
+  const t: string[] = [];
+  if (tVeil.checked) t.push('veil');
+  if (tPlates.checked) t.push('plates');
+  if (tNew.checked) t.push('new2026');
+  for (const id of CERTAINTY_IDS) if (certaintyOn.has(id)) t.push(id);
+  if (marine.on) t.push('marine');
+  const tok = layersToken({ ...overlays.state, extra: extraTokens() });
+  if (tok) t.push(...tok.split(','));
+  return t;
+}
+/** Exactly these layers on, every other one off. */
+async function setLayerTokens(tokens: string[]) {
+  const on = new Set(tokens);
+  setVeil(on.has('veil'));
+  setPlates(on.has('plates'));
+  if (!$('new-layer').hidden) setNew(on.has('new2026'));
+  for (const id of CERTAINTY_IDS) if (certaintyOk[id] && certaintyOn.has(id) !== on.has(id)) await setCertainty(id, on.has(id));
+  if (marineReady && marine.on !== on.has('marine')) await marine.set({ on: on.has('marine') });
+  const ls = layersFromHash(`#layers=${tokens.join(',')}`) ?? { ids: [], allWrecks: false };
+  await overlays.apply(ls);
+  await applyExtra(ls.extra ?? []);
+  layersChanged();
+}
+function toolState(): TourTool {
+  if (profiling) return profileA && profilePts ? { kind: 'profile', a: profileA, b: profilePts[profilePts.length - 1] } : { kind: 'profile' };
+  if (seaOpen) return { kind: 'sea', level: seaLevel };
+  if (water.open) return { kind: 'water', v: water.v, depth: water.depth };
+  if (timeUI?.open) return { kind: 'time', state: timeUI.state };
+  return { kind: 'none' };
+}
+async function setToolState(t: TourTool) {
+  setPlaying(false);
+  if (t.kind !== 'profile' && profiling) setProfiling(false);
+  if (t.kind !== 'sea' && seaOpen) closeSea();
+  if (t.kind !== 'water' && water.open) water.close();
+  if (t.kind !== 'time' && timeUI?.open) timeUI.close();
+  if (t.kind === 'profile') {
+    if (!profiling) setProfiling(true);
+    if (t.a && t.b) { profileA = t.a; await runProfile(t.a, t.b); }
+  } else if (t.kind === 'sea') openSea(t.level);
+  else if (t.kind === 'water' && waterReady) {
+    await water.show({ v: t.v, depth: t.depth });
+    if (t.column) await water.showColumn(t.column[0], t.column[1]);
+  } else if (t.kind === 'time') { await openTime(t.state); await timeUI?.ready(); }
+}
+const tourHost: TourHost = {
+  phone,
+  reduceMotion: () => reduceMotion.matches,
+  getLayers: layerTokens,
+  setLayers: setLayerTokens,
+  getTool: toolState,
+  setTool: setToolState,
+  getExaggeration: () => (exagAuto ? 'auto' : exagValue),
+  setExaggeration: (v) => {
+    exagAuto = v === 'auto';
+    $<HTMLInputElement>('exag-auto').checked = exagAuto;
+    applyExaggeration(v === 'auto' ? autoExaggeration(map.getZoom()) : v);
+  },
+  getDrawers: () => ({ explore: $('ui').classList.contains('explore-open'), layers: $('ui').classList.contains('layers-open') }),
+  setDrawers: (d) => { setDrawer('explore', d.explore, false); setDrawer('layers', d.layers, false); },
+  camera: () => { const c = map.getCenter(); return { lng: c.lng, lat: c.lat, zoom: map.getZoom() }; },
+  fly: (cam, instant) => new Promise<void>((res) => {
+    let done = false;
+    const fin = () => { if (!done) { done = true; clearTimeout(guard); res(); } };
+    const guard = window.setTimeout(fin, 9000);
+    map.stop(); // ends a running move first, so its moveend does not resolve this one
+    if (instant) { map.jumpTo(cam); requestAnimationFrame(() => fin()); return; }
+    map.once('moveend', fin);
+    // a fixed duration (as the guided views use): MapLibre's maxDuration would turn a long flight into a jump
+    map.flyTo({ ...cam, duration: 4200, curve: 1.42, essential: true });
+  }),
+  stop: () => { map.stop(); },
+  idle: (maxMs) => Promise.race([idle(), new Promise<void>((r) => setTimeout(r, maxMs))]),
+  layout: updatePadding,
+  fit: () => fitGlobe(),
+  setTouring: (on) => {
+    touring = on;
+    $('ui').classList.toggle('touring', on);
+    $('tour-btn').setAttribute('aria-pressed', String(on));
+    if (on) { setPopover(null); hideOffer(); setTab('none'); show('story-card', false); show('feature-card', false); markStory(null); currentStory = null; }
+    updatePadding();
+  },
+  onUserMove: (cb) => {
+    const h = (e: { originalEvent?: unknown }) => { if (e.originalEvent) cb(); };
+    map.on('movestart', h);
+    return () => { map.off('movestart', h); };
+  },
+  timePlay: (on) => { if (timeUI?.open || !on) timeUI?.setPlaying(on); },
+  focusStart: () => $('tour-btn').focus({ preventScroll: true }),
+};
+let tour: Tour | null = null;
+let tourP: Promise<Tour> | null = null;
+function loadTour(): Promise<Tour> {
+  tourP ??= import('./tour').then((m) => (tour = new m.Tour(tourHost)));
+  return tourP;
+}
+async function startTour(n = 1) { await (await loadTour()).start(n); }
+$('tour-btn').addEventListener('click', () => { if (tour?.active) tour.exit(); else startTour(1); });
+
 // ---------- deep link ----------
 function storyFromHash() {
   const m = /story=([\w-]+)/.exec(location.hash);
@@ -1391,6 +1508,9 @@ if (linkedSea !== null) openSea(linkedSea);
 if (linkedWater) water.show({ v: linkedWater.v, depth: linkedWater.depth });
 // #time=quakes-2004, #time=month-7, #time=ago-12000 open the Time panel there
 if (linkedTime) openTime(linkedTime);
+// #tour=5 starts the guided tour at chapter 5 (after the other parts, so exiting returns to them)
+const linkedTour = tourFromHash(location.hash);
+if (linkedTour) startTour(linkedTour);
 // a pasted or edited #story= / #sea= link in an already open tab does not reload the page
 window.addEventListener('hashchange', () => {
   const s = storyFromHash();
@@ -1403,6 +1523,8 @@ window.addEventListener('hashchange', () => {
   if (ls && hashWithLayers('', ls) !== hashWithLayers('', { ...overlays.state, extra: extraTokens() })) { overlays.apply(ls); applyExtra(ls.extra ?? []); }
   const ts = timeFromHash(location.hash);
   if (ts && (!timeUI?.open || hashWithTime('', ts) !== hashWithTime('', timeUI.state))) openTime(ts);
+  const tn = tourFromHash(location.hash);
+  if (tn && (!tour?.active || tour.index !== tn - 1)) startTour(tn);
 });
 
 // ---------- test/capture hooks ----------
@@ -1526,6 +1648,23 @@ Object.assign(window, {
     history: {
       ready: () => loadHistory().then((h) => !!h),
       state: () => ({ year: historyUI?.year ?? null, visibility: map.getLayer('history') ? map.getLayoutProperty('history', 'visibility') : null }),
+    },
+    tour: {
+      /** loads the tour chunk and starts at chapter n; resolves when that chapter has settled */
+      start: (n = 1) => startTour(n).then(() => true),
+      loaded: () => !!tour,
+      chapters: () => tour?.chapters ?? null,
+      state: () => tour?.state() ?? null,
+      next: async () => { await tour?.next(); return true; },
+      back: async () => { await tour?.back(); return true; },
+      go: async (i: number) => { await tour?.go(i); return true; },
+      play: (on: boolean) => tour?.setPlaying(on),
+      voice: (on: boolean) => tour?.setVoice(on),
+      exit: async () => { await tour?.exit(); return true; },
+      layers: layerTokens,
+      tool: toolState,
+      snapshot: () => ({ layers: layerTokens(), tool: toolState(), exaggeration: exagAuto ? 'auto' : exagValue,
+        drawers: { explore: $('ui').classList.contains('explore-open'), layers: $('ui').classList.contains('layers-open') } }),
     },
     loading: {
       state: () => ({ ...meter.view(), started: meter.started, finished: meter.finished, shown: meter.shown, log: meter.log.slice(-12),

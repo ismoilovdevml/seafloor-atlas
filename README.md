@@ -8,6 +8,10 @@ An interactive 3D globe of the whole ocean floor, built from open data. It shows
 
 ![Seafloor Atlas](docs/img/hero.jpg)
 
+New here? Press **Tour**: Ping, a small sonar buoy, walks you through the atlas in 12 short chapters. It moves the camera, switches the layers on and points at each control as it explains it. Every number it quotes comes from the data, with the source underneath. Start at any chapter with `#tour=N`.
+
+![Guided tour](docs/img/tour.jpg)
+
 ## What you can do
 
 | | |
@@ -18,7 +22,7 @@ An interactive 3D globe of the whole ocean floor, built from open data. It shows
 | ![north sea](docs/img/north-sea.jpg) **Click anything** for a card: the Titanic wreck, the MAREA cable, Troll A, Nord Stream 1, Hornsea 1. | ![shipping](docs/img/shipping.jpg) **Shipping density** from AIS 2015–2021: the world's sea lanes. |
 | ![time](docs/img/time-quakes.jpg) **Time.** Play earthquakes since 1900, cables, wind farms or seafloor mapping 2019→2026 year by year (2004: the M 9.1 Sumatra quake). | ![monsoon](docs/img/monsoon.jpg) **Months.** Winds, currents, phytoplankton and sea temperature through the year: in July the monsoon blows from the SW and the Arabian Sea blooms. |
 
-Also: 11 guided views, search over 5,412 named undersea features, cables and wrecks (⌘K), plate boundaries, model disagreement, prediction confidence, seal soundings and marine life (AquaMaps model, sampling-corrected diversity, data gaps), deep links for every view (`#story=`, `#sea=`, `#water=`, `#layers=`, `#time=`).
+Also: 11 guided views, search over 5,412 named undersea features, cables and wrecks (⌘K), plate boundaries, model disagreement, prediction confidence, seal soundings and marine life (AquaMaps model, sampling-corrected diversity, data gaps), deep links for every view (`#story=`, `#sea=`, `#water=`, `#layers=`, `#time=`, `#tour=`).
 
 New layers and the Time panel:
 
