@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /tiles/
+Disallow: /history/
+
+Sitemap: https://seaflooratlas.org/sitemap.xml

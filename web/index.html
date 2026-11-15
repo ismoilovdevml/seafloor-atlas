@@ -4,8 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="color-scheme" content="dark" />
-  <meta name="description" content="An interactive globe of the whole ocean floor from GEBCO 2026, showing how much of it ships have directly measured." />
-  <title>Seafloor Atlas</title>
+  <meta name="description" content="Free interactive 3D map of the whole ocean floor from GEBCO 2026. See which 30.8 % of the seafloor ships have actually measured, trenches, ridges, sea level, ocean water, earthquakes and marine life." />
+  <title>Seafloor Atlas: interactive 3D map of the ocean floor and how much of it is measured</title>
+  <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebApplication","name":"Seafloor Atlas","url":"https://seaflooratlas.org/","applicationCategory":"EducationalApplication","operatingSystem":"Any (web browser)","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"description":"Interactive 3D globe of the whole ocean floor from GEBCO 2026, showing which parts ships have directly measured (30.8 %) and which are estimated.","author":{"@type":"Person","name":"Otabek Ismoilov","url":"https://orcid.org/0009-0008-2785-3691"},"sameAs":["https://github.com/ismoilovdevml/seafloor-atlas","https://doi.org/10.5281/zenodo.24228190"]},{"@type":"Dataset","name":"Seafloor Atlas: an interactive globe of the whole ocean floor and how much of it has been measured","description":"Web tiles, derived grids and statistics built from the GEBCO 2019-2026 grids and their Type Identifier grids: seafloor depth, the share directly measured by ships (30.8 % in GEBCO 2026), release-by-release changes and regional statistics, with the code that computes them.","url":"https://seaflooratlas.org/","identifier":"https://doi.org/10.5281/zenodo.24228190","creator":{"@type":"Person","name":"Otabek Ismoilov","url":"https://orcid.org/0009-0008-2785-3691"},"license":"https://github.com/ismoilovdevml/seafloor-atlas/blob/main/LICENSES.md","isAccessibleForFree":true,"keywords":["bathymetry","seafloor","ocean floor map","GEBCO","Seabed 2030","ocean mapping"],"spatialCoverage":{"@type":"Place","geo":{"@type":"GeoShape","box":"-90 -180 90 180"}},"temporalCoverage":"2019/2026","includedInDataCatalog":{"@type":"DataCatalog","name":"Zenodo","url":"https://zenodo.org"},"isBasedOn":"https://doi.org/10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa"}]}</script>
   <link rel="canonical" href="https://seaflooratlas.org/" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Seafloor Atlas" />
@@ -23,6 +24,10 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23374f8a'/%3E%3Cpath d='M1 18c5-2 8 3 15 1s9-6 15-3v4a15 15 0 0 1-30 0z' fill='%23140a22'/%3E%3C/svg%3E" />
 </head>
 <body>
+  <noscript>
+    <h1>Seafloor Atlas: interactive 3D map of the ocean floor</h1>
+    <p>Only 30.8 % of the seafloor has been directly measured by ships (GEBCO 2026). The 3D globe needs JavaScript and WebGL. Read the <a href="about/">key numbers and FAQ</a>, or visit famous places: <a href="views/challenger-deep/">Challenger Deep</a>, <a href="views/mid-atlantic-iceland/">Mid-Atlantic Ridge and Iceland</a>, <a href="views/hawaii-emperor-bend/">Hawaiian–Emperor bend</a>, <a href="views/monterey-canyon/">Monterey Canyon</a>, <a href="views/mh370-search/">the MH370 search area</a>.</p>
+  </noscript>
   <!-- icon set: 24 px grid, 1.75 px strokes, drawn once and referenced with <use> -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <defs>
@@ -94,7 +99,7 @@
 
     <section class="popover about" id="about" role="dialog" aria-labelledby="about-title" hidden>
       <h2 id="about-title">About this map</h2>
-      <p class="about-lede">The shape of the whole ocean floor from GEBCO 2026, and how little of it ships have actually measured.</p>
+      <p class="about-lede">The shape of the whole ocean floor from GEBCO 2026, and how little of it ships have actually measured. <a href="about/">Key numbers, FAQ and how to cite</a>.</p>
       <dl class="about-stats" id="about-stats"></dl>
       <details class="about-sources">
         <summary>Data sources and licences</summary>
