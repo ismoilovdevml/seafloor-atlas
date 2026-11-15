@@ -155,7 +155,11 @@ def pick_coord(rows: list[dict]) -> tuple[float, float] | None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--refresh", action="store_true", help="re-run the SPARQL queries")
+    ap.add_argument("--out", type=Path, default=OUT,
+                    help="output file (pipeline/refresh_overlays.py stages and validates here)")
     args = ap.parse_args()
+    out = args.out
+    out.parent.mkdir(parents=True, exist_ok=True)
 
     rows = sparql(QUERY, RAW / "wikidata_shipwrecks.csv", args.refresh)
     by_item: dict[str, list[dict]] = {}
@@ -219,10 +223,10 @@ def main() -> None:
             "attribution": "Shipwrecks: Wikidata (CC0)", "retrieved": time.strftime(
                 "%Y-%m-%d", time.gmtime((RAW / "wikidata_shipwrecks.csv").stat().st_mtime)),
             "depth": "GEBCO_2026 1' grid at the point; only points with elevation < 0 kept"}
-    OUT.write_text(json.dumps({"type": "FeatureCollection", "metadata": meta, "features": feats},
+    out.write_text(json.dumps({"type": "FeatureCollection", "metadata": meta, "features": feats},
                               separators=(",", ":"), ensure_ascii=False))
     print(f"items {len(items)}, on land / above sea level (dropped) {n_land}, kept {len(feats)}; "
-          f"{OUT.stat().st_size / 1e6:.2f} MB")
+          f"{out.stat().st_size / 1e6:.2f} MB")
 
 
 if __name__ == "__main__":

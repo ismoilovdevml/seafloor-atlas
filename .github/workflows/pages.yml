@@ -3,7 +3,7 @@ name: Deploy viewer to GitHub Pages
 on:
   push:
     branches: [main]
-    paths: ["web/**", ".github/workflows/pages.yml"]
+    paths: ["web/**", ".github/workflows/pages.yml", ".github/scripts/site_size.py"]
   workflow_dispatch:
 
 permissions:
@@ -39,6 +39,8 @@ jobs:
           echo "dem tiles: $(find dist/tiles/dem -name '*.webp' | wc -l)"
           echo "coverage tiles: $(find dist/tiles/coverage -name '*.webp' | wc -l)"
           du -sh dist
+      - name: Site size guard (Pages limit 1 GB; warn > 750 MB, fail > 950 MB)
+        run: python3 ../.github/scripts/site_size.py dist --warn-mb 750 --fail-mb 950
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:

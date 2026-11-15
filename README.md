@@ -116,12 +116,29 @@ node scripts/readme_shots.mjs <url> ../docs/img       # regenerate the README sc
 
 Every other layer has its own script in `pipeline/` (one per data source, each documented at the top).
 
+## Keeping it up to date
+
+* **Weekly (automatic):** `.github/workflows/refresh-data.yml` re-queries the OSM platforms, pipelines, wind farms and submarine cables (Overpass) and the Wikidata shipwrecks every Monday. Each new file is validated before it replaces the old one (schema, attribution, coordinates, feature count within ±20 %), only real changes are committed, then the site is redeployed.
+* **Monthly (automatic):** `.github/workflows/release-watch.yml` checks for a new GEBCO grid, World Ocean Atlas, OBIS speciesgrids build or AquaMaps version and opens one issue with the rebuild checklist. Those rebuilds run locally.
+* **Every deploy:** `pages.yml` warns above 750 MB and fails above 950 MB of built site (GitHub Pages limit 1 GB).
+
+What runs when, the manual checklists and how to roll back a bad data commit: [docs/maintenance.md](docs/maintenance.md).
+
+### Site size
+
+The built site is about 404 MB (2026-11-15: depth tiles 195 MB, coverage 51 MB, disagreement 42 MB, shipping 39 MB, ocean water 27 MB). When the guard warns, move the largest raster sets off Pages, the same way zoom 6–7 already live on Hugging Face:
+
+1. pack each set into one archive: `.venv/bin/python pipeline/to_pmtiles.py web/public/tiles/disagree data/derived/pmtiles/disagree.pmtiles` (then `shipping`, `coverage`; non-tile files such as `legend.json` stay on Pages). The script reads every tile back and compares it byte for byte;
+2. upload them to the dataset [ismoilovdev/seafloor-atlas-tiles](https://huggingface.co/datasets/ismoilovdev/seafloor-atlas-tiles) and pin the URLs to the upload commit, as `pipeline/publish_hires.py` does for `dem_z6-7.pmtiles`;
+3. viewer change (not written yet): today `web/src/tilesource.ts` reads PMTiles only above zoom 5 and only for `dem`/`coverage`, so the moved layer needs an "archive for all zooms" path in `fetchTile` (and its source must go through the `sfa://` protocol); then remove the folder from `web/public/tiles/`;
+4. run `npm test` and the browser QA, and check the size guard output in the Pages run.
+
 ## Limits
 
 * Away from ship surveys the real detail is a few km (satellite gravity), so zooming in there shows smooth terrain.
 * Beyond 85.05° N/S (outside Web Mercator) the globe shows a flat cap at the mean polar depth.
 * "Measured" cells are 460 m averages; one ship track through a cell counts it as measured.
-* Cables are a 2022 snapshot (the open data is no longer updated); shipwrecks in Wikidata are mostly UK/Irish records; species records reflect sampling effort.
+* Cable routes are a 2022 snapshot (the open data is no longer updated; status as of 2022-11-14). The weekly OSM cable supplement adds mostly coastal chart cables: OSM rarely maps long-haul routes ([docs/cables-osm.md](docs/cables-osm.md)). Shipwrecks in Wikidata are mostly UK/Irish records; species records reflect sampling effort.
 * The ocean mask includes the Caspian Sea and lake beds below sea level (~0.15 % of the area); regional tables exclude the Caspian.
 
 ## Data and licences
@@ -141,7 +158,7 @@ Every other layer has its own script in `pipeline/` (one per data source, each d
 | Shipping density | World Bank / IMF (Cerdeiro, Komaromi, Liu & Saeed 2020) | CC BY 4.0 |
 | Shipwrecks | Wikidata | CC0 |
 | Submarine cables | TeleGeography Submarine Cable Map, snapshot 2022-11-14 | CC BY-NC-SA 3.0 |
-| Platforms, pipelines, wind farms | © OpenStreetMap contributors | ODbL |
+| Platforms, pipelines, wind farms, OSM submarine cables | © OpenStreetMap contributors | ODbL |
 
 Code: MIT. Some data layers are non-commercial (NC); the site is non-commercial.
 

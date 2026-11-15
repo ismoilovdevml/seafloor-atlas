@@ -185,6 +185,7 @@ def clean(d: dict) -> dict:
 
 def write(name: str, feats: list, meta: dict) -> None:
     p = OUT / name
+    p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps({"type": "FeatureCollection", "metadata": {**meta, **META_COMMON}, "features": feats},
                             separators=(",", ":"), ensure_ascii=False))
     print(f"  {name}: {len(feats)} features, {p.stat().st_size / 1e6:.2f} MB")
@@ -346,11 +347,15 @@ def windfarms(sea: Sea, eez: EEZ, refresh: bool) -> None:
 
 
 def main() -> None:
+    global OUT
     ap = argparse.ArgumentParser()
     ap.add_argument("--refresh", action="store_true", help="re-run the Overpass queries")
     ap.add_argument("--only", choices=["platforms", "pipelines", "windfarms"])
     ap.add_argument("--tolerance", type=float, default=0.0005, help="pipeline simplification, degrees")
+    ap.add_argument("--out-dir", type=Path, default=OUT,
+                    help="where to write the GeoJSON (pipeline/refresh_overlays.py stages and validates here)")
     args = ap.parse_args()
+    OUT = args.out_dir
     sea, eez = Sea(), EEZ()
     if args.only in (None, "platforms"):
         platforms(sea, eez, args.refresh)

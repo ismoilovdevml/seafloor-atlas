@@ -67,9 +67,17 @@ licence of the code; the viewer must show the attribution line when the layer is
 | Shipwrecks | `data/wrecks.geojson` | `pipeline/wrecks.py` | CC0 1.0 | Shipwrecks: Wikidata (CC0) |
 | Submarine cables | `data/cables.geojson`, `data/landing-points.geojson` | `pipeline/cables.py` | **CC BY-NC-SA 3.0** | Submarine cables: TeleGeography Submarine Cable Map data, snapshot 2022-11-14, CC BY-NC-SA 3.0 (submarinecablemap.com) |
 | Offshore platforms, subsea pipelines, offshore wind farms | `data/platforms.geojson`, `data/pipelines.geojson`, `data/windfarms.geojson` | `pipeline/offshore.py` | ODbL 1.0 | © OpenStreetMap contributors (ODbL) |
+| Submarine telecom cables from OSM (supplement to the 2022 snapshot) | `data/cables-osm.geojson` | `pipeline/cables_osm.py` | ODbL 1.0 | © OpenStreetMap contributors (ODbL) |
 
 Every GeoJSON carries the same text in a top-level `metadata` object (`source`, `licence`, `attribution`, ...),
 and `legend.json` has `licence` and `attribution`.
+
+**Weekly refresh.** `platforms`, `pipelines`, `windfarms`, `wrecks` and `cables-osm` are re-queried every Monday by
+`.github/workflows/refresh-data.yml` (`pipeline/refresh_overlays.py`). A new file replaces the old one only when it
+parses, keeps the `metadata.attribution`/`licence` above, has the expected geometry type, valid coordinates, the
+required properties and unique ids, stays under its size limit, and its feature count is within ±20 % of the old
+file. Files whose features did not change are not rewritten. Formats below do not change with a refresh; counts do.
+Details and roll-back: `docs/maintenance.md`.
 
 ### Shipping traffic density (`tiles/shipping/`)
 
@@ -137,6 +145,36 @@ and `legend.json` has `licence` and `attribution`.
 * `landing-points.geojson`: Points with `id`, `name`, `country`, `cables` (cable ids), `tbd` (location to be
   decided).
 
+### Submarine cables from OpenStreetMap (`data/cables-osm.geojson`, supplement)
+
+* Why: the open TeleGeography data stops at 2022-11-14 and lists 2022 status (2Africa, Equiano, Firmina, Bifrost,
+  Echo, Apricot are "planned" there). OSM is the only open, maintained cable geometry. Script `pipeline/cables_osm.py`,
+  one Overpass query, refreshed weekly. Licence **ODbL 1.0**, attribution "© OpenStreetMap contributors (ODbL)".
+* Tagging (checked on taginfo and with Overpass counts, 2026-11-15): ways with `communication=line` plus
+  `location=underwater|submarine`, `submarine=yes` or `seamark:type=cable_submarine`; `telecom=line` underwater;
+  `seamark:type=cable_submarine` with `seamark:cable_submarine:category` telephone / fibre_optic / telecommunication
+  (and spelling variants). Excluded: `power=cable`, the power / transmission categories, and uncategorised seamark
+  cables (≈5,700 ways, mostly a Finnish fairway import, not separable from power cables).
+* Kept when at least one vertex is at sea (the GEBCO test of `offshore.py`), so lake and river crossings drop out.
+  Ways with the same name are merged into one feature; unnamed ways are line-merged per operator into connected
+  pieces and kept from 1 km. Simplified with 0.0005°, coordinates rounded to 1e-5°. Sorted by length.
+* MultiLineStrings. Properties (absent = unknown): `name`, `operator` (else `owner`), `start_date` (raw OSM text,
+  earliest of the merged ways), `status` (`disused` when tagged so), `length_km` (geodesic, OSM geometry
+  before simplification), `osm` (way ids `w…`, ≤ 20; `osm_ways` = total when more), `in_tg2022` (bool: the
+  normalised name matches a cable of `cables.geojson`), `tg_id` / `tg_name` (the matched snapshot cable),
+  `wikidata`. `metadata.stats` has the counts below.
+* Name matching: accents, case and punctuation removed; the words cable / system / submarine / fibre / telecom
+  dropped; parenthesised acronyms ("(FEA)") and "/" alternatives tried on their own; on the OSM side segment,
+  branch, phase and direction suffixes ("SEG 10.4", "S2.1", "South") dropped. Exact key match only.
+  `tests/test_refresh_overlays.py` pins examples. A cable not in the snapshot is called newer only when its
+  OSM `start_date` is certainly after 2022-11-14 (partial dates count from their first day).
+* Report: `docs/cables-osm.md` (generated, not edited by hand): counts, the known post-2022 cables, the
+  not-in-snapshot list split by start date, and every match.
+* Coverage (2026-11-15): 405 features, 279 named cables, 240,311 km; 108 named cables match the snapshot. OSM
+  mappers rarely draw long-haul cables (routes are not verifiable on the ground): the layer is mostly North Sea,
+  Baltic, Channel and Mediterranean chart cables, plus retired systems (TAT-8 to TAT-13, PTAT) that
+  TeleGeography no longer lists. It adds coastal detail; it does not replace the snapshot.
+
 ## Ocean water (web/public/woa/, `pipeline/woa.py`)
 
 Source: **World Ocean Atlas 2023**, NOAA NCEI, the **1991-2020 climate normal** (`decav91C0`), objectively analysed
@@ -203,6 +241,115 @@ Density: TEOS-10 via `gsw`: `p = p_from_z(-z, lat)`, `SA = SA_from_SP(SP, p, lon
   not included; a few dam or harbour-wall farms (Maasvlakte 2) are.
 * Coverage is whatever OSM mappers have added (snapshot time in `metadata.osmTimestamp`). There are no
   satellite detections: single turbines are not points here, and Chinese offshore wind is under-mapped.
+
+## Phytoplankton, winds and currents (web/public/chl/, web/public/flow/; `pipeline/chlorophyll.py`, `pipeline/flow.py`)
+
+Three monthly climatologies (12 months + annual) in the same zlib byte-plane style as `web/public/woa/`, reprojected
+in the browser. All three are open data that may be redistributed with attribution.
+
+| Layer | Source (exact product) | Period | Grid served | Licence | Attribution to show |
+|---|---|---|---|---|---|
+| Chlorophyll-a | NASA OBPG **MODIS-Aqua L3m CHL `chlor_a` R2022.0** (`MODISA_L3m_CHL` v2022.0, processing R2022.0.3), 9 km **MC** (monthly) and **CU** (cumulative = annual) mission climatologies | MC: 2002/2003 to 2025/2026 (per month in `layers[].period`); CU: 2002-07-04 to 2025-11-30 | 0.25°, 1440 x 720 | NASA Earth Science Data and Information Policy: free and open, no restrictions | Chlorophyll-a: NASA OBPG, MODIS-Aqua R2022.0 climatology (doi:10.5067/AQUA/MODIS/L3M/CHL/2022.0) |
+| Winds | **NCEP/NCAR Reanalysis 1**, 10 m `uwnd`/`vwnd`, long-term monthly means 1991-2020 (`surface_gauss/{u,v}wnd.10m.mon.ltm.1991-2020.nc`, NOAA PSL) | 1991-2020 | 1°, 360 x 180 (from the T62 Gaussian grid, 192 x 94, ~1.9°) | NOAA PSL: public, no restrictions (US Government work), acknowledge | Winds: NCEP/NCAR Reanalysis 1, 1991-2020 monthly means (NOAA PSL) |
+| Currents | **OSCAR v2.0 final** (`OSCAR_L4_OC_FINAL_V2.0`, ESR / NASA PO.DAAC), daily 0.25° total current, top-30 m mean | 2015-2024, days 1, 5, 10, 15, 20, 25 of every month (60 snapshots per calendar month, 720 granules) | 0.25° native nodes, 1440 x 719 | NASA Earth science data, free and open ("may be freely distributed"), cite the DOI | Currents: OSCAR v2.0 (ESR, NASA PO.DAAC), 2015-2024 monthly means |
+
+Citations (also in each `manifest.json`):
+
+* NASA Ocean Biology Processing Group (2022). MODIS-Aqua Level-3 Global Mapped Chlorophyll (CHL) Data, version R2022.0.
+  NASA OB.DAAC, Greenbelt, MD, USA. doi:10.5067/AQUA/MODIS/L3M/CHL/2022.0. Algorithm (OCI): Hu, C. et al. (2019),
+  J. Geophys. Res. Oceans 124, 1524-1543, doi:10.1029/2019JC014941; O'Reilly, J.E. and Werdell, P.J. (2019), Remote
+  Sens. Environ. 229, 32-47, doi:10.1016/j.rse.2019.04.021.
+* Kalnay, E. et al. (1996). The NCEP/NCAR 40-Year Reanalysis Project. Bull. Amer. Meteor. Soc. 77, 437-471,
+  doi:10.1175/1520-0477(1996)077<0437:TNYRP>2.0.CO;2. "NCEP/NCAR Reanalysis 1 data provided by the NOAA PSL, Boulder,
+  Colorado, USA, from their website at https://psl.noaa.gov".
+* ESR (2022). OSCAR ocean surface currents, version 2.0 final, 0.25° daily. PO.DAAC, CA, USA. doi:10.5067/OSCAR-25F20.
+  Method: Dohan, K. (2017), J. Geophys. Res. Oceans 122, 2647-2651, doi:10.1002/2016JC012246.
+
+### Inputs (data/raw/, gitignored) and access
+
+* `chl/` (195 MB): 12 MC + 1 CU NetCDF files, the newest granule per month found by a public CMR search, downloaded
+  from `https://oceandata.sci.gsfc.nasa.gov/getfile/<name>` with Earthdata Login (`~/.netrc`). The cloud links
+  CMR also lists (`obdaac-tea.earthdatacloud.nasa.gov`) refuse the download (401) unless the MERIS and Sentinel EULAs
+  are accepted in the Earthdata profile; `getfile` does not need them. The OBPG OPeNDAP server returned HTTP 429.
+* `wind/` (2.3 MB): the two NetCDF files from `https://downloads.psl.noaa.gov/Datasets/ncep.reanalysis.derived/surface_gauss/`
+  (public; the `ncep.reanalysis/Monthlies/` path returns 403 to scripts).
+* `oscar/` (~350 MB): `accum_MM.npz` running sums per calendar month (`su`, `sv`, `ss2` = Σu²+v², `n` count, float64
+  on the native 719 x 1440 node grid) and `done.json` (granules already summed). Each granule is fetched as a u/v-only
+  DAP4 subset (`https://opendap.earthdata.nasa.gov/collections/C2098858642-POCLOUD/granules/oscar_currents_final_YYYYMMDD.dap.nc4?dap4.ce=/u;/v`,
+  ~9 MB, Earthdata Login), added and deleted. ~6.5 GB transferred in total; resumable.
+* Credentials are never stored here: curl reads `~/.netrc` and keeps the session cookie in a temporary directory that
+  is deleted after the run (`pipeline/earthdata.py`).
+
+### Files and encoding
+
+* `chl/01.bin` .. `chl/12.bin`, `chl/annual.bin`: 0.25° grid, 1440 x 720, **row 0 = northernmost** (89.875° N),
+  column 0 = 179.875° W, exactly like `woa/map/`. zlib-deflated **uint16 as two byte planes** (all low bytes, then all
+  high bytes). `q = 0` no data (land, ice, persistent cloud, polar night); otherwise
+  **log10(chl in mg/m³) = lo + (q − 1) · step**, `lo = −3`, `step = 0.001` (fixed for all layers, in
+  `manifest.grid`). Built as the 3 x 3 block mean of log10(`chlor_a`) of the 9 km grid (geometric mean) where at least
+  3 of the 9 pixels are valid. Default colour range 0.01-20 mg/m³ on a log scale (`manifest.variable.range`,
+  the OBPG display range), colormap cmocean `algae`.
+* `chl/manifest.json`: `source`, `product`, `doi`, `citations`, `licence`, `attribution`, `variable`, `grid`,
+  `months`, `layers[key]` (`source_file`, `period`, `time_coverage`, `bytes`, `ocean_cells`, `log10_p2/p50/p98`),
+  `caveats`.
+* `flow/{wind,currents}/01.bin` .. `12.bin`, `annual.bin`: regular grid, row 0 = northernmost, column 0 = westernmost
+  from 180° W, longitudes wrap; row `r` is at latitude `lat0 − r · res_deg`, column `c` at longitude `lon0 + c · res_deg`
+  (`manifest.grid`: `res_deg`, `width`, `height`, `lat0`, `lon0`). Sample bilinearly between those points.
+  zlib-deflated **u then v**, each a little-endian **int16 stored as two byte planes** (low bytes, then high bytes of the
+  two's-complement value; the decoder does `q = lo | hi << 8; if (q >= 32768) q -= 65536`).
+  **value (m/s) = q · scale**, `scale` = 0.01 (wind) / 0.001 (currents); **q = −32768 = no data** (always in u and v
+  together). u = eastward, v = northward. Decompressed size = 4 · width · height bytes.
+  * wind: 1°, 360 x 180, `lat0` 89.5, `lon0` −179.5; no cell is no data (a global field over land and sea).
+    Annual = vector mean of the 12 monthly means.
+  * currents: the native OSCAR 0.25° **nodes** (not cell centres), 1440 x 719, `lat0` 89.75, `lon0` −180.0 (no
+    resampling). Monthly mean of the 60 snapshots, kept only where ≥ 80 % of them are valid (sea-ice edge); annual =
+    mean of the 12 monthly means where all 12 months are open water.
+* `flow/<set>/manifest.json`: `source`, `period`, `citation`, `licence`, `attribution`, `speed_range` (suggested colour
+  range, m/s), `grid`, `months`, `layers[key]` (`bytes`, `cells`, `speed_max`, `speed_p99`, `speed_mean_area` =
+  cos(lat)-weighted mean speed of the mean vector), `caveats`; currents also `product`, `doi`, `sampling`.
+* Sizes: `chl/` 7.9 MB (0.56-0.73 MB per layer), `flow/wind/` 1.6 MB (~130 kB per layer), `flow/currents/` 15.3 MB
+  (1.0-1.2 MB per layer); 24.8 MB in total.
+* Animation proof (2026-11-15, throwaway page outside the repo, Chrome 157 on an M4 Pro MacBook, 120 Hz display):
+  fetch + inflate (`DecompressionStream('deflate')`) + decode of one wind and one currents month 41 ms; 2 x 10,000
+  particles advected with bilinear sampling on two 1440 x 720 equirectangular canvases with fading trails:
+  **1.7 ms per frame** of JS (p95 1.9 ms), frame interval 8.2-8.9 ms (112-122 fps, display-limited).
+
+### Checks (`pipeline/chlorophyll.py check`, `pipeline/flow.py check`, `tests/test_chl_flow.py`)
+
+Chlorophyll (geometric mean over a 1° box, mg/m³): Peru upwelling 10° S 78° W 3.54 (annual), Benguela 23° S 13.5° E 3.25,
+Arabian Sea off Oman (19° N 58° E) 2.25 in August (SW monsoon) vs 0.57 in April, North Atlantic 50° N 25° W 0.63 in May
+(spring bloom) vs 0.23 in January; oligotrophic gyres: South Pacific (25° S 120° W) 0.017, Sargasso (25° N 50° W) 0.040,
+Indian Ocean (25° S 80° E) 0.037, North Pacific (25° N 150° W) 0.060; equatorial Pacific upwelling tongue (0°, 140° W) 0.20.
+
+Winds (mean vector, m/s): NE trades 15° N 40° W 7.1 (annual, from ENE), SE trades 15° S 120° W 6.6; Southern Ocean
+westerlies 50° S 90° E 9.1 (40-65° S band: p90 8.0, max 9.3; zonal-mean u peaks 7.0 at 52.5° S); Arabian Sea
+12° N 62° E **January 6.6 from the NE, July 11.6 from the SW** (Findlater jet; monsoon reversal); Bay of Bengal 15° N 88° E
+6.0 from the NE in January, 8.3 from the SW in July.
+
+Currents (2015-2024, 0.25°; "box max" = highest mean-vector speed in the box): Gulf Stream (26-38° N, 82-70° W)
+1.35 m/s annual, 1.60 in August; Agulhas 1.34 annual, 1.51 in December; North Brazil Current 1.11 annual, 1.56 in August;
+Kuroshio south of Japan and Extension (25-41° N, 132-148° E) 0.91 annual, 1.08 in September (the 2017-2025 Kuroshio
+Large Meander spreads the climatological jet; east of Taiwan 0.82); Antarctic Circumpolar Current: eastward everywhere,
+45-60° S mean u 0.08 m/s, 90th percentile speed 0.20, Drake Passage (65° W, 56-62° S) mean u 0.13; North Equatorial
+Countercurrent (4-9° N, 150-100° W) annual mean u +0.15 (eastward, 0.30 at 7° N 120° W in August) between the westward
+South Equatorial Current (2° S 120° W, u −0.07); Somali Current at 8° N 51° E reverses with the monsoon: v +0.71
+(northward, 1.09 m/s) in July, −0.19 in January.
+
+### Caveats (also in each `manifest.caveats`)
+
+* Satellite chlorophyll is an ocean-colour estimate of the top optical depth, ~30-35 % uncertainty in the open ocean,
+  biased high in turbid coastal and river-influenced water; deep chlorophyll maxima are invisible. Inland waters
+  (Caspian, Great Lakes, large lakes) are in the grid; mask them with the land/ocean mask if only the ocean is wanted.
+  High latitudes have no data in their winter, and the annual CU layer is weighted to the sunlit season there.
+* A monthly-mean wind is a vector average: where direction varies (ITCZ, monsoon transitions, storm tracks) its speed is
+  much lower than typical daily winds. NCEP R1 at ~1.9° smooths coastal jets and storms; scatterometer climatologies
+  give somewhat stronger Southern Ocean westerlies.
+* OSCAR is a diagnostic model (DUACS sea level + ERA5 wind + SST), a top-30 m mean; averaging 60 snapshots smooths
+  eddies and meanders, so western boundary currents are broader and slower than on any one day. Near the equator the
+  geostrophic part is ill-defined (OSCAR uses a special treatment). No data under sea ice and inshore of the grid.
+* "Live" option (documented, not built): NOAA GFS 0.25° analyses on NOMADS (`gfs.tYYz.pgrb2.0p25.anl`, `UGRD`/`VGRD`
+  at 10 m via the grib filter) are public and updated every 6 h; it would need a scheduled job, which this static site
+  does not have.
 
 ## Marine life (web/public/data/obis/, `pipeline/obis.py`)
 
@@ -449,3 +596,133 @@ Every `legend.json` / GeoJSON `metadata` carries `citation`, `licence` and `attr
 * Blue whale (AphiaID 137090): 24,522 OBIS records, 5,612 south of 50° S, 13,889 in the NE Pacific (20–60° N,
   170–110° W). Leatherback (137209): 25,792 records from 65.4° N to 47.1° S (1–99 % of records 38.7° S–55.6° N),
   consistent with its known range into subpolar waters.
+
+## Earthquakes and seamounts (`data/quakes.json`, `data/seamounts.json`)
+
+Two point layers in **columnar JSON** (one array per field, `n` entries each, plus a `metadata` object), not
+GeoJSON: as GeoJSON with the same properties they are 7.8 MB (quakes) and 14.6 MB (seamounts), over the size budget. The
+viewer zips the arrays into features, e.g.
+`features = d.lon.map((x, i) => ({type: "Feature", id: i, geometry: {type: "Point", coordinates: [x, d.lat[i]]}, properties: {mag: d.mag[i], depth_km: d.depth_km[i], time: d.time[i], id: d.id[i], place: d.place[i]}}))`.
+GitHub Pages serves both gzipped (0.89 MB and 1.01 MB on the wire).
+
+| Layer | File | Script | Licence | Attribution to show |
+|---|---|---|---|---|
+| Earthquakes M ≥ 5.5 since 1900 + last 30 days live | `data/quakes.json` + USGS feed | `pipeline/quakes.py` | Public domain (USGS) | Earthquakes: USGS ANSS ComCat (public domain) |
+| Seamounts | `data/seamounts.json` | `pipeline/seamounts.py` | CC BY 4.0 | Seamounts: SDUST2026SM (Gao et al. 2026) and SIO 2023 / Kim & Wessel 2011 (Gevorgian et al. 2023), CC BY 4.0; summits from GEBCO_2026 |
+
+### Earthquakes (`data/quakes.json`, `pipeline/quakes.py`)
+
+* Source: U.S. Geological Survey, Earthquake Hazards Program (2017) *Advanced National Seismic System (ANSS)
+  Comprehensive Catalog of Earthquake Events and Products* (ComCat), doi:10.5066/F7MS3QZH, via the FDSN event web
+  service `https://earthquake.usgs.gov/fdsnws/event/1/query?format=csv&minmagnitude=5`, one request per calendar year
+  1900..today (largest year far below the 20,000-event limit). Raw CSVs in `data/raw/quakes/<year>.csv` (18 MB).
+  Public domain (U.S. Government work; USGS asks for acknowledgement). Pre-1976 large events come from the ISC-GEM
+  catalogue inside ComCat.
+* Build of 2026-11-15: 107,637 rows M ≥ 5; 513 non-earthquakes dropped (444 nuclear explosions, 55 volcanic
+  eruptions, 10 explosions, 4 other); 107,124 earthquakes M ≥ 5 (39,650 M ≥ 5.5, 14,485 M ≥ 6, 1,620 M ≥ 7, 100 M ≥ 8).
+  The browser file keeps **M ≥ 5.5 (39,650 events, 3.19 MB)**; adding M 5–5.5 would make it about 8.6 MB.
+* Columns (sorted by magnitude descending, then time): `lon`, `lat` (0.01°), `time` (origin time, Unix **ms** UTC, as
+  in the USGS feeds), `mag` (ComCat preferred magnitude, mixed types Mw/mb/Ms), `depth_km` (rounded to 1 km; null if
+  unknown), `id` (ComCat id: event page `https://earthquake.usgs.gov/earthquakes/eventpage/<id>`), `place`.
+  `metadata`: `source`, `licence`, `attribution`, `minmag`, `count`, `first`, `newest`, `generated`, `columns`,
+  `live_feeds`, `stats`.
+* `--update` (weekly CI): reads `quakes.json`, queries FDSN from 30 days before the newest event to now with the file's
+  `minmag`, merges by `id` (new versions replace old), drops events revised below `minmag`, re-sorts, rewrites; needs
+  no raw cache. Tested: idempotent on a current file (0 new, 0 revised); with the 5 newest events removed it restored
+  all 5. Deletions from ComCat and revisions older than 30 days are only picked up by a full rebuild.
+* **Live layer (last 30 days)**, called directly by the viewer, no pipeline:
+  `https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_month.geojson` (M ≥ 2.5, 30 days; 2,007 events,
+  1.41 MB, 178 kB gzipped on 2026-11-15), also `4.5_month`, `2.5_week`, `all_day`, `significant_month` (same path
+  pattern). Updated every minute (`cache-control: public, max-age=60`). Real GeoJSON; depth is the third coordinate
+  (`geometry.coordinates[2]`, km) and `properties.time` is Unix ms, so copy depth into a property before styling.
+  For one event's details: `https://earthquake.usgs.gov/fdsnws/event/1/query?eventid=<id>&format=geojson`.
+* **CORS verified** 2026-11-15: response headers `access-control-allow-origin: *`, `access-control-allow-methods:
+  GET, OPTIONS`, preflight OPTIONS 200; and in headless Chromium from the live page origin
+  `https://ismoilovdevml.github.io`, `fetch()` of `2.5_month`, `4.5_week` and an FDSN `format=geojson` query all
+  returned `status 200, type "cors"`. The FDSN query endpoint carries the same headers.
+* Checks (`metadata.stats`, `data/derived/quakes_stats.json`):
+  * Largest events: 1960 Valdivia M 9.5 (−38.14, −73.41, 25 km), 1964 Alaska 9.2, 2004 Sumatra–Andaman 9.1
+    (3.29, 95.98, 30 km, 2004-12-26 00:58:53 UTC), 2011 Tōhoku 9.1 (38.30, 142.37, 29 km, 05:46:24 UTC), 1952
+    Kamchatka 9.0, then 8.8 for 1906 Ecuador–Colombia, 2010 Maule and 2025 Kamchatka.
+  * Plate boundaries (PB2002 lines in `plates.geojson`, densified to ≤ 2 km, great-circle distance): **65.5 % of the
+    14,485 M ≥ 6 events lie within 100 km of a boundary line**, which covers only 9.5 % of Earth's surface (400,000
+    random points); 85.3 % within 200 km; **36.5 % within 100 km of a subduction line** (2.1 % of the surface). Nearest
+    type for those within 100 km: subduction 4,603, transform 2,253, convergent 1,170, rift 759, ridge 695. Of the
+    events beyond 100 km, 24.7 % are deeper than 70 km (intraslab events under the overriding plate); most of the rest
+    are in PB2002's diffuse orogens (Himalaya–Tibet, Iran, Anatolia), which are areas, not lines.
+  * Tonga slab (15–26° S, 176° E–172° W, all M ≥ 5): 7,837 events, 2,637 deeper than 300 km, deepest 700 km. Median
+    distance west of the PB2002 TO/PA trench line: 75 km at 0–70 km depth, 226 km at 70–300 km, 451 km at 300–500 km,
+    523 km at 500–800 km. Linear fit of depth vs distance below 100 km: apparent dip **45°** (slope 1.01). That is the
+    Wadati–Benioff zone (fig11a inset). Distance is to the nearest trench vertex, not along a fixed profile.
+* Caveats: completeness changes with time (M ≥ 6 per decade: 350 in the 1900s, 1,300 in the 1950s, ~1,500 since the
+  1990s), so early decades are incomplete below about M 6.5–7 and density maps over-weight recent decades. Magnitude
+  types are mixed. Epicentres before the 1960s can be tens of km off; many shallow depths are fixed defaults (10, 33,
+  35 km), visible as horizontal lines in a depth section.
+
+### Seamounts (`data/seamounts.json`, `pipeline/seamounts.py`)
+
+* Sources (raw in `data/raw/seamounts/`, 77 MB):
+  * **SDUST2026SM** — Gao, Y., Guo, J., Ya, S., Yu, D., Liu, X. & Hwang, C. (2026) *SDUST2026SM: A Global Seamount
+    Catalog Based on Vertical Gradient of Gravity Anomaly and Bathymetric Data* (v1.0, 2026-10-10). Zenodo.
+    doi:10.5281/zenodo.23277209. CC BY 4.0. Paper: Earth Syst. Sci. Data Discuss., doi:10.5194/essd-2026-860
+    (**preprint, in review**). SWOT_04 VGG + GEBCO_2025, 80° S–80° N, seamounts ≥ 100 m high, 68,934 candidates,
+    **67,374 accepted after visual inspection** (`visual_pass_flag = 1`), stored on a 1′ grid. Heights and base depths
+    come from GEBCO_2025 foot-of-slope profiles.
+  * **SIO 2023** — Gevorgian, J., Sandwell, D. T., Yu, Y., Kim, S.-S. & Wessel, P. (2023) Global distribution and
+    morphology of small seamounts. *Earth and Space Science* 10, e2022EA002331, doi:10.1029/2022EA002331; data:
+    Zenodo doi:10.5281/zenodo.7718512 (`SIO_Seamounts.zip`, `Seamounts_Modeled/all.xyhrdnc`). CC BY 4.0. The Kim &
+    Wessel (2011) census (24,643, ids `KW-xxxxx`) re-centred on VGG v32 plus 19,325 new (`SIO-xxxxx`) and one
+    `Mew-` pick; the 514 KW picks in `KW_badlist.txt` (no VGG signal any more) are dropped → **43,455**. Heights are a
+    VGG Gaussian model in 100 m steps (600 = below 700 m, 2600 = 2,600 m or more); paper accuracy ~270 m.
+  * **Kim & Wessel (2011)** — Kim, S.-S. & Wessel, P. (2011) New global seamount census from altimetry-derived
+    gravity data. *Geophys. J. Int.* 186, 615–631, doi:10.1111/j.1365-246X.2011.05076.x. KWSMTS v0.1
+    (`KWSMTSv01.txt`, 24,643 rows; header says 24,646) from https://www.soest.hawaii.edu/PT/SMTS/ (reachable on
+    2026-11-15). The SOEST page states no licence; the same catalogue is redistributed in the CC BY 4.0 SIO 2023 Zenodo
+    record, which is what the layer uses. Used here for counts and cross-checks only.
+  * **Yesson et al. (2020)** — Yesson, C., Letessier, T. B., Nimmo-Smith, A., Hosegood, P., Brierley, A. S., Hardouin,
+    M. & Proud, R. (2020) *List of seamounts in the world oceans – An update*. PANGAEA, doi:10.1594/PANGAEA.921688,
+    CC BY 4.0 (37,889 peaks from SRTM30_PLUS v11 by a bathymetry-only cone search; the 2011 list, doi:10.1594/PANGAEA.757562,
+    is CC BY 3.0). Cross-check only; not merged (different method and definition).
+* Merge: every SDUST2026SM seamount (`src = 0`); an SIO 2023 seamount within 10 km gives it `cat` (its KW/SIO id).
+  SIO 2023 seamounts with no SDUST seamount within 10 km are added as `src = 1` (2,396), so the Kim & Wessel census
+  stays traceable: 97.0 % of the 24,643 KW 2011 positions have a layer seamount within 10 km. **69,770 seamounts,
+  3.65 MB.** Overlap: 94.5 % of SIO 2023 has an SDUST seamount within 10 km; 61.4 % of SDUST has an SIO one (SDUST adds
+  mostly small ones: 42 % of SDUST seamounts 100–500 m high match, 90 % of those ≥ 2 km). 71.3 % of Yesson 2020 peaks
+  have a layer seamount within 10 km.
+* Summit: the shallowest GEBCO_2026 15″ cell within a disc of radius clamp(0.5 × SDUST semi-minor axis, 1.5, 5) km
+  (SIO-only: clamp(0.3 × basal radius, 1.5, 5) km; median 3 km) around the catalogue centre; its depth and TID.
+* Name: GEBCO gazetteer elevation features (Seamount, Guyot, Knoll, Hill, Bank, Peak, Tablemount and plurals). A
+  seamount inside a gazetteer polygon (raw `data/raw/gazetteer/layer2_polygon.geojson`) takes its name (singular: the
+  tallest seamount inside only; plural: all inside); otherwise the nearest seamount within 10 km of a point label in
+  `features.geojson` (plural labels: all within 10 km). Singular beats plural, polygon beats point.
+* Columns (sorted by height descending): `lon`, `lat` (0.001°), `height_m`, `base_depth_m` (catalogue, positive down),
+  `summit_depth_m` (GEBCO_2026, positive down, negative = above sea level), `tid` (GEBCO TID of the summit cell),
+  `src` (0 SDUST2026SM, 1 SIO 2023 only), `cat` (`KW-xxxxx` / `SIO-xxxxx` / ''), `sdust_id` (0 for src 1), `name`
+  ('' = unnamed). `metadata`: `sources` (citation + licence each), `attribution`, `licence`, `columns`, `stats`.
+* Numbers (`data/derived/seamounts_stats.json`):
+  * **Summit cell directly measured (TID 10–17): 34.2 % (23,827 of 69,770)**, i.e. about two in three seamount summits
+    have never been reached by sonar; 49.0 % have at least one measured cell in the summit disc. Summit TIDs: 40
+    (gravity-predicted) 39,126, 11 (multibeam) 22,139, 41 (interpolated) 4,294, 44 1,657, 17 1,086, 0 (land) 605, other
+    the rest. The measured share rises with height: 14.6 % at 100–250 m, 18 % at 250–500 m, 31 % at 500–1,000 m,
+    47–59 % above 1 km. For comparison 30.8 % of the whole ocean floor is measured, and the SIO 2023 authors flag 38.3 %
+    of their seamounts as "charted" (an actual sounding within 2 km).
+  * **Named: 2.7 % (1,892 seamounts, 1,790 distinct names)**; 0.4 % of those under 500 m, 15 % of those 2–3 km, 24 % of
+    3–4 km. 82.3 % of the gazetteer's 1,738 Seamount/Guyot/Tablemount labels have a catalogue seamount within 10 km.
+  * Height (catalogue): median 800 m, p10 378, p25 551, p75 1,146, p90 1,688, max 6,308 m. Summit depth (GEBCO):
+    median 3,063 m; 644 summits shallower than 200 m, 3,342 shallower than 1,000 m; 724 reach sea level in GEBCO
+    (islands and atolls, plus grid artefacts, see below).
+  * Height checks: SDUST height vs GEBCO_2026 relief (catalogue base − our summit): median difference −1 m, median
+    |Δ| 7 m (SDUST used GEBCO_2025, so this checks our summit extraction, not the heights). SIO 2023 VGG heights
+    (class "good") vs that GEBCO relief at matched seamounts: median |Δ| 467 m (346 m where the summit cell is measured;
+    paper: ~270 m). SIO-only seamounts: GEBCO relief is 591 m lower than the VGG height (median), and 30 % show less
+    than 200 m of GEBCO relief; 202 lie within 10 km of a candidate SDUST rejected by visual inspection.
+  * Spot checks: Vema Seamount (8.36° E, 31.64° S) height 4,520 m, but its GEBCO_2026 summit cell is +29 m with
+    TID 0 (land) — the real summit is about 25 m below sea level, so this is a GEBCO cell coded as land.
+    SG̲áan K̲ínghlas-Bowie: summit 83 m, multibeam (published shallowest ~24 m; 15″ cells average). Davidson: 1,393 m,
+    multibeam (KW-17785). Kamaʻehuakanaloa (Lōʻihi): a layer seamount 1.4 km from 18.92° N 155.27° W, summit 1,033 m (published ~975 m).
+* Caveats: catalogue positions and heights come from satellite gravity; small seamounts (< ~1 km) are incomplete
+  and vary most between catalogues. Volcanoes on spreading axes are largely absent (Axial Seamount has no layer
+  seamount within 35 km). Large flat edifices can appear as several smaller picks with heights measured from the
+  plateau (Great Meteor: the nearest pick is SIO-only, height 600 m = the "below 700 m" class). SIO-only entries
+  (`src = 1`) have weaker bathymetric support. "Measured summit" = one 460 m cell holds any sounding, not a full
+  survey. SDUST2026SM's paper is still under review; the dataset itself is a published, versioned Zenodo record.

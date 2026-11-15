@@ -1,0 +1,104 @@
+name: Refresh data (weekly)
+
+# Re-queries the small, fast-changing overlays (OSM platforms, pipelines, wind farms and submarine cables
+# via Overpass; Wikidata shipwrecks), validates every new file before replacing it
+# (pipeline/refresh_overlays.py), commits only real changes and then deploys the site.
+# Heavy inputs (GEBCO grids, EEZ polygons) live in the Actions cache, never in git. See docs/maintenance.md.
+
+on:
+  schedule:
+    - cron: "17 4 * * 1" # Mondays 04:17 UTC
+  workflow_dispatch:
+    inputs:
+      layers:
+        description: "Layers to refresh (comma-separated): platforms,pipelines,windfarms,wrecks,cables-osm"
+        default: "platforms,pipelines,windfarms,wrecks,cables-osm"
+        type: string
+      allow_count_change:
+        description: "Accept a feature-count change above 20 % (only after checking the failed run's summary)"
+        default: false
+        type: boolean
+
+permissions:
+  contents: write # commit the refreshed files
+  actions: write # start pages.yml: pushes made with GITHUB_TOKEN do not trigger other workflows
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pipeline/requirements-refresh.txt
+      - run: pip install -r pipeline/requirements-refresh.txt
+      - name: Restore GEBCO and EEZ inputs (~310 MB, Actions cache)
+        uses: actions/cache@v6
+        with:
+          path: |
+            data/raw/gebco_2026/gebco_2026_elev_1arcmin.tif
+            data/raw/gebco_2026/gebco_2026_tid.tif
+            data/raw/regions/eez
+          key: sea-inputs-gebco2026-eez12-v1
+      - name: Fetch missing inputs (only after a cache miss)
+        run: python pipeline/sea_inputs.py
+      - name: Refresh, validate, replace
+        id: refresh
+        continue-on-error: true # a failed layer keeps its old file; the others are still committed
+        env:
+          LAYERS: ${{ inputs.layers || 'platforms,pipelines,windfarms,wrecks,cables-osm' }}
+          ALLOW: ${{ inputs.allow_count_change }}
+        run: |
+          extra=()
+          if [ "$ALLOW" = "true" ]; then extra+=(--allow-count-change); fi
+          python pipeline/refresh_overlays.py --layers "$LAYERS" "${extra[@]}" \
+            --summary "$RUNNER_TEMP/summary.md" --commit-message "$RUNNER_TEMP/commit.txt"
+      - name: Job summary
+        if: always()
+        run: cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - uses: actions/setup-node@v7
+        if: steps.refresh.outputs.changed != ''
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Viewer tests on the new files
+        if: steps.refresh.outputs.changed != ''
+        working-directory: web
+        run: |
+          npm ci
+          npx vitest run test/overlays.test.ts
+      - name: Commit and push
+        id: commit
+        if: steps.refresh.outputs.changed != ''
+        run: |
+          git config user.name ismoilovdevml
+          git config user.email ismoilovdevarchlinux@gmail.com
+          git add web/public/data/platforms.geojson web/public/data/pipelines.geojson \
+            web/public/data/windfarms.geojson web/public/data/wrecks.geojson \
+            web/public/data/cables-osm.geojson docs/cables-osm.md
+          if git diff --cached --quiet; then
+            echo "no content change"
+            exit 0
+          fi
+          git commit -F "$RUNNER_TEMP/commit.txt"
+          git pull --rebase origin main
+          git push origin HEAD:main
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+      - name: Deploy the site
+        if: steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main
+      - name: Fail the run if a layer failed
+        if: steps.refresh.outcome == 'failure'
+        run: |
+          echo "::error::layers failed validation or their query: '${{ steps.refresh.outputs.failed }}'. Old files kept; see the job summary and docs/maintenance.md."
+          exit 1

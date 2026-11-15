@@ -1,0 +1,32 @@
+name: Release watch (monthly)
+
+# Looks for new upstream versions that need the heavy local pipeline (GEBCO grid, World Ocean Atlas,
+# OBIS speciesgrids, AquaMaps) and opens one issue per new version with the rebuild checklist
+# (pipeline/watch_releases.py). Never builds, releases or tags anything. See docs/maintenance.md.
+
+on:
+  schedule:
+    - cron: "41 5 3 * *" # 3rd of every month, 05:41 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: release-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Check upstream versions, open issues for new ones
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python pipeline/watch_releases.py --json "$RUNNER_TEMP/watch.json"

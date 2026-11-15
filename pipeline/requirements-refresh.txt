@@ -1,0 +1,7 @@
+# Pinned dependencies of the weekly refresh (.github/workflows/refresh-data.yml):
+# pipeline/sea_inputs.py, offshore.py, wrecks.py, cables_osm.py, refresh_overlays.py.
+# Same versions as the local .venv, so CI output is byte-identical to a local run.
+numpy==2.5.4
+scipy==1.18.1
+shapely==2.2.0
+rasterio==1.5.2

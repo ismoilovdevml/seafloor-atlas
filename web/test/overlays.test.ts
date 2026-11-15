@@ -157,10 +157,15 @@ describe.skipIf(!have)('cards from the real files', () => {
     expect(c.links.map((l) => l.href)).toEqual(['https://en.wikipedia.org/wiki/Titanic', 'https://www.wikidata.org/wiki/Q25173']);
     expect(c.image?.src).toMatch(/^https:\/\/commons\.wikimedia\.org\/wiki\/Special:FilePath\/RMS_Titanic_3\.jpg\?width=\d+$/);
   });
-  it('wreck notability split: 1,204 of 20,124 shown by default', () => {
+  it('wreck notability split: about 1,200 of 20,000 shown by default', () => {
+    // ranges, not exact counts: the weekly refresh (pipeline/refresh_overlays.py) changes them a little;
+    // it already refuses a jump of more than 20 % (20,124 wrecks, 1,204 notable on 2026-11-14)
     const w = read(DATA_FILES.wrecks).features;
-    expect(w.length).toBe(20124);
-    expect(w.filter((f: { properties: { sitelinks?: number } }) => isNotableWreck(f.properties)).length).toBe(1204);
+    expect(w.length).toBeGreaterThan(16000);
+    expect(w.length).toBeLessThan(24500);
+    const notable = w.filter((f: { properties: { sitelinks?: number } }) => isNotableWreck(f.properties)).length;
+    expect(notable / w.length).toBeGreaterThan(0.04);
+    expect(notable / w.length).toBeLessThan(0.09);
   });
   it('Troll A platform, Nord Stream 1 pipeline, Hornsea 1 wind farm', () => {
     const t = platformCard(find(DATA_FILES.platforms, /^Troll A$/));
