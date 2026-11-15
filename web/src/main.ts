@@ -7,7 +7,7 @@ import type { GeoJSONSource, MapGeoJSONFeature } from 'maplibre-gl';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { buildStyle, DOT_IMAGE, FEATURE_LAYERS, makeDot, type Meta } from './style';
 import { TileSampler } from './sampler';
-import { configureTiles, maxZoomFor, PROTOCOL, protocolHandler } from './tilesource';
+import { configureTiles, maxZoomFor, PROTOCOL, protocolHandler, tileActivity } from './tilesource';
 import { ProfileChart } from './profile-chart';
 import { BATHY_STOPS, EXPOSED_HIGH, EXPOSED_LOW, FLOODED_DEEP, FLOODED_SHALLOW, PLATE_STYLE, seaLevelExpression, underlayExpression } from './palette';
 import {
@@ -22,6 +22,12 @@ import { CERTAINTY_IDS, CERTAINTY_LAYERS, RasterProbe, SEAL_STOPS, certaintyRast
   type CertaintyId, type DisagreeLegend, type SealProps, type UncertaintyLegend } from './certainty';
 import { MarineUI } from './marine-ui';
 import { ATTRIBUTION, hashWithLayers, layersFromHash, normName, searchRank, type CardModel, type LayerState, type SearchEntry } from './overlays';
+import { LoadMeter } from './loading';
+import { hashWithTime, parseSeaHistory, timeFromHash, type TimeMode, type TimeState, type YearSet } from './timeline';
+import type { EventsUI } from './events-ui';
+import type { OceanUI } from './ocean-ui';
+import type { HistoryUI } from './history-ui';
+import type { MonthId, MonthTarget, TimeUI, YearTarget } from './time-ui';
 
 maplibregl.setWorkerUrl(workerUrl);
 
@@ -140,11 +146,33 @@ if (change && (meta.tiles?.new2026 ?? 0) > 0) {
 setPlates(false);
 
 // human-activity overlays (cables, shipping, wrecks, platforms, pipelines, wind); off by default, #layers= deep link
-function writeLayersHash(st: LayerState) {
-  const h = hashWithLayers(location.hash, st);
+// Modules loaded on first use (main.ts imports them dynamically, so the first page load does not grow):
+// earthquakes + seamounts, phytoplankton + winds + currents, the Time panel and the mapping-history layer.
+let eventsUI: EventsUI | null = null;
+let oceanUI: OceanUI | null = null;
+let timeUI: TimeUI | null = null;
+let historyUI: HistoryUI | null = null;
+// new layers outside "Human activity" (earthquakes, seamounts, phytoplankton, winds, currents) share the list
+function extraTokens(): string[] {
+  const t: string[] = [];
+  if (eventsUI?.quakesOn) t.push(eventsUI.quakeMode === 'live' ? 'quakes-live' : 'quakes');
+  if (eventsUI?.seamountsOn) t.push('seamounts');
+  if (oceanUI?.chlOn) t.push('chl');
+  if (oceanUI?.flow) t.push(oceanUI.flow === 'wind' ? 'winds' : 'currents');
+  return t;
+}
+function writeLayersHash(st: LayerState = overlays.state) {
+  const h = hashWithLayers(location.hash, { ...st, extra: extraTokens() });
   if (h !== location.hash && !(h === '' && location.hash === '')) history.replaceState(null, '', h || location.pathname + location.search);
 }
-const overlays = new OverlayUI({ map, dataBase, shippingLegend: 'tiles/shipping/legend.json', onChange: writeLayersHash });
+let prevOverlays = new Set<string>();
+const overlays = new OverlayUI({ map, dataBase, shippingLegend: 'tiles/shipping/legend.json', onChange: (st) => {
+  writeLayersHash(st);
+  // a time-aware overlay just went on: the Time panel offers itself once
+  for (const id of ['cables', 'wind'] as const) if (st.ids.includes(id) && !prevOverlays.has(id)) offerTime(id);
+  prevOverlays = new Set(st.ids);
+  layersChanged();
+} });
 
 const ATTRIBUTION_SEALS = 'Seal dives: SO-ABBA v1.0 (Hindell, McMahon, Jonsen et al. 2026, doi:10.5281/zenodo.19121676), CC BY 4.0; compared with GEBCO 2026';
 // ---------- how sure is the depth? (model disagreement, prediction confidence, seal soundings) ----------
@@ -211,7 +239,7 @@ if (uncertaintyLg) {
 // ---------- marine life (OBIS, speciesgrids, AquaMaps) ----------
 const marine = new MarineUI({
   map, base: `${dataBase}/obis/`,
-  beforeOn: () => { if (water.open) water.close(); },
+  beforeOn: () => { if (water.open) water.close(); water.hideLayer(); if (oceanUI?.chlOn) oceanUI.setChl(false); },
   onChange: () => { updateLayersBadge(); if (lastPoint) renderExtra(lastPoint[0], lastPoint[1]); },
 });
 const marineReady = synthetic ? false : await marine.init();
@@ -259,7 +287,11 @@ $('plate-key').innerHTML = (Object.keys(PLATE_STYLE) as (keyof typeof PLATE_STYL
       <li>${ATTRIBUTION.shipping}, <a href="https://datacatalog.worldbank.org/search/dataset/0037580" target="_blank" rel="noopener">dataset 0037580</a>.</li>
       <li>${ATTRIBUTION.wrecks}. Photos from Wikimedia Commons, loaded only when a wreck card opens.</li>
       <li>Offshore platforms, subsea pipelines and offshore wind farms: ${ATTRIBUTION.osm.replace('OpenStreetMap', '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>')}.</li>
+      <li>Submarine telecom cables from OpenStreetMap (supplement to the 2022 snapshot): ${ATTRIBUTION.osm}.</li>
     </ul>
+    <p><strong>Earthquakes and seamounts</strong>: Earthquakes: USGS ANSS ComCat (public domain), doi:10.5066/F7MS3QZH; the last 30 days from the USGS real-time feed. Seamounts: SDUST2026SM (Gao et al. 2026) and SIO 2023 / Kim &amp; Wessel 2011 (Gevorgian et al. 2023), CC BY 4.0; summits from GEBCO_2026.</p>
+    <p><strong>Phytoplankton, winds and currents</strong>: Chlorophyll-a: NASA OBPG, MODIS-Aqua R2022.0 climatology (doi:10.5067/AQUA/MODIS/L3M/CHL/2022.0); lakes masked with the World Ocean Atlas 2023 surface grid. Winds: NCEP/NCAR Reanalysis 1, 1991-2020 monthly means (NOAA PSL), Kalnay et al. (1996). Currents: OSCAR v2.0 (ESR, NASA PO.DAAC), 2015-2024 monthly means, doi:10.5067/OSCAR-25F20.</p>
+    <p><strong>Time</strong>: Mapping history from the GEBCO_2019-GEBCO_2026 Type Identifier grids (GEBCO Compilation Group); official percentages from Seabed 2030 / GEBCO announcements. Sea level: Lambeck et al. (2014) PNAS, doi:10.1073/pnas.1411762111 (ice-volume equivalent, SI Table S3).</p>
     <p>Rendered with <a href="https://maplibre.org" target="_blank" rel="noopener">MapLibre GL JS</a>. No basemap, tile or font servers, no analytics.${synthetic ? ' <strong>These are synthetic development tiles, not real data.</strong>' : ''}</p>`;
   const stats: [string, string][] = [];
   if (Number.isFinite(mf)) stats.push([pct1(mf), 'of the seafloor has been measured directly by ships. The rest is estimated from satellite gravity.']);
@@ -344,7 +376,8 @@ function markStory(id: string | null) {
 }
 let currentStory: Story | null = null;
 function playStory(s: Story, instant = false) {
-  closeSea(false); // stories are told at today's sea level
+  timeUI?.close(false); // stories are told at today's sea level, with every layer at its full extent
+  closeSea(false);
   water.close(false); // and over the plain relief
   currentStory = s;
   markStory(s.id);
@@ -482,8 +515,12 @@ async function readout(lon: number, lat: number) {
 let extraToken = 0;
 async function renderExtra(lon: number, lat: number) {
   const t = ++extraToken;
-  let out: { label: string; value: string } | null = marine.readout(lon, lat);
-  if (!out && certaintyOn.has('uncertainty') && uncertaintyLg) {
+  const lines: { label: string; value: string }[] = [];
+  const m = marine.readout(lon, lat);
+  if (m) lines.push(m);
+  if (oceanUI) lines.push(...oceanUI.readout(lon, lat));
+  let out: { label: string; value: string } | null = null;
+  if (certaintyOn.has('uncertainty') && uncertaintyLg) {
     const px = await probes.uncertainty.at(lon, lat);
     const c = px ? classFromAlpha(px[3], uncertaintyLg) : null;
     out = { label: 'Prediction confidence', value: c ? c.label.replace(' confidence', '') : 'sounding or land' };
@@ -494,9 +531,14 @@ async function renderExtra(lon: number, lat: number) {
     out = { label: 'Models differ by', value: m === null ? 'under 50 m or not shown' : formatDisagree(m, disagreeLg.vmax) };
   }
   if (t !== extraToken) return;
-  $('r-extra').hidden = !out;
-  if (out) { $('r-extra-dt').textContent = out.label; $('r-extra-dd').textContent = out.value; }
-  return out;
+  if (out) lines.push(out);
+  // the depth-certainty line first when that layer is on (it reads the seafloor under the cursor), at most two
+  const shown = (out ? [out, ...lines.filter((x) => x !== out)] : lines).slice(0, 2);
+  for (const [i, id] of ['r-extra', 'r-extra2'].entries()) {
+    $(id).hidden = !shown[i];
+    if (shown[i]) { $(`${id}-dt`).textContent = shown[i].label; $(`${id}-dd`).textContent = shown[i].value; }
+  }
+  return shown[0] ?? null;
 }
 /** While the ocean-water panel is open, the second readout cell shows the water value instead of coverage. */
 function renderWaterReadout() {
@@ -547,7 +589,7 @@ function setProfileSource(a: [number, number] | null, b: [number, number] | null
   (map.getSource('profile') as GeoJSONSource).setData({ type: 'FeatureCollection', features: feats });
 }
 function setProfiling(on: boolean) {
-  if (on) { closeSea(); water.close(); }
+  if (on) { closeSea(); water.close(); timeUI?.close(); }
   profiling = on;
   $('profile-btn').setAttribute('aria-pressed', String(on));
   $('ui').classList.toggle('profiling', on);
@@ -591,7 +633,7 @@ map.on('click', (e) => {
   readout(e.lngLat.lng, e.lngLat.lat);
   if (water.open) water.showColumn(e.lngLat.lng, e.lngLat.lat);
   const box: [maplibregl.PointLike, maplibregl.PointLike] = [[e.point.x - 6, e.point.y - 6], [e.point.x + 6, e.point.y + 6]];
-  const layers = [...FEATURE_LAYERS, ...overlays.clickableLayers(), ...(certaintyOn.has('seals') ? ['seals'] : []), ...(tPlates.checked ? ['plates'] : [])];
+  const layers = [...FEATURE_LAYERS, ...overlays.clickableLayers(), ...(eventsUI?.clickable ?? []), ...(certaintyOn.has('seals') ? ['seals'] : []), ...(tPlates.checked ? ['plates'] : [])];
   const hit: MapGeoJSONFeature | undefined = map.queryRenderedFeatures(box, { layers })[0];
   if (!hit) {
     if (marine.on) marine.card(e.lngLat.lng, e.lngLat.lat).then((c) => { if (c) { showCard(c); updatePadding(); } });
@@ -600,6 +642,10 @@ map.on('click', (e) => {
   if (hit.layer.id === 'plates') showPlate(hit.properties);
   else if (hit.layer.id === 'seals') { const [lon, lat] = (hit.geometry as GeoJSON.Point).coordinates; showCard(sealCard(hit.properties as SealProps, lon, lat, ATTRIBUTION_SEALS)); updatePadding(); }
   else if (FEATURE_LAYERS.includes(hit.layer.id)) showFeature(hit.properties as FeatureProps);
+  else if (eventsUI && (hit.layer.id === 'quakes' || hit.layer.id === 'seamounts')) {
+    const r = eventsUI.card(hit);
+    if (r) { showCard(r.card); overlays.highlightGeometry(r.geometry); updatePadding(); }
+  }
   else overlays.cardFor(hit).then((c) => { if (c && c !== 'cluster') { showCard(c); updatePadding(); } });
 });
 for (const id of FEATURE_LAYERS) {
@@ -729,6 +775,7 @@ function setPlaying(on: boolean) {
 function openSea(level?: number) {
   if (profiling) setProfiling(false);
   water.close();
+  timeUI?.close();
   seaOpen = true;
   show('sea', true);
   $('ui').classList.add('sea-open');
@@ -761,16 +808,18 @@ document.addEventListener('visibilitychange', () => { lastT = 0; });
 // ---------- ocean water (WOA23) ----------
 const water = new WaterUI({
   map, base: 'woa/',
-  beforeOpen: () => { if (seaOpen) closeSea(); if (profiling) setProfiling(false); if (marine.on) marine.set({ on: false }); },
+  beforeOpen: () => { timeUI?.close(); if (seaOpen) closeSea(); if (profiling) setProfiling(false); if (marine.on) marine.set({ on: false }); if (oceanUI?.chlOn) oceanUI.setChl(false); },
   layout: () => updatePadding(),
   seafloorAt: async (lon, lat) => (await sampler.sample([[lon, lat]])).h[0],
   onChange: () => { renderWaterReadout(); syncWaterRow(); },
-  underlay: (on) => {
-    map.setPaintProperty('relief', 'color-relief-color', (on ? underlayExpression() : seaLevelExpression(seaLevel)) as never);
-    seaApplied = seaLevel;
-    $('depth-legend').hidden = on; // the depth ramp legend does not describe the neutral under-layer
-  },
+  underlay: (on) => setUnderlay(on),
 });
+/** The relief's neutral under-layer while a colour field (ocean water, phytoplankton) is on. */
+function setUnderlay(on: boolean) {
+  map.setPaintProperty('relief', 'color-relief-color', (on ? underlayExpression() : seaLevelExpression(seaLevel)) as never);
+  seaApplied = seaLevel;
+  $('depth-legend').hidden = on; // the depth ramp legend does not describe the neutral under-layer
+}
 const waterReady = await water.init();
 // "Ocean water" is a tool (bottom panel) and also a row in the Layers drawer; both drive the same panel
 const tWater = $<HTMLInputElement>('t-water');
@@ -786,7 +835,7 @@ if (!waterReady) $('row-water').hidden = true;
 const touch = window.matchMedia('(hover: none)').matches;
 if (touch) $('readout-hint').textContent = 'Tap the seafloor to read its depth';
 const visible = (id: string) => !$(id).hidden && getComputedStyle($(id)).display !== 'none';
-const BOTTOM_PANELS = ['sea', 'water', 'profile'];
+const BOTTOM_PANELS = ['sea', 'water', 'profile', 'time'];
 const phone = () => window.innerWidth <= 760;
 function updatePadding() {
   const W = window.innerWidth, H = window.innerHeight;
@@ -799,7 +848,7 @@ function updatePadding() {
   if (phone()) {
     const top = $('topbar').getBoundingClientRect().bottom;
     // the free band is between the top bar and whatever is highest of legend / readout / card / sheet / tabs
-    const tops = ['legend', 'readout', 'story-card', 'feature-card', 'stories', 'layers', 'toolbar', ...BOTTOM_PANELS].filter(visible).map((id) => r(id).top);
+    const tops = ['legend', 'readout', 'story-card', 'feature-card', 'stories', 'layers', 'toolbar', 'time-offer', ...BOTTOM_PANELS].filter(visible).map((id) => r(id).top);
     const tabs = document.querySelector('.tabs')!.getBoundingClientRect();
     if (tabs.height) tops.push(tabs.top);
     pad = { top: Math.round(top), bottom: Math.round(H - Math.min(H, ...tops)), left: 0, right: 0 };
@@ -819,6 +868,10 @@ function updatePadding() {
     }
     pad = { top: Math.round($('topbar').getBoundingClientRect().bottom + 4), bottom: Math.round(bottom), left: Math.round(left), right: Math.round(right) };
   }
+  // the loading bar sits at the bottom of the free map area, above whatever UI is lowest there
+  const lb = phone() || !visible('time-offer') ? pad.bottom : Math.max(pad.bottom, H - r('time-offer').top);
+  $('loading').style.setProperty('--load-bottom', `${lb + 10}px`);
+  $('loading').style.setProperty('--load-x', `${Math.round((pad.left + W - pad.right) / 2)}px`);
   const cur = map.getPadding();
   if (cur.top === pad.top && cur.bottom === pad.bottom && cur.left === pad.left && cur.right === pad.right) return;
   map.setPadding(pad); // note: this stops a running camera animation, so callers set it before flying
@@ -856,7 +909,7 @@ function fitGlobe() {
 // ---------- minimise the bottom panels to their header bar (remembered for the session) ----------
 const MIN_KEY = 'sfa-minimised';
 function minStore(): Record<string, boolean> { try { return JSON.parse(sessionStorage.getItem(MIN_KEY) ?? '{}'); } catch { return {}; } }
-const MIN_LABEL: Record<string, string> = { sea: 'sea level', water: 'ocean water', profile: 'depth profile' };
+const MIN_LABEL: Record<string, string> = { sea: 'sea level', water: 'ocean water', profile: 'depth profile', time: 'time' };
 function setMinimised(id: string, on: boolean) {
   $(id).classList.toggle('min', on);
   const b = $(`${id}-min`);
@@ -872,7 +925,7 @@ for (const id of BOTTOM_PANELS) {
 
 /** QA: the globe disk vs the panels covering it (every visible piece of UI, top bar items included). */
 function uiRects(): (Rect & { id: string })[] {
-  const els: [string, Element][] = ['stories', 'layers', 'readout', 'story-card', 'feature-card', 'profile', 'sea', 'water', 'legend', 'toolbar', 'about', 'settings']
+  const els: [string, Element][] = ['stories', 'layers', 'readout', 'story-card', 'feature-card', 'profile', 'sea', 'water', 'time', 'time-offer', 'legend', 'toolbar', 'about', 'settings']
     .filter(visible).map((id) => [id, $(id)]);
   for (const sel of ['.brand', '.search', '#explore-btn', '#layers-btn', '#about-btn', '#settings-btn', '.tabs']) {
     const e = document.querySelector(sel)!;
@@ -901,7 +954,7 @@ function mapShare() {
 {
   let raf = 0;
   const ro = new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(updatePadding); });
-  for (const id of ['ui', 'topbar', 'readout', 'stories', 'layers', 'legend', 'toolbar', 'profile', 'sea', 'water', 'story-card', 'feature-card']) ro.observe($(id));
+  for (const id of ['ui', 'topbar', 'readout', 'stories', 'layers', 'legend', 'toolbar', 'profile', 'sea', 'water', 'time', 'time-offer', 'story-card', 'feature-card']) ro.observe($(id));
 }
 
 // ---------- panels: drawers, legend dock, popovers, info notes (open state remembered in localStorage) ----------
@@ -1025,7 +1078,7 @@ function applyPhoneRoles() {
 phoneMq.addEventListener('change', () => { applyPhoneRoles(); updatePadding(); });
 applyPhoneRoles();
 // on a phone a tool closes the sheet it was opened from
-for (const id of ['profile-btn', 'sea-btn', 'water-btn']) $(id).addEventListener('click', () => { if (phone()) setTab('none'); });
+for (const id of ['profile-btn', 'sea-btn', 'water-btn', 'time-btn']) $(id).addEventListener('click', () => { if (phone()) setTab('none'); });
 
 // restore remembered panel state (desktop drawers closed and the legend open the first time; phone legend folded)
 {
@@ -1044,6 +1097,281 @@ updatePadding();
   if (isGlobeScale(d, W, H) && d.r < 0.97 * target) map.jumpTo({ zoom: zoomForRadius(map.getZoom(), d.r, target) });
 }
 
+// ---------- new layers: earthquakes, seamounts, phytoplankton, winds, currents ----------
+// Each module (and its data) loads the first time one of its switches is used; until then a one-shot listener
+// on the switch loads it and passes the click on (the module's own listeners take over after that).
+let eventsP: Promise<EventsUI> | null = null, oceanP: Promise<OceanUI> | null = null;
+function loadEvents(): Promise<EventsUI> {
+  eventsP ??= import('./events-ui').then((m) => (eventsUI = new m.EventsUI({ map, dataBase, onChange: layersChanged, offerTime: () => offerTime('quakes') })));
+  return eventsP;
+}
+function loadOcean(): Promise<OceanUI> {
+  oceanP ??= import('./ocean-ui').then((m) => {
+    const o = new m.OceanUI({
+      map,
+      beforeChl: () => { if (water.open) water.close(); water.hideLayer(); if (marine.on) marine.set({ on: false }); },
+      underlay: (on) => setUnderlay(on),
+      onChange: layersChanged,
+      offerTime: () => offerTime('months'),
+    });
+    o.renderStatic();
+    return (oceanUI = o);
+  });
+  return oceanP;
+}
+function boot<T>(inputId: string, loaded: () => boolean, load: () => Promise<T>, run: (u: T, on: boolean) => unknown) {
+  $<HTMLInputElement>(inputId).addEventListener('change', async (e) => {
+    if (loaded()) return;
+    const on = (e.target as HTMLInputElement).checked;
+    run(await load(), on);
+  });
+}
+boot('t-quakes', () => !!eventsUI, loadEvents, (u, on) => u.setQuakes(on));
+boot('t-seamounts', () => !!eventsUI, loadEvents, (u, on) => u.setSeamounts(on));
+boot('t-chl', () => !!oceanUI, loadOcean, (u, on) => u.setChl(on));
+boot('t-winds', () => !!oceanUI, loadOcean, (u, on) => u.setFlow('wind', on));
+boot('t-currents', () => !!oceanUI, loadOcean, (u, on) => u.setFlow('currents', on));
+if (synthetic) for (const id of ['row-quakes', 'row-seamounts']) $(id).hidden = true;
+
+/** Something on the map changed: hash, badge, readout, the Time panel's targets, the tool-bar dot. */
+function layersChanged() {
+  writeLayersHash();
+  updateLayersBadge();
+  timeUI?.layerChanged();
+  updateTimeDot();
+  if (lastPoint) renderExtra(lastPoint[0], lastPoint[1]);
+}
+async function applyExtra(tokens: string[]) {
+  const live = tokens.includes('quakes-live'), wantQ = live || tokens.includes('quakes'), wantS = tokens.includes('seamounts');
+  if (wantQ || wantS || eventsUI) {
+    const u = await loadEvents();
+    if (wantQ && live !== (u.quakeMode === 'live')) await u.setQuakeMode(live ? 'live' : 'history');
+    if (wantQ !== u.quakesOn) await u.setQuakes(wantQ);
+    if (wantS !== u.seamountsOn) await u.setSeamounts(wantS);
+  }
+  const wantChl = tokens.includes('chl'), flow = tokens.includes('winds') ? 'wind' as const : tokens.includes('currents') ? 'currents' as const : null;
+  if (wantChl || flow || oceanUI) {
+    const o = await loadOcean();
+    if (wantChl !== o.chlOn) await o.setChl(wantChl);
+    if (flow !== o.flow) { if (flow) await o.setFlow(flow, true); else if (o.flow) await o.setFlow(o.flow, false); }
+  }
+}
+
+// ---------- the Time panel ----------
+const timeAware = () => !!(eventsUI?.quakesOn && eventsUI.quakeMode === 'history') || overlays.on.has('cables') || overlays.on.has('wind') || !!oceanUI?.chlOn || !!oceanUI?.flow;
+function updateTimeDot() { $('time-dot').hidden = !!timeUI?.open || !timeAware(); }
+const OFFER: Record<YearSet | 'months', string> = {
+  quakes: 'Earthquakes since 1900 can play year by year.',
+  cables: 'Cables can appear in the year they entered service.',
+  wind: 'Wind farms can appear in the year they started.',
+  mapping: 'See how much of the seafloor each GEBCO release had measured.',
+  months: 'This layer changes with the seasons, month by month.',
+};
+let offerWhat: YearSet | 'months' = 'quakes', offerTimer = 0;
+function hideOffer() { clearTimeout(offerTimer); if (!$('time-offer').hidden) { $('time-offer').hidden = true; updatePadding(); } }
+/** A time-aware layer went on: offer the Time panel once per layer and session (the tool-bar dot stays). */
+function offerTime(what: YearSet | 'months') {
+  updateTimeDot();
+  if (timeUI?.open || seaOpen || water.open || profiling) return;
+  try { if (sessionStorage.getItem(`sfa-offer-${what}`)) return; sessionStorage.setItem(`sfa-offer-${what}`, '1'); } catch { /* storage blocked: offer every time */ }
+  offerWhat = what;
+  $('time-offer-text').textContent = OFFER[what];
+  $('time-offer').hidden = false;
+  updatePadding();
+  clearTimeout(offerTimer);
+  offerTimer = window.setTimeout(hideOffer, 10000);
+}
+$('time-offer-go').addEventListener('click', () => { hideOffer(); openTime(offerWhat === 'months' ? { mode: 'months' } : { mode: 'years', set: offerWhat }); });
+$('time-offer-x').addEventListener('click', hideOffer);
+document.querySelectorAll<HTMLButtonElement>('[data-time]').forEach((b) => b.addEventListener('click', () => {
+  const k = b.dataset.time!;
+  if (phone()) setTab('none');
+  openTime(k === 'months' ? { mode: 'months' } : { mode: 'years', set: k as YearSet });
+}));
+
+let historyP: Promise<HistoryUI | null> | null = null;
+function loadHistory(): Promise<HistoryUI | null> {
+  historyP ??= synthetic ? Promise.resolve(null) : import('./history-ui').then(async (m) => {
+    const h = new m.HistoryUI(map, rasterTileSize, meta!.veilMax);
+    return (await h.init()) ? (historyUI = h) : null;
+  }).catch(() => null);
+  return historyP;
+}
+function renderHistoryKey(y: number) {
+  const chip = (c: string) => `<span class="history-chip" style="background:${c}" aria-hidden="true"></span>`;
+  $('history-key').innerHTML = `<li>${chip('#ffc95c')}<span>Newly measured in GEBCO_${y}</span></li>`
+    + `<li>${chip('linear-gradient(90deg, #3a84ba, #c4eef4)')}<span>Measured in an earlier release (darker = earlier)</span></li>`
+    + `<li><span class="veil-chip dim" aria-hidden="true"></span><span>Not measured in ${y}: depth estimated</span></li>`;
+  $('lg-history-t').textContent = `Seafloor measured, GEBCO_${y}`;
+}
+const fmtN = (n: number) => Math.round(n).toLocaleString('en-US');
+const QUAKE_ATT = 'Earthquakes: USGS ANSS ComCat (public domain)';
+const CHL_ATT = 'Chlorophyll-a: NASA OBPG, MODIS-Aqua R2022.0 climatology (doi:10.5067/AQUA/MODIS/L3M/CHL/2022.0)';
+const WIND_ATT = 'Winds: NCEP/NCAR Reanalysis 1, 1991-2020 monthly means (NOAA PSL)';
+const CURRENT_ATT = 'Currents: OSCAR v2.0 (ESR, NASA PO.DAAC), 2015-2024 monthly means';
+const SEA_ATT = 'Sea level: Lambeck et al. (2014) PNAS, doi:10.1073/pnas.1411762111';
+
+let timeP: Promise<TimeUI> | null = null;
+function loadTime(): Promise<TimeUI> {
+  timeP ??= (async () => {
+    const [m, seaJson, hist] = await Promise.all([import('./time-ui'), synthetic ? null : getJSON<unknown>('data/sea-level-history.json'), loadHistory()]);
+    const sea = parseSeaHistory(seaJson);
+    let cablesT: Awaited<ReturnType<OverlayUI['cableTimeline']>> | null = null;
+    let windT: Awaited<ReturnType<OverlayUI['windTimeline']>> | null = null;
+    const span = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+    const years: Record<YearSet, YearTarget | null> = {
+      quakes: synthetic ? null : {
+        available: true, supportsOnly: true,
+        isOn: () => !!eventsUI?.quakesOn,
+        turnOn: async () => { const u = await loadEvents(); if (u.quakeMode === 'live') await u.setQuakeMode('history'); await u.setQuakes(true); },
+        timeline: async () => { const t = await (await loadEvents()).timeline(); return { first: t.first, last: t.last, values: t.count, unit: 'earthquakes per year' }; },
+        apply: async (y, only) => { const u = await loadEvents(); await u.setYear(y, only); u.refreshLegend(); },
+        headline: (y, only) => eventsUI!.headline(y, only),
+        pulse: (y) => eventsUI?.pulse(y),
+        note: `${QUAKE_ATT}. Older catalogues miss more of the smaller events, so part of the rise over the century is better detection.`,
+      },
+      cables: {
+        available: true,
+        isOn: () => overlays.on.has('cables'),
+        turnOn: () => overlays.set('cables', true),
+        timeline: async () => { cablesT = await overlays.cableTimeline(); return { first: cablesT.first, last: cablesT.last, values: span(cablesT.first, cablesT.last).map(cablesT.perYear), unit: 'cables entering service per year' }; },
+        apply: (y) => overlays.setCableYear(y),
+        headline: (y) => {
+          const c = cablesT!.at(y);
+          return { main: `<strong>${fmtN(c.cables)}</strong> cables in service, ${fmtN(c.km)} km of them`,
+            sub: `${fmtN(c.added)} entered service in ${y} (drawn wider)${c.planned ? `; ${fmtN(c.planned)} were still planned in the 2022 snapshot, dashed` : ''}.` };
+        },
+        note: `${ATTRIBUTION.cables}. Ready-for-service years as listed in November 2022; cables laid since are missing.`,
+      },
+      wind: {
+        available: true,
+        isOn: () => overlays.on.has('wind'),
+        turnOn: () => overlays.set('wind', true),
+        timeline: async () => { windT = await overlays.windTimeline(); return { first: windT.first, last: windT.last, values: span(windT.first, windT.last).map(windT.perYear), unit: 'farms started per year' }; },
+        apply: (y) => overlays.setWindYear(y),
+        headline: (y) => {
+          const w = windT!.at(y);
+          return { main: `<strong>${fmtN(w.farms)}</strong> offshore wind farms, ${(w.mw / 1000).toFixed(1)} GW`,
+            sub: `${fmtN(w.added)} started in ${y}. Only the ${fmtN(w.dated)} of ${fmtN(windT!.total)} farms with a start year in OpenStreetMap are shown.` };
+        },
+        note: `Offshore wind farms: ${ATTRIBUTION.osm}. Start years as tagged by mappers.`,
+      },
+      mapping: hist ? {
+        available: true,
+        isOn: () => timeUI?.open === true && timeUI.mode === 'years' && timeUI.set === 'mapping',
+        turnOn: async () => {},
+        timeline: async () => { const [a, b] = hist.range; return { first: a, last: b, values: hist.values(), unit: 'share of the seafloor measured' }; },
+        apply: (y) => { hist.set(y); $('lg-history').hidden = y === null; if (y !== null) renderHistoryKey(hist.year ?? y); },
+        headline: (y) => hist.headline(y),
+        note: `${hist.man!.attribution}. Ours counts 15″ cells holding a direct measurement (GEBCO type 10–17); Seabed 2030 counts cells of a depth-dependent grid, so the two figures differ.`,
+      } : null,
+    };
+    const months: Record<MonthId, MonthTarget | null> = {
+      temp: waterReady ? {
+        label: 'Sea temperature', period: '1991–2020', available: true, attribution: 'Sea temperature: World Ocean Atlas 2023 (NOAA NCEI), 1991–2020',
+        isOn: () => water.headless,
+        setOn: async (on) => {
+          if (on) { if (oceanUI?.chlOn) await oceanUI.setChl(false); if (marine.on) await marine.set({ on: false }); await water.showLayer(timeUI?.month ?? 0); }
+          else water.hideLayer();
+          layersChanged();
+        },
+        apply: async (mo) => { if (!water.headless) return; if (mo) await water.showLayer(mo); else water.hideLayer(); },
+      } : null,
+      chl: {
+        label: 'Phytoplankton', period: '2003–2026', available: true, attribution: CHL_ATT,
+        isOn: () => !!oceanUI?.chlOn,
+        setOn: async (on) => { const o = await loadOcean(); await o.setMonth(timeUI?.month ?? 0); await o.setChl(on); },
+        apply: async (mo) => { if (oceanUI) await oceanUI.setMonth(mo); },
+      },
+      wind: {
+        label: 'Winds', period: '1991–2020', available: true, attribution: WIND_ATT,
+        isOn: () => oceanUI?.flow === 'wind',
+        setOn: async (on) => { const o = await loadOcean(); await o.setMonth(timeUI?.month ?? 0); await o.setFlow('wind', on); },
+        apply: async (mo) => { if (oceanUI) await oceanUI.setMonth(mo); },
+      },
+      currents: {
+        label: 'Currents', period: '2015–2024', available: true, attribution: CURRENT_ATT,
+        isOn: () => oceanUI?.flow === 'currents',
+        setOn: async (on) => { const o = await loadOcean(); await o.setMonth(timeUI?.month ?? 0); await o.setFlow('currents', on); },
+        apply: async (mo) => { if (oceanUI) await oceanUI.setMonth(mo); },
+      },
+    };
+    const ago = sea ? {
+      history: sea,
+      attribution: sea.attribution ?? SEA_ATT,
+      apply: (L: number | null) => { if (L === null) { if (!seaOpen) setSeaLevel(0, { hash: false }); } else setSeaLevel(L, { hash: false }); },
+      landNote: (L: number) => {
+        if (!hypso) return '';
+        const d = landAreaAt(hypso, L) - hypso.today_km2;
+        return Math.abs(d) < 5e4 ? 'about today’s coastline' : `${mkm(Math.abs(d))} million km² ${d > 0 ? 'more' : 'less'} land than today`;
+      },
+    } : null;
+    const t = new m.TimeUI({
+      beforeOpen: () => { hideOffer(); if (seaOpen) closeSea(false); water.close(); if (profiling) setProfiling(false); },
+      layout: () => updatePadding(),
+      onChange: () => { updateTimeDot(); eventsUI?.refreshLegend(); updateLayersBadge(); },
+    }, years, months, ago);
+    timeUI = t;
+    return t;
+  })();
+  return timeP;
+}
+async function openTime(s?: TimeState | { mode: TimeMode; set?: YearSet }) { const t = await loadTime(); await t.show(s); }
+$('time-btn').addEventListener('click', () => { if (!timeUI) openTime(); });
+
+// ---------- loading indicator ("Loading detail · 64%") ----------
+// Counts map tile requests: the sfa:// protocol (static tiles and PMTiles range reads) and the history tiles
+// through tilesource.tileActivity, every other source through MapLibre's tile events. Shown only for bursts
+// longer than 300 ms, 100 % then a fade when the map is idle; it never takes pointer events.
+const meter = new LoadMeter();
+const PROTOCOL_SOURCES = new Set(['dem-terrain', 'dem-relief', 'veil', 'history']);
+const loadTrace: { t: number; visible: boolean; pct: number }[] = [];
+let loadShowTimer = 0, loadHideTimer = 0, loadRaf = 0, loadAnnounced = false;
+const loadLabel = () => (map.getZoom() > meta!.maxzoom + 0.4 ? 'Loading detail' : 'Loading map');
+function loadDraw() {
+  loadRaf = 0;
+  const v = meter.view(), el = $('loading');
+  if (v.visible) {
+    clearTimeout(loadHideTimer);
+    if (el.hidden) { el.hidden = false; void el.offsetWidth; }
+    el.classList.add('on');
+    $('loading-text').textContent = loadLabel();
+    $('loading-pct').textContent = `${v.pct}%`;
+    $('loading-fill').style.width = `${v.pct}%`;
+    if (!loadAnnounced) { loadAnnounced = true; $('loading-live').textContent = `${loadLabel()}…`; }
+    if (loadTrace.length < 4000) loadTrace.push({ t: Math.round(performance.now()), visible: true, pct: v.pct });
+  }
+}
+const loadSchedule = () => { if (!loadRaf) loadRaf = requestAnimationFrame(loadDraw); };
+function loadStart() {
+  const fresh = meter.done;
+  meter.start();
+  if (fresh) { clearTimeout(loadShowTimer); loadShowTimer = window.setTimeout(loadSchedule, meter.delay + 5); } else loadSchedule();
+}
+function loadFinish() { meter.finish(); if (!meter.done) loadSchedule(); }
+function loadEnd() {
+  const shown = meter.shown;
+  if (!meter.end()) return;
+  clearTimeout(loadShowTimer);
+  if (!shown) return;
+  $('loading-pct').textContent = '100%';
+  $('loading-fill').style.width = '100%';
+  loadTrace.push({ t: Math.round(performance.now()), visible: true, pct: 100 });
+  clearTimeout(loadHideTimer);
+  loadHideTimer = window.setTimeout(() => {
+    $('loading').classList.remove('on');
+    loadTrace.push({ t: Math.round(performance.now()), visible: false, pct: 100 });
+    loadAnnounced = false;
+    $('loading-live').textContent = '';
+    window.setTimeout(() => { if (meter.done) $('loading').hidden = true; }, 300);
+  }, 450);
+}
+tileActivity.start = loadStart;
+tileActivity.finish = loadFinish;
+map.on('dataloading', (e) => { const d = e as unknown as { dataType?: string; tile?: unknown; sourceId?: string }; if (d.dataType === 'source' && d.tile && !PROTOCOL_SOURCES.has(d.sourceId ?? '')) loadStart(); });
+map.on('data', (e) => { const d = e as unknown as { dataType?: string; tile?: unknown; sourceId?: string }; if (d.dataType === 'source' && d.tile && !PROTOCOL_SOURCES.has(d.sourceId ?? '')) loadFinish(); });
+map.on('idle', loadEnd);
+
 // ---------- deep link ----------
 function storyFromHash() {
   const m = /story=([\w-]+)/.exec(location.hash);
@@ -1054,12 +1382,15 @@ const linkedSea = seaFromHash(location.hash); // read before playStory rewrites 
 const linkedLayers = layersFromHash(location.hash);
 // read before playStory rewrites the hash, so #story=x&water=t-0 keeps its water part
 const linkedWater = waterReady ? water.fromHash(location.hash) : null;
-if (linkedLayers) overlays.apply(linkedLayers);
+const linkedTime = timeFromHash(location.hash);
+if (linkedLayers) { overlays.apply(linkedLayers); if (linkedLayers.extra) applyExtra(linkedLayers.extra); }
 if (linked) playStory(linked, true);
 // #sea=<metres> opens the sea-level panel at that level (after a story, which resets it)
 if (linkedSea !== null) openSea(linkedSea);
 // #water=t-1000 opens the ocean-water panel on that variable and depth
 if (linkedWater) water.show({ v: linkedWater.v, depth: linkedWater.depth });
+// #time=quakes-2004, #time=month-7, #time=ago-12000 open the Time panel there
+if (linkedTime) openTime(linkedTime);
 // a pasted or edited #story= / #sea= link in an already open tab does not reload the page
 window.addEventListener('hashchange', () => {
   const s = storyFromHash();
@@ -1069,7 +1400,9 @@ window.addEventListener('hashchange', () => {
   const w = water.fromHash(location.hash);
   if (w && (!water.open || w.v !== water.v || w.depth !== water.depth)) water.show({ v: w.v, depth: w.depth });
   const ls = layersFromHash(location.hash);
-  if (ls && hashWithLayers('', ls) !== hashWithLayers('', overlays.state)) overlays.apply(ls);
+  if (ls && hashWithLayers('', ls) !== hashWithLayers('', { ...overlays.state, extra: extraTokens() })) { overlays.apply(ls); applyExtra(ls.extra ?? []); }
+  const ts = timeFromHash(location.hash);
+  if (ts && (!timeUI?.open || hashWithTime('', ts) !== hashWithTime('', timeUI.state))) openTime(ts);
 });
 
 // ---------- test/capture hooks ----------
@@ -1098,6 +1431,10 @@ Object.assign(window, {
     },
     overlays: {
       set: (id: Parameters<OverlayUI['set']>[0], on: boolean) => overlays.set(id, on),
+      /** resolves when a layer's data has loaded and is on the map (true) */
+      ready: (id: Parameters<OverlayUI['whenReady']>[0]) => overlays.whenReady(id),
+      osm: (on: boolean) => overlays.setOsm(on),
+      cableYear: () => ({ ...overlays.year }),
       allWrecks: (on: boolean) => overlays.setAllWrecks(on),
       state: () => ({ ...overlays.state, loadMs: overlays.loadMs,
         visibility: Object.fromEntries(['shipping', 'cables', 'landing-points', 'pipelines', 'platforms', 'wind', 'wrecks'].map((id) => [id, map.getLayoutProperty(id, 'visibility')])) }),
@@ -1135,10 +1472,89 @@ Object.assign(window, {
       set: (s: Parameters<MarineUI['set']>[0]) => marine.set(s),
       value: (lon: number, lat: number) => marine.value(lon, lat),
       card: (lon: number, lat: number) => marine.card(lon, lat),
+      /** resolves when the last requested marine view is drawn */
+      drawn: () => marine.whenDrawn().then(() => true),
       state: () => ({ on: marine.on, mode: marine.mode, group: marine.group, renders: marine.stats.renders, lastMs: marine.stats.lastMs,
         visibility: map.getLayer('marine') ? map.getLayoutProperty('marine', 'visibility') : null }),
     },
     extra: (lon: number, lat: number) => renderExtra(lon, lat),
+    events: {
+      set: async (id: 'quakes' | 'seamounts', on: boolean) => { const u = await loadEvents(); await (id === 'quakes' ? u.setQuakes(on) : u.setSeamounts(on)); return true; },
+      mode: async (m: 'history' | 'live') => { await (await loadEvents()).setQuakeMode(m); return true; },
+      ready: async (id: 'quakes' | 'seamounts') => (await loadEvents()).whenReady(id),
+      state: () => eventsUI && ({ quakes: eventsUI.quakesOn, mode: eventsUI.quakeMode, seamounts: eventsUI.seamountsOn, year: eventsUI.year, only: eventsUI.only,
+        liveCount: eventsUI.liveCount, liveError: eventsUI.liveError, loadMs: eventsUI.loadMs,
+        visibility: { quakes: map.getLayoutProperty('quakes', 'visibility'), seamounts: map.getLayoutProperty('seamounts', 'visibility') }, filter: map.getFilter('quakes') ?? null }),
+      findQuake: async (re: string) => (await loadEvents()).findQuake(new RegExp(re)),
+      findSeamount: async (re: string) => (await loadEvents()).findSeamount(new RegExp(re)),
+    },
+    ocean: {
+      set: async (id: 'chl' | 'wind' | 'currents', on: boolean) => { const o = await loadOcean(); await (id === 'chl' ? o.setChl(on) : o.setFlow(id, on)); return true; },
+      ready: async (id: 'chl' | 'wind' | 'currents') => (await loadOcean()).whenReady(id),
+      month: async (mo: number) => { await (await loadOcean()).setMonth(mo); return true; },
+      value: (lon: number, lat: number) => oceanUI?.value(lon, lat) ?? null,
+      chlPixel: (lon: number, lat: number) => oceanUI?.chlPixel(lon, lat) ?? null,
+      flowStats: () => oceanUI?.flowStats() ?? null,
+      preloadMonths: () => oceanUI?.preloadMonths() ?? 0,
+      state: () => oceanUI && ({ chl: oceanUI.chlOn, flow: oceanUI.flow, month: oceanUI.month, chlMs: oceanUI.stats.chlMs, running: oceanUI.flowLayer?.running ?? null,
+        particles: oceanUI.flowLayer?.particles?.n ?? 0,
+        // custom layers are not part of getStyle(): ask the map for each
+        layers: ['chl', 'flow-wind', 'flow-currents'].filter((id) => map.getLayer(id) && map.getLayoutProperty(id, 'visibility') !== 'none') }),
+      /** screen positions of a few particles (to check they sit on the visible globe) */
+      sample: (n = 200) => {
+        const p = oceanUI?.flowLayer?.particles; if (!p) return [];
+        const out: [number, number][] = [];
+        for (let i = 0; i < Math.min(n, p.n); i++) { const q = map.project([p.lon[i], p.lat[i]]); out.push([Math.round(q.x), Math.round(q.y)]); }
+        return out;
+      },
+    },
+    time: {
+      open: async (st?: TimeState | { mode: TimeMode; set?: YearSet }) => { await openTime(st); await timeUI!.ready(); return true; },
+      close: () => timeUI?.close(),
+      seek: async (v: number) => { await timeUI?.seek(v); await timeUI?.ready(); return true; },
+      step: async (dir: number) => { timeUI?.step(dir); await timeUI?.ready(); return true; },
+      follow: async (set: YearSet) => { await timeUI?.follow(set); await timeUI?.ready(); return true; },
+      only: async (on: boolean) => { document.querySelector<HTMLButtonElement>(`#time-only [data-only="${on ? 1 : 0}"]`)?.click(); await timeUI?.ready(); return true; },
+      play: (on: boolean) => timeUI?.setPlaying(on),
+      speed: (x: number) => { if (timeUI) timeUI.speed = x; },
+      ready: async () => { await timeUI?.ready(); return true; },
+      stats: () => timeUI?.takeStats() ?? null,
+      state: () => timeUI && ({ open: timeUI.open, mode: timeUI.mode, set: timeUI.set, year: timeUI.year, only: timeUI.only, month: timeUI.month, ago: timeUI.ago, playing: timeUI.playing,
+        value: $('time-value').textContent, unit: $('time-unit').textContent, headline: $('time-headline').textContent, sub: $('time-sub').textContent, note: $('time-note').textContent,
+        modes: [...document.querySelectorAll<HTMLButtonElement>('#time-modes button')].map((b) => `${b.dataset.mode}:${b.disabled ? 0 : 1}`), seaLevel, hash: location.hash }),
+    },
+    history: {
+      ready: () => loadHistory().then((h) => !!h),
+      state: () => ({ year: historyUI?.year ?? null, visibility: map.getLayer('history') ? map.getLayoutProperty('history', 'visibility') : null }),
+    },
+    loading: {
+      state: () => ({ ...meter.view(), started: meter.started, finished: meter.finished, shown: meter.shown, log: meter.log.slice(-12),
+        el: { hidden: $('loading').hidden, on: $('loading').classList.contains('on'), text: $('loading').textContent?.replace(/\s+/g, ' ').trim(), bottom: $('loading').getBoundingClientRect().bottom } }),
+      trace: () => loadTrace.slice(),
+      clear: () => { loadTrace.length = 0; },
+    },
+    /** waits until the machine is quiet: rAF intervals over a 0.5 s window with p95 under 20 ms (or gives up) */
+    waitQuiet: (maxMs = 8000) => new Promise((res) => {
+      const t0 = performance.now(); let win: number[] = [], last = 0;
+      const loop = (t: number) => {
+        if (last) win.push(t - last); last = t;
+        if (win.length >= 30) {
+          const a = [...win].sort((x, y) => x - y), p95 = a[Math.floor(0.95 * a.length)];
+          if (p95 < 20 || t - t0 > maxMs) { res({ p95: +p95.toFixed(1), waitedMs: Math.round(t - t0) }); return; }
+          win = [];
+        }
+        requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
+    }),
+    /** rAF intervals for ms milliseconds (no camera move) */
+    frames: (ms: number) => new Promise((res) => {
+      const dt: number[] = []; let last = 0; const t0 = performance.now();
+      const loop = (t: number) => { if (last) dt.push(t - last); last = t; if (t - t0 < ms) requestAnimationFrame(loop); else {
+        const a = [...dt].sort((x, y) => x - y), q = (p: number) => +a[Math.min(a.length - 1, Math.floor(p * a.length))].toFixed(2);
+        res({ frames: a.length, medianMs: q(0.5), p95Ms: q(0.95), p99Ms: q(0.99), over20ms: a.filter((x) => x > 20).length }); } };
+      requestAnimationFrame(loop);
+    }),
     water: {
       ready: waterReady,
       show: (v?: 't' | 's' | 'd', depth?: number) => water.show({ v, depth }),

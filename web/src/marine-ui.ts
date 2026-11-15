@@ -45,6 +45,9 @@ export class MarineUI {
   private added = false;
   private token = 0;
   readonly stats = { renders: 0, lastMs: 0 };
+  private busy: Promise<unknown> = Promise.resolve();
+  /** Resolves when the last requested view is drawn (its grids loaded): a ready signal for QA. */
+  whenDrawn(): Promise<unknown> { return this.busy; }
 
   constructor(private host: MarineHost) {
     this.canvas.width = SIZE; this.canvas.height = SIZE;
@@ -107,7 +110,7 @@ export class MarineUI {
       this.on = s.on;
     }
     this.renderControls();
-    if (this.on) { this.ensureLayer(); await this.draw(); }
+    if (this.on) { this.ensureLayer(); this.busy = this.draw(); await this.busy; }
     if (this.added) this.host.map.setLayoutProperty('marine', 'visibility', this.on ? 'visible' : 'none');
     this.host.onChange();
   }

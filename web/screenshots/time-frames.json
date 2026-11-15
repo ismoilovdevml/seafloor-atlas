@@ -1,0 +1,43 @@
+{
+ "windFrames": {
+  "frames": 240,
+  "medianMs": 16.7,
+  "p95Ms": 16.8,
+  "p99Ms": 16.8,
+  "over20ms": 0
+ },
+ "windCpu": {
+  "frames": 451,
+  "particles": 8640,
+  "cpuMedianMs": 1.1,
+  "cpuP95Ms": 2.1
+ },
+ "windChlFrames": {
+  "frames": 240,
+  "medianMs": 16.7,
+  "p95Ms": 16.8,
+  "p99Ms": 16.8,
+  "over20ms": 0
+ },
+ "loading": {
+  "visible": false,
+  "pct": 100,
+  "done": true,
+  "started": 57,
+  "finished": 57,
+  "shown": true,
+  "log": [
+   {
+    "ms": 5350,
+    "shown": true,
+    "tiles": 57
+   }
+  ],
+  "el": {
+   "hidden": true,
+   "on": false,
+   "text": "Loading detail · 100%",
+   "bottom": 0
+  }
+ }
+}

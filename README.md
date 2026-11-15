@@ -17,7 +17,15 @@ An interactive 3D globe of the whole ocean floor, built from open data. It shows
 | ![water](docs/img/ocean-water.jpg) **Ocean water.** Temperature, salinity and density from the surface to 5 km, monthly animation, water-column chart where you click. | ![cables](docs/img/cables.jpg) **Human activity.** Internet cables, shipping traffic, shipwrecks, oil and gas platforms, pipelines, wind farms. |
 | ![north sea](docs/img/north-sea.jpg) **Click anything** for a card: the Titanic wreck, the MAREA cable, Troll A, Nord Stream 1, Hornsea 1. | ![shipping](docs/img/shipping.jpg) **Shipping density** from AIS 2015–2021: the world's sea lanes. |
 
-Also: 11 guided views, search over 5,412 named undersea features, cables and wrecks (⌘K), plate boundaries, model disagreement, prediction confidence, seal soundings and marine life (AquaMaps model, sampling-corrected diversity, data gaps), deep links for every view (`#story=`, `#sea=`, `#water=`, `#layers=`).
+Also: 11 guided views, search over 5,412 named undersea features, cables and wrecks (⌘K), plate boundaries, model disagreement, prediction confidence, seal soundings and marine life (AquaMaps model, sampling-corrected diversity, data gaps), deep links for every view (`#story=`, `#sea=`, `#water=`, `#layers=`, `#time=`).
+
+New layers and the Time panel:
+
+* **Earthquakes**: every M ≥ 5.5 since 1900 (USGS ComCat, 39,650 events) sized by magnitude and coloured by depth, or the live USGS feed of the last 30 days; click for place, time, depth and the USGS event page.
+* **Seamounts**: 69,770 from two satellite-gravity catalogues; filled when a sonar sounding sits on the summit (34.2 %), an open ring when the summit depth is only predicted.
+* **Phytoplankton** (MODIS-Aqua chlorophyll-a, lakes masked), **Winds** and **Ocean currents** as moving streaks that follow the globe; point anywhere for speed and direction.
+* **Time** (tool bar): *Years* plays earthquakes, internet cables, offshore wind farms or **seafloor mapping 2019→2026** (each GEBCO release lit up, our measured share next to the official Seabed 2030 figure); *Months* runs sea temperature, phytoplankton, winds and currents through the seasons together (the Indian monsoon and the Arabian Sea bloom in July); *Since the ice age* lowers the sea to the Last Glacial Maximum (−134 m, 20,500 years ago) and lets it rise to today.
+* A slim **loading bar** at the bottom while map detail streams in; **OpenStreetMap cables** as a supplement to the 2022 cable snapshot.
 
 ## Key numbers
 

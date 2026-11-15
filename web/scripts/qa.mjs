@@ -26,22 +26,46 @@ async function session(name, viewport, opts = {}) {
     if (r.status() >= 400) problems.push({ text: `[${name}] [http ${r.status()}] ${r.url()}`, url: r.status() >= 500 ? r.url() : undefined });
     else if (r.status() < 300) recovered.add(r.url());
   });
-  opts.onPage?.(page);
+  await opts.onPage?.(page);
   await page.goto(base + (opts.query ?? ''));
   await page.waitForFunction(() => window.__seafloor, null, { timeout: 60000 });
   const settle = async (ms = 1200) => { await page.evaluate(() => window.__seafloor.idle()); await page.waitForTimeout(ms); await page.evaluate(() => window.__seafloor.idle()); };
   return { page, settle };
 }
 const shot = (page, f) => page.screenshot({ path: `${outdir}/${f}` });
+// Frame-time measurements wait until the machine is quiet (0.5 s of rAF intervals with p95 < 20 ms, up to 8 s)
+// and are repeated once if the first try was over budget, so a busy moment does not fail the run.
+async function quietPan(page, dLng, ms) {
+  let r;
+  for (let i = 0; i < 2; i++) {
+    const q = await page.evaluate(() => window.__seafloor.waitQuiet(8000));
+    r = { ...(await page.evaluate(([d, m]) => window.__seafloor.panFrames(d, m), [dLng, ms])), quietP95: q.p95, waitedMs: q.waitedMs, attempt: i + 1 };
+    if (r.p95Ms < 20) break;
+  }
+  return r;
+}
+async function quietFrames(page, ms) {
+  let r;
+  for (let i = 0; i < 2; i++) {
+    const q = await page.evaluate(() => window.__seafloor.waitQuiet(8000));
+    r = { ...(await page.evaluate((m) => window.__seafloor.frames(m), ms)), quietP95: q.p95, attempt: i + 1 };
+    if (r.p95Ms < 20) break;
+  }
+  return r;
+}
 
 // ---------------- desktop ----------------
 {
-  const { page, settle } = await session('desktop', { width: 1440, height: 900 });
+  const firstLoad = [];
+  const { page, settle } = await session('desktop', { width: 1440, height: 900 }, { onPage: (p) => p.on('request', (r) => firstLoad.push(r.url())) });
   const meta = await page.evaluate(() => ({ synthetic: window.__seafloor.synthetic, meta: window.__seafloor.meta }));
   ok('real tiles loaded (not synthetic)', !meta.synthetic && meta.meta.version === 'GEBCO_2026', meta.meta.version);
   ok('meta has polar caps', !!meta.meta.polarCaps, JSON.stringify(meta.meta.polarCaps));
   await settle(2500);
   await shot(page, 'globe.png');
+  // first load with the new layers off: none of their code chunks or data files is requested
+  const lazy = firstLoad.filter((u) => /\/(events-ui|ocean-ui|time-ui|history-ui)-[\w-]+\.js|quakes\.json|seamounts\.json|cables-osm|\/chl\/|\/flow\/|\/history\/|sea-level-history|earthquake\.usgs/.test(u));
+  ok('first load: new layers lazy (no Time / flow / quake / seamount / history code or data requested)', lazy.length === 0, lazy.length ? lazy.slice(0, 5).join(' ') : `${firstLoad.length} requests, none for the new layers`);
 
   // ---------- panel shell ----------
   const share = await page.evaluate(() => window.__seafloor.mapShare());
@@ -267,6 +291,8 @@ const shot = (page, f) => page.screenshot({ path: `${outdir}/${f}` });
   await page.evaluate(() => window.__seafloor.ui.setDrawer('layers', true));
   for (const id of OV) {
     await page.click(`label:has(#t-${id})`);
+    // ready signal: the layer's GeoJSON has loaded and been handed to the map (platforms are 1.3 MB)
+    await page.evaluate((id) => window.__seafloor.overlays.ready(id), id);
     await settle(900);
     const on = await page.evaluate(() => window.__seafloor.overlays.state());
     const legend = await page.isVisible(`#ovl-${id}`);
@@ -281,7 +307,7 @@ const shot = (page, f) => page.screenshot({ path: `${outdir}/${f}` });
   await page.evaluate(async () => { const s = window.__seafloor; for (const id of ['cables', 'shipping', 'wrecks', 'platforms', 'pipelines', 'wind']) await s.overlays.set(id, true); s.map.jumpTo({ center: [-20, 45], zoom: 2.6, pitch: 0, bearing: 0 }); });
   await settle(2000);
   await shot(page, 'overlays-all.png');
-  const panAll = await page.evaluate(() => window.__seafloor.panFrames(60, 4000));
+  const panAll = await quietPan(page, 60, 4000);
   ok('pan with all six overlays on: frame p95 < 20 ms', panAll.p95Ms < 20, JSON.stringify(panAll));
   await page.evaluate(async () => { const s = window.__seafloor; for (const id of ['shipping', 'wrecks', 'platforms', 'pipelines', 'wind']) await s.overlays.set(id, false); });
   ok('#layers= hash follows the toggles', (await page.evaluate(() => location.hash)).includes('layers=cables'), await page.evaluate(() => location.hash));
@@ -388,6 +414,7 @@ const shot = (page, f) => page.screenshot({ path: `${outdir}/${f}` });
   }
   if (await E(() => window.__seafloor.marine.ready)) {
     await page.click('label:has(#t-marine)');
+    await E(() => window.__seafloor.marine.drawn());
     await E(() => window.__seafloor.map.jumpTo({ center: [125, -2], zoom: 2.2, pitch: 0, bearing: 0 }));
     await settle(2000);
     const am = await E(() => ({ ct: window.__seafloor.marine.value(122.5, -2), gyre: window.__seafloor.marine.value(-145, 20), st: window.__seafloor.marine.state(), lg: window.__seafloor.ui.legend().sections }));
@@ -395,6 +422,7 @@ const shot = (page, f) => page.screenshot({ path: `${outdir}/${f}` });
       `Coral Triangle ${am.ct.text}, gyre ${am.gyre.text}; render ${am.st.lastMs} ms`);
     await shot(page, 'marine-aquamaps.png');
     await page.click('label:has(input[value="es50"])');
+    await E(() => window.__seafloor.marine.drawn()); // ready signal: the ES50 grid loaded and drawn
     await settle(800);
     const regionMedian = (lon0, lon1, lat0, lat1) => {
       const v = [];
@@ -404,12 +432,14 @@ const shot = (page, f) => page.screenshot({ path: `${outdir}/${f}` });
     };
     const es = await E(`(() => { const rm = ${regionMedian.toString()}; return { ct: rm(115, 130, -10, 10), ns: rm(-2, 8, 52, 60) }; })()`);
     await page.click('label:has(input[value="records"])');
+    await E(() => window.__seafloor.marine.drawn());
     await settle(800);
     const rc = await E(() => ({ ns: window.__seafloor.marine.value(3, 56), gyre: window.__seafloor.marine.value(-150, 15) }));
     ok('marine life: ES50 higher in the Coral Triangle than the North Sea, records the other way round (sampling bias)', es.ct.raw > es.ns.raw && rc.ns.raw > 1000 && rc.ns.raw > rc.gyre.raw,
       `ES50 Coral Triangle ${es.ct.text} vs North Sea ${es.ns.text}; records North Sea ${rc.ns.text}, gyre 150° W 15° N ${rc.gyre.text}`);
     await shot(page, 'marine-records.png');
     await page.selectOption('#marine-group', 'whales');
+    await E(() => window.__seafloor.marine.drawn());
     await settle(1200);
     const wh = await E(() => ({ st: window.__seafloor.marine.state(), disabled: document.querySelector('#marine-mode input').disabled }));
     // a click on open ocean with nothing else under it opens the cell card
@@ -428,6 +458,234 @@ const shot = (page, f) => page.screenshot({ path: `${outdir}/${f}` });
     const ex = await E(() => ({ marine: window.__seafloor.marine.state().on, water: window.__seafloor.water.state().open }));
     ok('marine life and ocean water take turns (opening water switches marine life off)', !ex.marine && ex.water, JSON.stringify(ex));
     await E(async () => { const s = window.__seafloor; s.water.close(); await s.marine.set({ group: '', mode: 'aquamaps' }); });
+  }
+
+  // ---------- new layers: earthquakes, seamounts, phytoplankton, winds, currents, OSM cables ----------
+  {
+    const N = (fn, arg) => page.evaluate(fn, arg);
+    await N(() => { document.querySelector('[data-close="feature-card"]').click(); window.__seafloor.water.close(); window.__seafloor.ui.setDrawer('layers', true); window.__seafloor.map.jumpTo({ center: [100, 5], zoom: 2, pitch: 0, bearing: 0 }); });
+    const rows = await N(() => ['quakes', 'seamounts', 'chl', 'winds', 'currents'].map((id) => { const r = document.getElementById(`row-${id}`); return `${r.closest('.group').querySelector('.group-title').textContent}/${r.querySelector('.row-name').textContent}/${r.querySelector('.info-btn') ? 'i' : '-'}`; }));
+    ok('new rows: Seafloor > Earthquakes, Seamounts; Ocean > Phytoplankton, Winds, Ocean currents, each with (i)', rows.join() === 'Seafloor/Earthquakes/i,Seafloor/Seamounts/i,Ocean/Phytoplankton/i,Ocean/Winds/i,Ocean/Ocean currents/i', rows.join(' | '));
+    // earthquakes: switch, data ready, legend, Time headline numbers, a click card
+    await page.click('label:has(#t-quakes)');
+    const qReady = await N(() => window.__seafloor.events.ready('quakes'));
+    await settle(1200);
+    const q = await N(() => ({ st: window.__seafloor.events.state(), lg: window.__seafloor.ui.legend().sections, src: document.getElementById('quakes-src').textContent, stat: document.getElementById('quakes-stat').textContent }));
+    ok('earthquakes: data ready, layer and legend on, attribution verbatim, count in the note', qReady && q.st.visibility.quakes === 'visible' && q.lg.includes('lg-quakes') && q.src === 'Earthquakes: USGS ANSS ComCat (public domain)' && /^39,6\d\d earthquakes/.test(q.stat),
+      `${JSON.stringify(q.st.loadMs)}; ${q.stat}`);
+    await shot(page, 'quakes.png');
+    const sumatra = await N(() => window.__seafloor.events.findQuake('Sumatra - Andaman'));
+    await N(() => { window.__seafloor.ui.setDrawer('layers', false); window.__seafloor.setFeatures(false); });
+    await N((c) => window.__seafloor.map.jumpTo({ center: c, zoom: 4.5, pitch: 0, bearing: 0 }), sumatra.coordinates);
+    await settle(1500);
+    const sxy = await N((c) => { const p = window.__seafloor.map.project(c); return [p.x, p.y]; }, sumatra.coordinates);
+    await page.mouse.click(sxy[0], sxy[1]);
+    await page.waitForTimeout(700);
+    const qc = await N(() => ({ kind: document.getElementById('f-kind').textContent, name: document.getElementById('f-name').textContent, lead: document.getElementById('f-depth').textContent, facts: document.getElementById('f-facts').textContent, links: [...document.querySelectorAll('#f-links a')].map((a) => a.href) }));
+    ok('earthquakes: clicking the 2004 Sumatra-Andaman event opens its card (M 9.1, depth, UTC time, USGS link)', qc.kind.startsWith('Earthquake') && /9\.1/.test(qc.lead) && /km deep/.test(qc.lead) && /December 2004/.test(qc.facts) && qc.links.some((h) => h.startsWith('https://earthquake.usgs.gov/earthquakes/eventpage/')),
+      JSON.stringify(qc).slice(0, 260));
+    await shot(page, 'card-quake.png');
+    await N(() => document.querySelector('[data-close="feature-card"]').click());
+    // live feed (network: USGS, CORS)
+    await N(() => window.__seafloor.events.mode('live'));
+    const live = await N(() => window.__seafloor.events.state());
+    ok('earthquakes: "Last 30 days (live)" loads the USGS feed (> 100 events of M 2.5+)', live.mode === 'live' && live.liveCount > 100, `${live.liveCount} events${live.liveError ? `, error ${live.liveError}` : ''}, ${live.loadMs.live} ms`);
+    await N(() => window.__seafloor.map.jumpTo({ center: [150, 10], zoom: 1.9, pitch: 0, bearing: 0 }));
+    await settle(1200);
+    await shot(page, 'quakes-live.png');
+    await N(() => window.__seafloor.events.mode('history'));
+    // seamounts: size by height, measured vs predicted, card
+    await N(() => window.__seafloor.events.set('seamounts', true));
+    const smReady = await N(() => window.__seafloor.events.ready('seamounts'));
+    await N(() => window.__seafloor.events.set('quakes', false));
+    const dav = await N(() => window.__seafloor.events.findSeamount('^Davidson Seamount$'));
+    await N((c) => window.__seafloor.map.jumpTo({ center: c, zoom: 7, pitch: 0, bearing: 0 }), dav.coordinates);
+    await settle(1500);
+    const dxy = await N((c) => { const p = window.__seafloor.map.project(c); return [p.x, p.y]; }, dav.coordinates);
+    const dhits = await N(([x, y]) => window.__seafloor.map.queryRenderedFeatures([[x - 5, y - 5], [x + 5, y + 5]], { layers: ['seamounts'] }).length, dxy);
+    await page.mouse.click(dxy[0], dxy[1]);
+    await page.waitForTimeout(700);
+    const sc = await N(() => ({ kind: document.getElementById('f-kind').textContent, name: document.getElementById('f-name').textContent, lead: document.getElementById('f-depth').textContent, facts: document.getElementById('f-facts').textContent, stat: document.getElementById('seamounts-stat').textContent }));
+    ok('seamounts: 69,770 loaded, 34.2% summits measured in the note; Davidson card with height, summit depth, measured?, catalogue ids', smReady && dhits > 0 && sc.name === 'Davidson Seamount' && /m tall/.test(sc.lead) && /Summit measured/.test(sc.facts) && /KW-/.test(sc.facts) && /34\.2%/.test(sc.stat),
+      JSON.stringify(sc).slice(0, 300));
+    await shot(page, 'card-seamount.png');
+    await N(async () => { document.querySelector('[data-close="feature-card"]').click(); await window.__seafloor.events.set('seamounts', false); window.__seafloor.setFeatures(true); });
+    // phytoplankton
+    await N(() => { window.__seafloor.ui.setDrawer('layers', true); window.__seafloor.map.jumpTo({ center: [-100, -15], zoom: 2, pitch: 0, bearing: 0 }); });
+    await page.click('label:has(#t-chl)');
+    const cReady = await N(() => window.__seafloor.ocean.ready('chl'));
+    await settle(1200);
+    const cv = await N(() => ({ peru: window.__seafloor.ocean.value(-79, -10).chl, gyre: window.__seafloor.ocean.value(-120, -25).chl, superior: window.__seafloor.ocean.value(-87.5, 47.6).chl, caspian: window.__seafloor.ocean.value(50.5, 42).chl,
+      lg: window.__seafloor.ui.legend().sections, px: window.__seafloor.ocean.chlPixel(-79, -10) }));
+    await N(() => window.__seafloor.readout(-79, -10));
+    await page.waitForTimeout(500);
+    const cr = await N(() => [document.getElementById('r-extra-dt').textContent, document.getElementById('r-extra-dd').textContent]);
+    ok('phytoplankton: Peru upwelling > 1.5 mg/m³, South Pacific gyre < 0.05, Lake Superior and the Caspian masked; readout in mg/m³; depth legend replaced by the algae scale',
+      cReady && cv.peru > 1.5 && cv.gyre < 0.05 && cv.superior === null && cv.caspian === null && cv.lg.includes('lg-chl') && !cv.lg.includes('depth-legend') && cr[0] === 'Chlorophyll-a' && /mg\/m³$/.test(cr[1]) && cv.px[3] === 255,
+      `Peru ${cv.peru}, gyre ${cv.gyre}, Superior ${cv.superior}, Caspian ${cv.caspian}; readout "${cr.join(': ')}"`);
+    await shot(page, 'chl.png');
+    // winds over phytoplankton: frames, particles on the visible globe, readout
+    await page.click('label:has(#t-winds)');
+    const wReady = await N(() => window.__seafloor.ocean.ready('wind'));
+    await N(() => { window.__seafloor.ui.setDrawer('layers', false); window.__seafloor.map.jumpTo({ center: [65, 10], zoom: 2.1, pitch: 0, bearing: 0 }); });
+    await settle(1500);
+    await N(() => window.__seafloor.ocean.flowStats());
+    const wf = await quietFrames(page, 4000);
+    const wcpu = await N(() => window.__seafloor.ocean.flowStats());
+    const pts = await N(() => window.__seafloor.ocean.sample(400));
+    const inView = pts.filter(([x, y]) => x >= 0 && x <= 1440 && y >= 0 && y <= 900).length / Math.max(1, pts.length);
+    await N(() => window.__seafloor.readout(62, 12));
+    await page.waitForTimeout(400);
+    const wr = await N(() => [...document.querySelectorAll('.r-extra:not([hidden])')].map((e) => e.textContent));
+    ok('winds + phytoplankton on the globe: 60 fps (frame p95 < 20 ms), particles inside the view, wind readout with speed and direction',
+      wReady && wf.p95Ms < 20 && wcpu.particles > 1000 && inView > 0.9 && wr.some((t) => /^Wind, annual mean\d+\.\d m\/s from the [NESW]+$/.test(t)),
+      `frames ${JSON.stringify(wf)}; cpu ${JSON.stringify(wcpu)}; ${(100 * inView).toFixed(0)}% of sampled particles in view; readout ${wr.join(' | ')}`);
+    await shot(page, 'flow-globe.png');
+    await N(() => window.__seafloor.map.setProjection({ type: 'mercator' }));
+    await N(() => window.__seafloor.map.jumpTo({ center: [65, 10], zoom: 2.4, pitch: 0, bearing: 0 }));
+    await settle(1500);
+    const mf = await quietFrames(page, 3000);
+    const mpts = await N(() => window.__seafloor.ocean.sample(400));
+    const mIn = mpts.filter(([x, y]) => x >= 0 && x <= 1440 && y >= 0 && y <= 900).length / Math.max(1, mpts.length);
+    ok('winds in mercator: frame p95 < 20 ms, particles inside the view', mf.p95Ms < 20 && mIn > 0.9, `${JSON.stringify(mf)}; ${(100 * mIn).toFixed(0)}% in view`);
+    await shot(page, 'flow-mercator.png');
+    await N(() => window.__seafloor.map.setProjection({ type: 'globe' }));
+    await N(() => window.__seafloor.ocean.set('currents', true));
+    const oc = await N(() => ({ ...window.__seafloor.ocean.state(), windsChecked: document.getElementById('t-winds').checked }));
+    ok('one flow layer at a time: currents switch winds off', oc.flow === 'currents' && !oc.windsChecked && oc.layers.join() === 'chl,flow-currents', JSON.stringify(oc));
+    await N(async () => { await window.__seafloor.ocean.set('currents', false); await window.__seafloor.ocean.set('chl', false); });
+    // OSM cable supplement
+    await N(async () => { await window.__seafloor.overlays.set('cables', true); await window.__seafloor.overlays.osm(true); });
+    const osmReady = await N(() => window.__seafloor.overlays.ready('osm'));
+    await N(() => window.__seafloor.map.jumpTo({ center: [3, 55], zoom: 4, pitch: 0, bearing: 0 }));
+    await settle(1500);
+    const os = await N(() => ({ vis: window.__seafloor.map.getLayoutProperty('cables-osm', 'visibility'), n: window.__seafloor.map.queryRenderedFeatures({ layers: ['cables-osm'] }).length, key: document.getElementById('ovk-cables').textContent, att: document.getElementById('ovl-cables-att').textContent, hash: location.hash }));
+    ok('internet cables: "Also show OpenStreetMap cables" draws the OSM layer with its key, ODbL attribution and #layers=cables-osm', osmReady && os.vis === 'visible' && os.n > 0 && /OpenStreetMap cable/.test(os.key) && /© OpenStreetMap contributors \(ODbL\)/.test(os.att) && /cables-osm/.test(os.hash),
+      JSON.stringify(os).slice(0, 260));
+    await shot(page, 'cables-osm.png');
+    await N(async () => { await window.__seafloor.overlays.osm(false); await window.__seafloor.overlays.set('cables', false); });
+
+    // ---------- the Time panel ----------
+    await N(() => window.__seafloor.map.jumpTo({ center: [150, 10], zoom: 1.9, pitch: 0, bearing: 0 }));
+    await page.click('#time-btn');
+    await page.waitForFunction(() => !document.getElementById('time').hidden, null, { timeout: 15000 });
+    await N(() => window.__seafloor.time.ready());
+    const t0 = await N(() => window.__seafloor.time.state());
+    ok('Time opens from the tool bar (Years / Months / Since the ice age all available)', t0.open && t0.modes.join() === 'years:1,months:1,ago:1', JSON.stringify(t0.modes));
+    await N(() => window.__seafloor.time.open({ mode: 'years', set: 'quakes', year: 2004, only: false }));
+    const ty = await N(() => ({ t: window.__seafloor.time.state(), f: window.__seafloor.events.state().filter }));
+    ok('Years / earthquakes 2004: cumulative filter, headline "N earthquakes ... since 1900; ... in 2004; largest M 9.1", #time=quakes-2004',
+      JSON.stringify(ty.f) === '["<=",["get","year"],2004]' && /^[\d,]+ earthquakes of magnitude 5\.5 or more since 1900$/.test(ty.t.headline) && /in 2004; largest M 9\.1/.test(ty.t.sub) && /time=quakes-2004/.test(ty.t.hash),
+      `${ty.t.headline} / ${ty.t.sub} / ${ty.t.hash}`);
+    await shot(page, 'time-quakes-2004.png');
+    await N(() => window.__seafloor.time.only(true));
+    const to = await N(() => ({ t: window.__seafloor.time.state(), f: window.__seafloor.events.state().filter }));
+    ok('"This year only" filters to 2004 alone', JSON.stringify(to.f) === '["==",["get","year"],2004]' && / in 2004$/.test(to.t.headline) && /time=quakes-2004-only/.test(to.t.hash), `${to.t.headline}; ${to.t.hash}`);
+    await N(() => window.__seafloor.time.only(false));
+    await page.focus('#time-range');
+    await page.keyboard.press(']');
+    await N(() => window.__seafloor.time.ready());
+    const k1 = (await N(() => window.__seafloor.time.state())).year;
+    await page.keyboard.press('Space');
+    await page.waitForTimeout(300);
+    const kp = (await N(() => window.__seafloor.time.state())).playing;
+    await N(() => window.__seafloor.time.stats());
+    await page.waitForTimeout(2500);
+    await page.keyboard.press('Space');
+    const kst = await N(() => ({ s: window.__seafloor.time.state(), stats: window.__seafloor.time.stats() }));
+    ok('keyboard: ] steps a year, Space plays and pauses; playing steps several years with frame p95 < 20 ms', k1 === 2005 && kp && !kst.s.playing && kst.stats.steps >= 5 && kst.stats.p95Ms < 20,
+      `] -> ${k1}; playing ${kp}; ${JSON.stringify(kst.stats)}; now ${kst.s.year}`);
+    await N(() => window.__seafloor.time.open({ mode: 'years', set: 'cables', year: 1995, only: false }));
+    await settle(800);
+    const tc = await N(() => ({ t: window.__seafloor.time.state(), y: window.__seafloor.overlays.cableYear(), f: window.__seafloor.map.getFilter('landing-points') }));
+    ok('Years / internet cables 1995: cables and landing points filtered to the ready-for-service year, headline counts cables and km', tc.y.cables === 1995 && JSON.stringify(tc.f).includes('first_year') && /^\d+ cables in service, [\d,]+ km of them$/.test(tc.t.headline),
+      `${tc.t.headline} / ${tc.t.sub}`);
+    await shot(page, 'time-cables-1995.png');
+    await N(() => window.__seafloor.time.open({ mode: 'years', set: 'wind', year: 2015, only: false }));
+    const tw = await N(() => ({ t: window.__seafloor.time.state(), f: window.__seafloor.map.getFilter('wind') }));
+    ok('Years / offshore wind 2015: farms filtered by start year; headline farms and GW, undated farms explained', JSON.stringify(tw.f).includes('start_year') && /offshore wind farms, [\d.]+ GW$/.test(tw.t.headline) && /with a start year/.test(tw.t.sub), `${tw.t.headline} / ${tw.t.sub}`);
+    await N(() => window.__seafloor.time.open({ mode: 'years', set: 'mapping', year: 2019, only: false }));
+    await settle(2500);
+    const tm19 = await N(() => ({ t: window.__seafloor.time.state(), h: window.__seafloor.history.state() }));
+    await shot(page, 'time-mapping-2019.png');
+    await N(() => window.__seafloor.time.seek(2026));
+    await settle(2500);
+    const tm26 = await N(() => ({ t: window.__seafloor.time.state(), h: window.__seafloor.history.state(), lg: window.__seafloor.ui.legend().sections }));
+    ok('Years / seafloor mapping: 2019 12.4% (announced 15%), 2026 30.8% (announced 28.7%); the history layer and its legend follow the year',
+      tm19.h.year === 2019 && tm19.h.visibility === 'visible' && /^12\.4% .*GEBCO_2019 \(Seabed 2030 announced 15%\)$/.test(tm19.t.headline) && tm26.h.year === 2026 && /^30\.8% .*28\.7%\)$/.test(tm26.t.headline) && tm26.lg.includes('lg-history'),
+      `${tm19.t.headline} | ${tm26.t.headline} / ${tm26.t.sub}`);
+    await shot(page, 'time-mapping-2026.png');
+    await N(() => window.__seafloor.time.open({ mode: 'months', month: 7 }));
+    await N(() => window.__seafloor.map.jumpTo({ center: [62, 12], zoom: 2.4, pitch: 0, bearing: 0 }));
+    await settle(2000);
+    const tj = await N(() => ({ t: window.__seafloor.time.state(), o: window.__seafloor.ocean.state(), v: window.__seafloor.ocean.value(62, 12) }));
+    // the bloom off Oman: August vs April (July itself is mostly cloud-covered, no data; contract check 2.25 vs 0.57)
+    await N(() => window.__seafloor.time.seek(8));
+    tj.bloom = (await N(() => window.__seafloor.ocean.value(58, 19))).chl;
+    await N(() => window.__seafloor.time.seek(4));
+    const ta = await N(() => ({ bloom: window.__seafloor.ocean.value(58, 19).chl }));
+    await N(() => window.__seafloor.time.seek(1));
+    const tjan = await N(() => window.__seafloor.ocean.value(62, 12));
+    ok('Months: July drives phytoplankton and winds together: Arabian Sea wind from the SW in July, from the NE in January; Oman bloom in August > 1.5x April',
+      tj.o.month === 7 && tj.o.chl && tj.o.flow === 'wind' && tj.v.u > 3 && tj.v.v > 3 && tjan.u < 0 && tjan.v < 0 && tj.bloom > 1.5 * ta.bloom && /July\.$/.test(tj.t.headline),
+      `July wind u ${tj.v.u} v ${tj.v.v}, Jan u ${tjan.u} v ${tjan.v}; chl 19 N 58 E August ${tj.bloom}, April ${ta.bloom}; "${tj.t.headline}"`);
+    await N(() => window.__seafloor.time.seek(7));
+    await settle(1500);
+    await shot(page, 'time-months-july.png');
+    await N(() => window.__seafloor.time.open({ mode: 'ago', ago: 20500 }));
+    await N(() => window.__seafloor.map.jumpTo({ center: [110, 0], zoom: 2.6, pitch: 0, bearing: 0 }));
+    await settle(1500);
+    const tg = await N(() => ({ t: window.__seafloor.time.state(), cap: document.getElementById('depth-legend-cap').textContent }));
+    await N(() => window.__seafloor.time.seek(0));
+    const t0d = await N(() => window.__seafloor.time.state());
+    ok('Since the ice age: 20,500 years ago sea level −134 m drives the shading ("years ago" label, LGM note); today 0 m', tg.t.seaLevel === -134 && tg.t.value === '20,500' && tg.t.unit === 'years ago' && /^Sea level −134 m/.test(tg.t.headline) && /Last Glacial Maximum/.test(tg.t.sub) && /−134 m/.test(tg.cap) && t0d.seaLevel === 0 && t0d.value === 'Today',
+      `${tg.t.value} ${tg.t.unit}: ${tg.t.headline} / ${tg.t.sub}; legend "${tg.cap}"; today ${t0d.seaLevel}`);
+    await N(() => window.__seafloor.time.seek(20500));
+    await settle(1200);
+    await shot(page, 'time-ice-age.png');
+    await N(() => window.__seafloor.openSea());
+    const oneTool = await N(() => ({ time: window.__seafloor.time.state().open, sea: !document.getElementById('sea').hidden, level: window.__seafloor.seaLevel() }));
+    await N(() => window.__seafloor.closeSea());
+    await N(() => window.__seafloor.time.open({ mode: 'years', set: 'quakes', year: 1990, only: false }));
+    await N(() => window.__seafloor.time.close());
+    const closed = await N(() => ({ f: window.__seafloor.events.state().filter, cables: window.__seafloor.overlays.cableYear(), month: window.__seafloor.ocean.state().month, sea: window.__seafloor.seaLevel(), hist: window.__seafloor.history.state() }));
+    ok('one tool at a time (Sea level closes Time and resets the level); closing Time shows everything again (no year filter, annual means, today, history hidden)',
+      !oneTool.time && oneTool.sea && oneTool.level === 0 && closed.f === null && closed.cables.cables === null && closed.month === 0 && closed.sea === 0 && closed.hist.visibility !== 'visible',
+      JSON.stringify({ oneTool, closed }));
+    await N(() => { location.hash = '#time=cables-1999'; });
+    await page.waitForTimeout(2500);
+    await N(() => window.__seafloor.time.ready());
+    const dl = await N(() => ({ t: window.__seafloor.time.state(), y: window.__seafloor.overlays.cableYear() }));
+    ok('#time=cables-1999 deep link opens Years on cables at 1999', dl.t.open && dl.t.set === 'cables' && dl.t.year === 1999 && dl.y.cables === 1999, JSON.stringify({ set: dl.t.set, year: dl.t.year, hash: dl.t.hash }));
+    await N(async () => { window.__seafloor.time.close(); await window.__seafloor.ocean.set('wind', false); await window.__seafloor.ocean.set('chl', false); await window.__seafloor.events.set('quakes', false); await window.__seafloor.overlays.set('cables', false); await window.__seafloor.overlays.set('wind', false); });
+
+    // ---------- About: privacy, disclaimer, accessibility ----------
+    await page.click('#about-btn');
+    const ab = await N(() => Object.fromEntries(['about-privacy', 'about-disclaimer', 'about-a11y'].map((id) => { const d = document.getElementById(id); return [id, d ? { summary: d.querySelector('summary').textContent, text: d.textContent, links: [...d.querySelectorAll('a')].map((a) => a.href) } : null]; })));
+    await page.keyboard.press('Escape');
+    ok('About has Privacy, Disclaimer and Accessibility notes (GitHub Pages logs, Hugging Face / Wikimedia / USGS on use; not for navigation, LICENSES.md; GitHub issues)',
+      ab['about-privacy'] && /No cookies, no analytics/.test(ab['about-privacy'].text) && /GitHub Pages, which logs IP addresses/.test(ab['about-privacy'].text) && /Hugging Face/.test(ab['about-privacy'].text) && /Wikimedia Commons/.test(ab['about-privacy'].text) && /USGS/.test(ab['about-privacy'].text)
+      && ab['about-disclaimer'] && /not for navigation/.test(ab['about-disclaimer'].text) && ab['about-disclaimer'].links.some((h) => h.endsWith('/LICENSES.md'))
+      && ab['about-a11y'] && ab['about-a11y'].links.includes('https://github.com/ismoilovdevml/seafloor-atlas/issues'),
+      Object.entries(ab).map(([k, v]) => `${k}: ${v?.summary}`).join(', '));
+  }
+
+  // ---------- loading indicator: a new place at zoom 7 (z6-7 PMTiles from Hugging Face) ----------
+  {
+    await page.evaluate(() => { window.__seafloor.loading.clear(); window.__seafloor.map.jumpTo({ center: [-28.3, 38.6], zoom: 7, pitch: 0, bearing: 0 }); });
+    let seen = null, maxPct = 0, shotDone = false;
+    for (let i = 0; i < 200; i++) {
+      await page.waitForTimeout(100);
+      const st = await page.evaluate(() => window.__seafloor.loading.state());
+      if (st.el.on && !st.done) { seen ??= st; maxPct = Math.max(maxPct, st.pct); if (!shotDone && st.pct > 5) { await shot(page, 'loading-detail.png'); shotDone = true; } }
+      if (seen && st.done && !st.el.on) break;
+    }
+    await settle(1200);
+    const end = await page.evaluate(() => ({ st: window.__seafloor.loading.state(), trace: window.__seafloor.loading.trace() }));
+    const reached100 = end.trace.some((x) => x.pct === 100 && x.visible);
+    const hidden = end.trace.length && !end.trace[end.trace.length - 1].visible && !end.st.el.on;
+    ok('loading indicator: zooming into z7 somewhere new shows "Loading detail · N%", reaches 100 % and fades out', !!seen && /^Loading detail · \d+%$/.test(seen.el.text) && reached100 && hidden,
+      `${seen ? `"${seen.el.text}" seen` : 'never shown'}, max ${maxPct}% while loading, then ${reached100 ? '100 %' : 'no 100 %'} and ${hidden ? 'hidden' : 'still shown'}; bursts ${JSON.stringify(end.st.log.slice(-3))}`);
   }
 
   // deep link changed in an open tab
@@ -453,15 +711,16 @@ for (const [w, h] of [[1440, 900], [1280, 720], [1920, 1080]]) {
     ['water-column', '(async () => { await window.__seafloor.water.show("t", 0); await window.__seafloor.water.column(-150, 10); })()', 'window.__seafloor.water.close()'],
     ['sea', 'window.__seafloor.openSea(-120)', 'window.__seafloor.closeSea()'],
     ['profile', 'window.__seafloor.profile([-160, 20], [-140, 0])', 'document.getElementById("profile-close").click()'],
+    ['time', 'window.__seafloor.time.open({ mode: "years", set: "quakes", year: 2004, only: false })', 'window.__seafloor.time.close()'],
   ]) {
     await page.evaluate(open);
     await page.waitForTimeout(800); await settle(800);
     const c = await page.evaluate(() => window.__seafloor.layoutCheck());
-    const p = c.panels.find((x) => ['water', 'sea', 'profile'].includes(x.id));
+    const p = c.panels.find((x) => ['water', 'sea', 'profile', 'time'].includes(x.id));
     ok(`${w}x${h} ${name}: globe centre uncovered and >= 60% of the globe disk free`, c.centreFree && c.freeFrac >= 0.6,
       `free ${(100 * c.freeFrac).toFixed(1)}%, zoom ${c.zoom}, disk r ${c.disk.r} at ${c.disk.cx},${c.disk.cy}, panel ${p ? `${p.w}x${p.h} @${p.left},${p.top}` : 'none'}`);
     await shot(page, `ui-${name}-${w}x${h}.png`);
-    if (name === 'water' || name === 'sea') {
+    if (name === 'water' || name === 'sea' || name === 'time') {
       const id = name;
       await page.click(`#${id}-min`);
       await page.waitForTimeout(500);
@@ -507,13 +766,30 @@ for (const [w, h] of [[1440, 900], [1280, 720], [1920, 1080]]) {
       return { gradient: +(s / n).toFixed(2), tileSize: d.ts };
     }, ['data:image/png;base64,' + png.toString('base64'), d]);
     sharp[name].requests = bytes.n; sharp[name].MB = +(bytes.b / 1e6).toFixed(2);
-    sharp[name].pan = await page.evaluate(() => window.__seafloor.panFrames(60, 3000));
+    sharp[name].pan = await quietPan(page, 60, 3000);
     await page.close();
   }
   ok('2x screen: rasters sharper with 256 px declared tiles (mean gradient +10% or more), panning p95 < 20 ms',
     sharp.after.tileSize === 256 && sharp.before.tileSize === 512 && sharp.after.gradient > 1.1 * sharp.before.gradient && sharp.after.pan.p95Ms < 20,
     `before ${sharp.before.gradient} (${sharp.before.requests} tiles, ${sharp.before.MB} MB), after ${sharp.after.gradient} (${sharp.after.requests} tiles, ${sharp.after.MB} MB, pan p95 ${sharp.after.pan.p95Ms} ms)`);
   writeFileSync(`${outdir}/sharpness.json`, JSON.stringify(sharp, null, 1));
+}
+
+// ---------------- reduced motion: streaks drawn once and still, Time steps coarser, no pulse ----------------
+{
+  const { page, settle } = await session('reduced-motion', { width: 1280, height: 800 }, { onPage: (p) => p.emulateMedia({ reducedMotion: 'reduce' }) });
+  await settle(1500);
+  await page.evaluate(async () => { const o = window.__seafloor.ocean; await o.set('wind', true); await o.ready('wind'); o.flowStats(); });
+  await page.waitForTimeout(1500);
+  const rm = await page.evaluate(() => ({ st: window.__seafloor.ocean.state(), cpu: window.__seafloor.ocean.flowStats(), n: window.__seafloor.ocean.sample(50).length }));
+  await shot(page, 'flow-reduced-motion.png');
+  await page.evaluate(() => window.__seafloor.time.open({ mode: 'ago', ago: 20000 }));
+  await page.evaluate(() => { window.__seafloor.time.stats(); window.__seafloor.time.play(true); });
+  await page.waitForTimeout(2600);
+  const rt = await page.evaluate(() => { const t = window.__seafloor.time; t.play(false); return { st: t.state(), stats: t.stats() }; });
+  ok('reduced motion: winds drawn as still streaks (no advection frames), Time plays in 1,000-year steps', rm.st.running === false && rm.cpu.frames === 0 && rm.n > 0 && rt.stats.steps >= 3 && (20000 - rt.st.ago) % 1000 === 0 && rt.st.ago < 20000,
+    `flow ${JSON.stringify(rm.cpu)}; time ${rt.stats.steps} steps to ${rt.st.ago} years ago`);
+  await page.close();
 }
 
 // ---------------- phone ----------------
@@ -555,7 +831,17 @@ for (const [w, h] of [[1440, 900], [1280, 720], [1920, 1080]]) {
     const r = await page.evaluate(() => { const w = document.getElementById('water').getBoundingClientRect(); return { top: w.top, bottom: w.bottom, h: innerHeight, over: document.documentElement.scrollWidth > innerWidth, series: document.querySelectorAll('#wc-chart svg path.series').length }; });
     ok('phone: water sheet fits, chart drawn, no horizontal scroll', r.bottom <= r.h + 1 && r.top > 100 && !r.over && r.series === 3, JSON.stringify(r));
     await shot(page, 'phone-water.png');
+    await page.evaluate(() => window.__seafloor.water.close());
   }
+  await page.evaluate(async () => { const o = window.__seafloor.ocean; await o.set('wind', true); await o.ready('wind'); });
+  await page.evaluate(() => window.__seafloor.map.jumpTo({ center: [-30, 20], zoom: 0.9, pitch: 0, bearing: 0 }));
+  await settle(1500);
+  await shot(page, 'phone-flow.png');
+  await page.evaluate(() => window.__seafloor.time.open({ mode: 'months', month: 1 }));
+  await settle(1500);
+  const pt2 = await page.evaluate(() => { const t = document.getElementById('time').getBoundingClientRect(); return { top: Math.round(t.top), bottom: Math.round(t.bottom), h: innerHeight, over: document.documentElement.scrollWidth > innerWidth, tabs: getComputedStyle(document.querySelector('.tabs')).display, month: window.__seafloor.time.state().value }; });
+  ok('phone: Time takes the sheet, fits the screen, no horizontal scroll', pt2.bottom <= pt2.h + 1 && pt2.top > 100 && !pt2.over && pt2.tabs === 'none' && pt2.month === 'January', JSON.stringify(pt2));
+  await shot(page, 'phone-time.png');
   await page.close();
 }
 

@@ -81,11 +81,22 @@ export function parseTileUrl(url: string): [TileLayer, number, number, number] |
   return m ? [m[1] as TileLayer, +m[2], +m[3], +m[4]] : null;
 }
 
+/**
+ * Map tile activity for the loading indicator (loading.ts): every tile the map asks for through a protocol
+ * handler (static files, PMTiles range reads on Hugging Face, recoloured history tiles) counts as started, and
+ * as finished when it resolves, fails or is aborted. The depth sampler's own reads are not counted.
+ */
+export const tileActivity: { start: () => void; finish: () => void } = { start: () => {}, finish: () => {} };
+export async function trackTile<T>(p: Promise<T>): Promise<T> {
+  tileActivity.start();
+  try { return await p; } finally { tileActivity.finish(); }
+}
+
 /** MapLibre addProtocol handler (v4+ signature). */
 export async function protocolHandler(params: { url: string }, abort: AbortController): Promise<{ data: ArrayBuffer }> {
   const p = parseTileUrl(params.url);
   if (!p) throw new Error(`bad tile url ${params.url}`);
-  const data = await fetchTile(p[0], p[1], p[2], p[3], abort.signal);
+  const data = await trackTile(fetchTile(p[0], p[1], p[2], p[3], abort.signal));
   if (!data) throw new Error(`tile not found ${params.url}`);
   return { data };
 }

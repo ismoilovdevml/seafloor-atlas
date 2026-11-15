@@ -12,13 +12,14 @@ Map first: the globe gets the window, everything else floats at the edges and fo
   then **About this map** (headline numbers, data sources and licences, shortcuts) and **Map settings** (vertical
   exaggeration and its auto mode). Popovers close with `Esc` or a click outside and give focus back.
 * **Layers drawer**, in three groups: *Seafloor* (Relief as the base; What's actually measured, New in GEBCO 2026,
-  Plate boundaries, Named features; a *Depth certainty* sub-group with Model disagreement, Prediction confidence and
-  Seal soundings), *Ocean* (Ocean water, Marine life) and *Human activity* (cables with landing points, shipping,
-  wrecks with "show all", platforms, pipelines, wind). Each row is a switch, a name and an (i) that unfolds a short note:
+  Plate boundaries, Earthquakes, Seamounts, Named features; a *Depth certainty* sub-group with Model disagreement,
+  Prediction confidence and Seal soundings), *Ocean* (Ocean water, Marine life, Phytoplankton, Winds, Ocean currents)
+  and *Human activity* (cables with landing points and the OpenStreetMap supplement, shipping, wrecks with "show all",
+  platforms, pipelines, wind). Each row is a switch, a name and an (i) that unfolds a short note:
   the key number, one or two sentences, the source. Sub-options appear under a row only while it is on.
 * **Legend dock** (bottom left): one section per layer that is on the map, the depth scale first; it hides when nothing
   needs a key and folds to its header. A tall legend counts as a side panel, so the globe centres beside it.
-* **Tool bar** (bottom centre): Depth profile, Sea level, Ocean water. One tool is open at a time; its panel opens above
+* **Tool bar** (bottom centre): Depth profile, Sea level, Ocean water, Time. One tool is open at a time; its panel opens above
   the bar (or in the right column on windows under 760 px tall) and minimises to its header.
 * **Readout** (bottom right): depth, measured share (or the water value), position, plus one line for an active
   marine-life or depth-certainty layer.
@@ -88,7 +89,55 @@ What it answers:
   status from the group files where known). The (i) says the sampling-bias caveat in one line. Marine life and Ocean
   water take turns (they use the same place on the map). Licence: CC BY-NC 4.0 as a whole; OBIS, speciesgrids and
   AquaMaps (with its link) are credited in the note, the card and About.
-* Guided views (`public/data/stories.json`), deep-linkable as `#story=<id>` (a story resets the sea level to today).
+* **Earthquakes** (Layers, *Seafloor*; `data/quakes.json`, `quakes.ts` / `events-ui.ts`): every M ≥ 5.5 since 1900 from USGS
+  ComCat (39,650 events), circles sized by magnitude and coloured by hypocentre depth (pale yellow shallow to coral deep,
+  one warm family with falling lightness, every stop ≥ 3:1 on the abyss, dark casing on the shelf), biggest on top. Option
+  "Last 30 days, live" fetches the USGS `2.5_month` feed (CORS) and refetches after 5 minutes; the past day is brighter.
+  Click: place, magnitude, depth class, UTC time, USGS event page. Attribution line verbatim in the note and legend.
+* **Seamounts** (`data/seamounts.json`, `seamounts.ts`): 69,770 points, size by height (sqrt), tallest first by zoom
+  (≥ 1.5 km at the globe, all from z5); filled cream = a sonar sounding in the summit cell (34.2 %), open steel-blue ring
+  = summit predicted from gravity (shape carries the identity; all-pairs normal ΔE 25.6, CVD ΔE 23.4). Card: height,
+  summit depth, measured?, base depth, SDUST / KW / SIO ids, name.
+* **Phytoplankton** (`chl/`, `chl.ts` / `ocean-ui.ts`): MODIS-Aqua chlorophyll-a on a 2048² Mercator canvas under the
+  hillshade (like Ocean water), cmocean *algae* on log10 0.01–20 mg/m³, relief switched to its neutral under-layer.
+  Inland waters are masked: ocean = a WOA 2023 surface cell within one 0.25° cell, minus boxes for the Caspian and the
+  Great Lakes (both have WOA values); keeps 98.4 % of the chlorophyll cells. Readout in mg/m³. Phytoplankton, Ocean water
+  and Marine life take turns.
+* **Winds** and **Ocean currents** (`flow/`, `flow.ts`, `flow-layer.ts`): moving streaks, one flow layer at a time. A
+  MapLibre custom WebGL layer: particles are advected in lon/lat on the CPU (bilinear u/v, as in the proof page) and every
+  trail segment is projected in the shader with MapLibre's own `projectTile`, so the same code is right on the globe, in
+  mercator and through the transition, and the far side is clipped by MapLibre's horizon plane. Trails are a ring buffer of
+  the last 16 positions per particle (only the newest slot is uploaded per frame), drawn as instanced screen-space quads
+  that fade with age. Density: about one particle per 150 CSS px² (1,500–9,000), spawned over the visible part of the
+  globe weighted by on-screen area (no pile-up at the limb, where streaks also fade out because they fly at sea level
+  over the exaggerated seafloor). On-screen speed and trail length stay the same at every zoom. Colour and alpha follow
+  √(speed / top), one family from dim steel blue to warm white. Readout: "7.1 m/s from the ENE" (winds, meteorological),
+  "0.32 m/s towards the E" (currents). Paused while the tab is hidden; with reduced motion the streaks are drawn once and
+  stay still.
+* **Time** (tool bar; `timeline.ts` model, `time-ui.ts` panel): one scale at a time.
+  * *Years*: one year drives every year-aware layer on the map; "Follow" picks the set whose range, bar strip (its numbers
+    per year above the slider, like the land curve over the sea-level slider) and headline are shown. Earthquakes (all up
+    to the year, earlier years faint, or that year only; M ≥ 7 events of the year pulse once), Internet cables by
+    ready-for-service year (new ones drawn wider, landing points from their first cable, OSM cables by start date),
+    Offshore wind farms by start year (undated farms hidden while the clock runs), **Seafloor mapping 2019→2026**
+    (`history/`, `history-ui.ts`): the history tiles' first-measured code and release bitmask are recoloured per release
+    in the browser through an `sfahist://` protocol (newly measured amber, earlier releases blue, unmeasured veiled;
+    opacity from the 2026 coverage tile's measured share), headline "30.8 % ... (Seabed 2030 announced 28.7 %)".
+  * *Months*: one month drives sea temperature (the WOA layer without its panel), phytoplankton, winds and currents.
+  * *Since the ice age*: Lambeck et al. (2014) global mean sea level, 26,000 years ago to today, drives the sea-level shading
+    with a "years ago" label, land area and notes at the LGM and Meltwater Pulse 1A.
+  * Play / pause, step, speed ½–4×, Space and `[` `]` in the panel, arrows / Home / End on the slider, `#time=quakes-2004`
+    (`-only`), `#time=cables-1999`, `#time=month-7`, `#time=ago-12000`. Switching a time-aware layer on offers the panel
+    once per session (a chip above the tool bar; the Time button keeps a dot). Closing Time shows everything again.
+* **Loading** (`loading.ts`): "Loading detail · 64%" with a slim bar at the bottom of the free map area while tiles load,
+  counted from real requests (the `sfa://` protocol incl. PMTiles range reads from Hugging Face, the history tiles, and
+  MapLibre tile events for the other sources) within a burst; shown only after 300 ms, 100 % and a fade when the map is
+  idle; no pointer events; announced once per burst to screen readers.
+* **About** adds Privacy, Disclaimer and Accessibility notes (folded).
+* Guided views (`public/data/stories.json`), deep-linkable as `#story=<id>` (a story resets the sea level to today and
+  closes Time).
+* Code for the new layers, Time and the history layer is split into chunks loaded on first use; their data is fetched when
+  switched on. With them off the first load requests nothing new (`qa.mjs` checks).
 
 ## Run
 
@@ -117,7 +166,16 @@ Screenshots (isolated headless Chrome via playwright-core; dev server must be ru
 node scripts/capture_views.mjs screenshots '' http://localhost:5173/
 node scripts/capture_sea.mjs screenshots http://localhost:4173/   # sea-level views, frame timing, deep link checks
 node scripts/capture_infra.mjs screenshots http://localhost:4173/ # overlay views + pan frame times (infra-frames.json)
+node scripts/capture_time.mjs screenshots http://localhost:4173/  # Time, flow, loading screenshots + frame times (time-frames.json)
 node scripts/qa.mjs http://localhost:4173/ qa-out                 # end-to-end checks against `vite preview`
+
+`qa.mjs` waits for explicit ready signals before asserting (`overlays.ready(id)`, `marine.drawn()`, `events.ready(id)`,
+`ocean.ready(id)`, `time.ready()`), and measures frame times only after `waitQuiet()` (0.5 s of rAF intervals with
+p95 < 20 ms), retrying a measurement once. It checks every new layer (data, legend, attribution, a card or readout at a
+known place: the 2004 Sumatra–Andaman quake, Davidson Seamount, Peru upwelling vs the South Pacific gyre, the Arabian
+Sea monsoon reversal), winds on the globe and in mercator at p95 < 20 ms, every Time mode with its headline numbers, the
+deep link, reduced motion, the About notes, the loading indicator at a new z7 place, the Time panel layout at three
+window sizes and on a phone, and that the first load requests none of the new code or data.
 
 `qa.mjs` also covers the panel shell: layer groups and rows, (i) notes, the legend dock listing only active layers,
 one tool at a time, the settings popover changing the exaggeration, `⌘K` and `/`, remembered panel state, phone tabs,

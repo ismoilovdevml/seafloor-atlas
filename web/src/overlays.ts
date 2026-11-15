@@ -7,10 +7,10 @@ import type { LayerSpecification, SourceSpecification } from 'maplibre-gl';
 export type OverlayId = 'cables' | 'shipping' | 'wrecks' | 'platforms' | 'pipelines' | 'wind';
 /** Panel order (also the order of tokens in the hash). */
 export const OVERLAY_IDS: OverlayId[] = ['cables', 'shipping', 'wrecks', 'platforms', 'pipelines', 'wind'];
-export type DataKey = 'cables' | 'landing' | 'wrecks' | 'platforms' | 'pipelines' | 'wind';
+export type DataKey = 'cables' | 'landing' | 'wrecks' | 'platforms' | 'pipelines' | 'wind' | 'cablesOsm';
 export const DATA_FILES: Record<DataKey, string> = {
   cables: 'cables.geojson', landing: 'landing-points.geojson', wrecks: 'wrecks.geojson',
-  platforms: 'platforms.geojson', pipelines: 'pipelines.geojson', wind: 'windfarms.geojson',
+  platforms: 'platforms.geojson', pipelines: 'pipelines.geojson', wind: 'windfarms.geojson', cablesOsm: 'cables-osm.geojson',
 };
 /** Which GeoJSON files an overlay needs (shipping is raster tiles). */
 export const OVERLAY_DATA: Record<OverlayId, DataKey[]> = {
@@ -38,6 +38,8 @@ export const CABLE_SNAPSHOT = '2022-11-14';
 // both; wind and wrecks are told apart by glyph shape, not hue. Pipeline substance is also dash-coded.
 export const OV_COLOR = {
   cable: '#e872c8',
+  /** OpenStreetMap cables: the cable hue, lighter and thinner (same family, another source) */
+  cableOsm: '#f7c4ea',
   gas: '#e9b62c',
   oil: '#f26a2e',
   unknown: '#b9b2a4',
@@ -60,13 +62,13 @@ export function wreckFilter(all: boolean): unknown[] {
 export const OVERLAY_LAYERS: Record<OverlayId, string[]> = {
   shipping: ['shipping'],
   pipelines: ['pipelines', 'pipelines-casing'],
-  cables: ['cables', 'cables-casing', 'landing-points'],
+  cables: ['cables', 'cables-casing', 'landing-points', 'cables-osm', 'cables-osm-casing'],
   platforms: ['platforms', 'platforms-cluster', 'platforms-count'],
   wind: ['wind'],
   wrecks: ['wrecks'],
 };
 /** Layers a click or hover can hit, topmost first. */
-export const CLICKABLE_LAYERS = ['wrecks', 'wind', 'platforms', 'platforms-cluster', 'landing-points', 'cables', 'pipelines'];
+export const CLICKABLE_LAYERS = ['wrecks', 'wind', 'platforms', 'platforms-cluster', 'landing-points', 'cables', 'cables-osm', 'pipelines'];
 
 export const ICONS = {
   oil: 'pf-oil', gas: 'pf-gas', oilGas: 'pf-oilgas', windSub: 'pf-wind', other: 'pf-other', windFarm: 'wind-farm', wreck: 'wreck',
@@ -79,6 +81,7 @@ export function overlaySources(shippingBase: string, tileSize = 512): Record<str
     shipping: { type: 'raster', tiles: [`${shippingBase}{z}/{x}/{y}.webp`], tileSize, minzoom: 0, maxzoom: 5 },
     pipelines: { type: 'geojson', data: empty },
     cables: { type: 'geojson', data: empty },
+    'cables-osm': { type: 'geojson', data: empty },
     landing: { type: 'geojson', data: empty },
     platforms: { type: 'geojson', data: empty, cluster: true, clusterRadius: 38, clusterMaxZoom: 6, clusterMinPoints: 3 },
     wind: { type: 'geojson', data: empty },
@@ -114,6 +117,17 @@ export function overlayLayers(labelFont: string): LayerSpecification[] {
         'line-dasharray': ['match', ['get', 'substance'], 'gas', ['literal', [1, 0]], ['oil', 'oil_gas'], ['literal', [2.6, 1.4]], ['literal', [0.7, 1.6]]],
         'line-opacity': ['case', ['==', ['get', 'status'], 'disused'], 0.5, 0.95],
         'line-width': zoomWidth(PIPE_W),
+      },
+    },
+    {
+      id: 'cables-osm-casing', type: 'line', source: 'cables-osm', layout: { ...NONE, 'line-join': 'round' },
+      paint: { 'line-color': OV_COLOR.casing, 'line-opacity': 0.45, 'line-width': zoomWidth(CABLE_W.map(([z, w]) => [z, 0.7 * w] as [number, number]), 1.4) },
+    },
+    {
+      id: 'cables-osm', type: 'line', source: 'cables-osm', layout: { ...NONE, 'line-join': 'round' },
+      paint: {
+        'line-color': OV_COLOR.cableOsm, 'line-width': zoomWidth(CABLE_W.map(([z, w]) => [z, 0.7 * w] as [number, number])),
+        'line-opacity': ['case', ['==', ['get', 'status'], 'disused'], 0.45, 0.9],
       },
     },
     {
@@ -198,18 +212,24 @@ export function overlayLayers(labelFont: string): LayerSpecification[] {
 }
 
 // ---------- #layers= deep link ----------
-export interface LayerState { ids: OverlayId[]; allWrecks: boolean }
+/** `osm`: the OpenStreetMap cable supplement is on too (only meaningful with cables). */
+export interface LayerState { ids: OverlayId[]; allWrecks: boolean; osm?: boolean; extra?: string[] }
+/** Tokens of the layers outside "Human activity" that share the layers= list (order kept as written). */
+export const EXTRA_LAYER_TOKENS = ['quakes', 'quakes-live', 'seamounts', 'chl', 'winds', 'currents'];
 /** `#layers=cables,wrecks` (alone or with story= / sea= / water=); `wrecks-all` = wrecks incl. bulk records. */
 export function layersFromHash(hash: string): LayerState | null {
   const m = /(?:^#|[#&])layers=([\w,-]*)(?:&|$)/.exec(hash);
   if (!m) return null;
   const toks = m[1].split(',').filter(Boolean);
   const allWrecks = toks.includes('wrecks-all');
-  const ids = OVERLAY_IDS.filter((id) => toks.includes(id) || (id === 'wrecks' && allWrecks));
-  return { ids, allWrecks };
+  const osm = toks.includes('cables-osm');
+  const ids = OVERLAY_IDS.filter((id) => toks.includes(id) || (id === 'wrecks' && allWrecks) || (id === 'cables' && osm));
+  const extra = EXTRA_LAYER_TOKENS.filter((t) => toks.includes(t));
+  return { ids, allWrecks, ...(osm ? { osm } : {}), ...(extra.length ? { extra } : {}) };
 }
 export function layersToken(s: LayerState): string {
-  return OVERLAY_IDS.filter((id) => s.ids.includes(id)).map((id) => (id === 'wrecks' && s.allWrecks ? 'wrecks-all' : id)).join(',');
+  return [...EXTRA_LAYER_TOKENS.filter((t) => s.extra?.includes(t)), ...OVERLAY_IDS.filter((id) => s.ids.includes(id))
+    .map((id) => (id === 'wrecks' && s.allWrecks ? 'wrecks-all' : id === 'cables' && s.osm ? 'cables-osm' : id))].join(',');
 }
 /** Writes or removes the layers= part, keeping the other parts in order. */
 export function hashWithLayers(hash: string, s: LayerState | null): string {
@@ -371,6 +391,62 @@ export function windCard(p: WindProps): CardModel {
     facts: facts([['Started', fmtStart(p.start)], ['Operator', p.operator], ['Waters of', p.country], ['Water depth', p.depth_m != null ? `about ${fmtInt(p.depth_m)} m` : '']]),
     links, source: ATTRIBUTION.osm,
   };
+}
+
+export interface OsmCableProps { name?: string; operator?: string; start_date?: string; status?: string; length_km?: number; osm?: string[]; osm_ways?: number; in_tg2022?: boolean; tg_name?: string; wikidata?: string }
+export function osmCableCard(p: OsmCableProps): CardModel {
+  const links: CardLink[] = [];
+  const o = osmUrl(p.osm?.[0]); if (o) links.push({ href: o, label: 'OpenStreetMap' });
+  if (p.wikidata) links.push({ href: wikidataUrl(p.wikidata), label: 'Wikidata' });
+  const ways = p.osm_ways ?? p.osm?.length ?? 0;
+  return {
+    kind: `Submarine cable, OpenStreetMap${p.status === 'disused' ? ', disused' : ''}`,
+    name: p.name || 'Unnamed cable',
+    lead: p.length_km ? `${fmtKm(p.length_km)} drawn in OpenStreetMap` : '',
+    facts: facts([['Operator', p.operator], ['Started', fmtStart(p.start_date)],
+      ['2022 snapshot', p.in_tg2022 ? `listed as ${p.tg_name ?? 'the same cable'}` : 'not in the TeleGeography 2022 snapshot'],
+      ['Mapped as', ways ? `${fmtInt(ways)} OSM way${ways === 1 ? '' : 's'}` : '']]),
+    links,
+    note: 'Drawn by OpenStreetMap mappers, mostly from nautical charts near the coast; long-haul routes are rarely mapped.',
+    source: ATTRIBUTION.osm,
+  };
+}
+
+// ---------- the Time panel: cables by ready-for-service year, wind farms by start year ----------
+/** Year filter for a property (features without it are hidden while the clock runs); null = no filter. */
+export function yearFilterOn(prop: string, year: number | null): unknown[] | null {
+  return year === null ? null : ['all', ['has', prop], ['<=', ['get', prop], year]];
+}
+/** Cable widths with the cables that entered service this year drawn wider. */
+export function cableWidthForYear(year: number | null, add = 0): unknown {
+  if (year === null) return zoomWidth(CABLE_W, add);
+  const isNew = ['==', ['coalesce', ['get', 'rfs_year'], 0], year];
+  return ['interpolate', ['linear'], ['zoom'], ...CABLE_W.flatMap(([z, w]) => [z, ['case', isNew, 2.2 * w + add, w + add]])];
+}
+export interface CableYear { cables: number; km: number; added: number; planned: number }
+export function cablesInService(feats: { properties: { rfs_year?: number; length_km?: number; planned?: boolean } }[], year: number): CableYear {
+  let cables = 0, km = 0, added = 0, planned = 0;
+  for (const f of feats) {
+    const y = f.properties.rfs_year;
+    if (y == null || y > year) continue;
+    cables++; km += f.properties.length_km ?? 0;
+    if (y === year) added++;
+    if (f.properties.planned) planned++;
+  }
+  return { cables, km, added, planned };
+}
+export interface WindYear { farms: number; mw: number; added: number; dated: number }
+export function windInService(feats: { properties: { start_year?: number; capacity_mw?: number } }[], year: number): WindYear {
+  let farms = 0, mw = 0, added = 0, dated = 0;
+  for (const f of feats) {
+    const y = f.properties.start_year;
+    if (y == null) continue;
+    dated++;
+    if (y > year) continue;
+    farms++; mw += f.properties.capacity_mw ?? 0;
+    if (y === year) added++;
+  }
+  return { farms, mw, added, dated };
 }
 
 // ---------- search ----------

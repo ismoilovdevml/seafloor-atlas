@@ -3,10 +3,12 @@
 // an object so the same copy serves the map, the cards and the search.
 import type { GeoJSONSource, Map as MlMap, MapGeoJSONFeature } from 'maplibre-gl';
 import {
-  CLICKABLE_LAYERS, DATA_FILES, ICONS, OV_COLOR, OVERLAY_ATTRIBUTION, OVERLAY_DATA, OVERLAY_IDS, OVERLAY_LAYERS,
-  cableCard, fmtInt, isNotableWreck, landingCard, normName, pipelineCard, platformCard, shortWindName, windCard, wreckCard, wreckFilter,
+  ATTRIBUTION, CLICKABLE_LAYERS, DATA_FILES, ICONS, OV_COLOR, OVERLAY_ATTRIBUTION, OVERLAY_DATA, OVERLAY_IDS, OVERLAY_LAYERS,
+  cableCard, cablesInService, cableWidthForYear, fmtInt, isNotableWreck, landingCard, normName, osmCableCard, pipelineCard, platformCard, shortWindName,
+  windCard, windInService, wreckCard, wreckFilter, yearFilterOn,
   type CardModel, type DataKey, type LayerState, type OverlayId, type SearchEntry,
 } from './overlays';
+import { yearFromText } from './timeline';
 
 type FC = GeoJSON.FeatureCollection<GeoJSON.Geometry, Record<string, any>>;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -90,6 +92,12 @@ export class OverlayUI {
   readonly on = new Set<OverlayId>();
   allWrecks = false;
   landing = true;
+  /** the OpenStreetMap cable supplement (sub-toggle of cables) */
+  osm = false;
+  /** year the Time panel applies to cables / wind farms (null = all) */
+  readonly year: { cables: number | null; wind: number | null } = { cables: null, wind: null };
+  private pending = new Map<string, Promise<unknown>>();
+  private landingDated = false;
   private files = new Map<DataKey, Promise<FC | null>>();
   private data = new Map<DataKey, FC>();
   private applied = new Set<DataKey>();
@@ -110,6 +118,7 @@ export class OverlayUI {
     }
     $<HTMLInputElement>('t-wrecks-all').addEventListener('change', (e) => this.setAllWrecks((e.target as HTMLInputElement).checked));
     $<HTMLInputElement>('t-landing').addEventListener('change', (e) => this.setLanding((e.target as HTMLInputElement).checked));
+    $<HTMLInputElement>('t-cables-osm').addEventListener('change', (e) => this.setOsm((e.target as HTMLInputElement).checked));
     for (const id of CLICKABLE_LAYERS) {
       map.on('mouseenter', id, () => { if (!map.getCanvas().style.cursor) map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', id, () => { if (map.getCanvas().style.cursor === 'pointer') map.getCanvas().style.cursor = ''; });
@@ -117,7 +126,10 @@ export class OverlayUI {
     this.renderStaticLegends();
   }
 
-  get state(): LayerState { return { ids: OVERLAY_IDS.filter((id) => this.on.has(id)), allWrecks: this.allWrecks }; }
+  get state(): LayerState {
+    const ids = OVERLAY_IDS.filter((id) => this.on.has(id));
+    return this.osm && ids.includes('cables') ? { ids, allWrecks: this.allWrecks, osm: true } : { ids, allWrecks: this.allWrecks };
+  }
 
   /** Fetch one data file once; features get an index `_i` for card lookups (rendered features lose arrays). */
   load(key: DataKey): Promise<FC | null> {
@@ -129,7 +141,8 @@ export class OverlayUI {
         fc.features.forEach((f, i) => {
           f.properties = f.properties ?? {};
           f.properties._i = i;
-          if (key === 'wind') f.properties.label = shortWindName(f.properties.name);
+          if (key === 'wind') { f.properties.label = shortWindName(f.properties.name); const y = yearFromText(f.properties.start); if (y) f.properties.start_year = y; }
+          if (key === 'cablesOsm') { const y = yearFromText(f.properties.start_date); if (y) f.properties.start_year = y; }
         });
         if (key === 'cables') for (const f of fc.features) this.cableNames.set(f.properties.id, f.properties.name);
         if (key === 'landing') for (const f of fc.features) this.landingNames.set(f.properties.id, f.properties.name);
@@ -146,14 +159,29 @@ export class OverlayUI {
     const fc = await this.load(key);
     if (!fc || this.applied.has(key)) return;
     this.applied.add(key);
-    (this.host.map.getSource(key) as GeoJSONSource).setData(fc);
+    // source ids are the data keys, except the OSM cable supplement
+    (this.host.map.getSource(key === 'cablesOsm' ? 'cables-osm' : key) as GeoJSONSource).setData(fc);
+  }
+
+  /** Landing points get the year their first cable entered service, so the Time panel can show them with it. */
+  private landingYears() {
+    const c = this.data.get('cables'), l = this.data.get('landing');
+    if (!c || !l || this.landingDated) return;
+    this.landingDated = true;
+    const year = new Map<string, number>(c.features.filter((f) => f.properties.rfs_year).map((f) => [f.properties.id, f.properties.rfs_year]));
+    for (const f of l.features) {
+      const ys = (f.properties.cables ?? []).map((id: string) => year.get(id)).filter((y: number | undefined): y is number => !!y);
+      // left unset when none of its cables has a year: the Time filter's ['has', ...] hides it then
+      if (ys.length) f.properties.first_year = Math.min(...ys);
+    }
+    if (this.applied.has('landing')) (this.host.map.getSource('landing') as GeoJSONSource).setData(l);
   }
 
   private visibility() {
     const map = this.host.map;
     for (const id of OVERLAY_IDS) {
       for (const layer of OVERLAY_LAYERS[id]) {
-        const vis = this.on.has(id) && !(layer === 'landing-points' && !this.landing);
+        const vis = this.on.has(id) && !(layer === 'landing-points' && !this.landing) && !(layer.startsWith('cables-osm') && !this.osm);
         map.setLayoutProperty(layer, 'visibility', vis ? 'visible' : 'none');
       }
     }
@@ -168,12 +196,74 @@ export class OverlayUI {
     if (!on && this.hlKey && this.hlKey.startsWith(`${id}:`)) this.clearHighlight();
     if (on && OVERLAY_DATA[id].length) {
       $(`ov-${id}`).setAttribute('aria-busy', 'true');
-      await Promise.all(OVERLAY_DATA[id].map((k) => this.ensureOnMap(k)));
+      const keys: DataKey[] = id === 'cables' && this.osm ? [...OVERLAY_DATA[id], 'cablesOsm'] : OVERLAY_DATA[id];
+      const p = Promise.all(keys.map((k) => this.ensureOnMap(k)));
+      this.pending.set(id, p);
+      await p;
       $(`ov-${id}`).removeAttribute('aria-busy');
+      if (id === 'cables') this.landingYears();
       this.renderCounts(id);
     }
     this.visibility();
     if (opts.notify !== false) this.host.onChange(this.state);
+  }
+  /** Resolves once the data of a layer that is on has loaded and been handed to the map (test hook). */
+  async whenReady(id: OverlayId | 'osm'): Promise<boolean> {
+    await this.pending.get(id);
+    return id === 'osm' ? this.applied.has('cablesOsm') : OVERLAY_DATA[id].every((k) => this.applied.has(k));
+  }
+
+  /** The OpenStreetMap cable supplement (loaded on first use; shown only while cables are on). */
+  async setOsm(on: boolean, notify = true) {
+    this.osm = on;
+    $<HTMLInputElement>('t-cables-osm').checked = on;
+    this.renderCablesKey();
+    if (on) {
+      const p = this.ensureOnMap('cablesOsm');
+      this.pending.set('osm', p);
+      $('ov-cables').setAttribute('aria-busy', 'true');
+      await p;
+      $('ov-cables').removeAttribute('aria-busy');
+      const fc = this.data.get('cablesOsm');
+      if (fc) $('ovn-cables-osm').textContent = `OpenStreetMap adds ${fmtInt(fc.features.length)} cables, mostly near European coasts, kept up to date weekly; ${fmtInt(fc.features.filter((f) => !f.properties.in_tg2022).length)} of them are not in the 2022 snapshot.`;
+    }
+    this.visibility();
+    if (notify) this.host.onChange(this.state);
+  }
+
+  // ---------- the Time panel ----------
+  /** Cables (and landing points, OSM cables) up to a ready-for-service year; null shows them all. */
+  setCableYear(year: number | null) {
+    this.year.cables = year;
+    const map = this.host.map;
+    map.setFilter('cables', yearFilterOn('rfs_year', year) as never);
+    map.setFilter('cables-casing', yearFilterOn('rfs_year', year) as never);
+    map.setFilter('landing-points', yearFilterOn('first_year', year) as never);
+    map.setFilter('cables-osm', yearFilterOn('start_year', year) as never);
+    map.setFilter('cables-osm-casing', yearFilterOn('start_year', year) as never);
+    map.setPaintProperty('cables', 'line-width', cableWidthForYear(year) as never);
+    map.setPaintProperty('cables-casing', 'line-width', cableWidthForYear(year, 1.6) as never);
+  }
+  /** Wind farms up to their start year (farms with no recorded start year are hidden meanwhile). */
+  setWindYear(year: number | null) {
+    this.year.wind = year;
+    this.host.map.setFilter('wind', yearFilterOn('start_year', year) as never);
+  }
+  /** Year range, per-year values for the slider strip, and the numbers for one year. */
+  async cableTimeline() {
+    const fc = await this.load('cables');
+    const feats = fc?.features ?? [];
+    const ys = feats.map((f) => f.properties.rfs_year).filter((y): y is number => typeof y === 'number');
+    const now = new Date().getUTCFullYear();
+    const first = Math.min(...ys), last = Math.max(now, Math.min(Math.max(...ys), now));
+    return { first, last, at: (y: number) => cablesInService(feats as never, y), perYear: (y: number) => feats.filter((f) => f.properties.rfs_year === y).length };
+  }
+  async windTimeline() {
+    const fc = await this.load('wind');
+    const feats = fc?.features ?? [];
+    const ys = feats.map((f) => f.properties.start_year).filter((y): y is number => typeof y === 'number');
+    const now = new Date().getUTCFullYear();
+    return { first: Math.min(...ys), last: now, total: feats.length, at: (y: number) => windInService(feats as never, y), perYear: (y: number) => feats.filter((f) => f.properties.start_year === y).length };
   }
 
   setAllWrecks(all: boolean, notify = true) {
@@ -192,6 +282,7 @@ export class OverlayUI {
   /** Apply a deep-link state (from #layers=). */
   async apply(s: LayerState) {
     this.setAllWrecks(s.allWrecks, false);
+    if (!!s.osm !== this.osm) await this.setOsm(!!s.osm, false);
     await Promise.all(OVERLAY_IDS.map((id) => (s.ids.includes(id) !== this.on.has(id) ? this.set(id, s.ids.includes(id), { notify: false }) : null)));
     this.host.onChange(this.state);
   }
@@ -199,10 +290,8 @@ export class OverlayUI {
   // ---------- legends ----------
   private renderStaticLegends() {
     const att = (id: OverlayId) => `<p class="ov-att">${OVERLAY_ATTRIBUTION[id]}</p>`;
-    $('ovk-cables').innerHTML = keyRow(lineKey(OV_COLOR.cable, '', 1.8), 'In service')
-      + keyRow(lineKey(OV_COLOR.cable, '5 3.5', 1.8), 'Planned in 2022')
-      + keyRow(`<svg width="28" height="10" aria-hidden="true"><circle cx="14" cy="5" r="3.6" fill="${OV_COLOR.cable}" stroke="${OV_COLOR.casing}" stroke-width="1"/></svg>`, 'Landing point');
-    $('ovn-cables').insertAdjacentHTML('afterend', att('cables'));
+    this.renderCablesKey();
+    $('ovn-cables').insertAdjacentHTML('afterend', `${att('cables')}<p class="ov-att">OpenStreetMap cables: ${ATTRIBUTION.osm}</p>`);
     $('ovk-pipelines').innerHTML = keyRow(lineKey(OV_COLOR.gas), 'Gas')
       + keyRow(lineKey(OV_COLOR.oil, '6 3.2'), 'Oil')
       + keyRow(lineKey(OV_COLOR.unknown, '1.6 3.6'), 'Substance not tagged');
@@ -218,6 +307,14 @@ export class OverlayUI {
     $('ovn-wrecks').insertAdjacentHTML('afterend', att('wrecks'));
     $('ovn-shipping').insertAdjacentHTML('afterend', att('shipping'));
     this.renderShippingLegend();
+  }
+
+  private renderCablesKey() {
+    $('ovk-cables').innerHTML = keyRow(lineKey(OV_COLOR.cable, '', 1.8), 'In service')
+      + keyRow(lineKey(OV_COLOR.cable, '5 3.5', 1.8), 'Planned in 2022')
+      + keyRow(`<svg width="28" height="10" aria-hidden="true"><circle cx="14" cy="5" r="3.6" fill="${OV_COLOR.cable}" stroke="${OV_COLOR.casing}" stroke-width="1"/></svg>`, 'Landing point')
+      + (this.osm ? keyRow(lineKey(OV_COLOR.cableOsm, '', 1.2), 'OpenStreetMap cable') : '');
+    $('ovl-cables-att').textContent = this.osm ? `${ATTRIBUTION.cables}; OpenStreetMap cables ${ATTRIBUTION.osm}` : ATTRIBUTION.cables;
   }
 
   private async renderShippingLegend() {
@@ -272,7 +369,7 @@ export class OverlayUI {
       this.host.map.easeTo({ center: (hit.geometry as GeoJSON.Point).coordinates as [number, number], zoom: Math.min(z + 0.3, 9), duration: 700 });
       return 'cluster';
     }
-    const key: DataKey | null = id === 'cables' ? 'cables' : id === 'landing-points' ? 'landing' : id === 'wrecks' ? 'wrecks'
+    const key: DataKey | null = id === 'cables' ? 'cables' : id === 'cables-osm' ? 'cablesOsm' : id === 'landing-points' ? 'landing' : id === 'wrecks' ? 'wrecks'
       : id === 'platforms' ? 'platforms' : id === 'pipelines' ? 'pipelines' : id === 'wind' ? 'wind' : null;
     if (!key) return null;
     const f = this.original(key, hit);
@@ -285,6 +382,7 @@ export class OverlayUI {
     switch (key) {
       case 'cables': return cableCard(p, (x) => this.landingNames.get(x));
       case 'landing': return landingCard(p, (x) => this.cableNames.get(x));
+      case 'cablesOsm': return osmCableCard(p);
       case 'wrecks': return wreckCard(p);
       case 'platforms': return platformCard(p);
       case 'pipelines': return pipelineCard(p);
@@ -292,8 +390,13 @@ export class OverlayUI {
     }
   }
   highlight(key: DataKey, f: GeoJSON.Feature) {
-    this.hlKey = `${key === 'landing' ? 'cables' : key === 'wind' ? 'wind' : key}:${(f.properties as any)?._i}`;
+    this.hlKey = `${key === 'landing' || key === 'cablesOsm' ? 'cables' : key}:${(f.properties as any)?._i}`;
     (this.host.map.getSource('ov-hl') as GeoJSONSource).setData({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: f.geometry }] });
+  }
+  /** Outline any geometry (earthquake, seamount cards use the same white ring as the overlays). */
+  highlightGeometry(g: GeoJSON.Geometry) {
+    this.hlKey = 'other';
+    (this.host.map.getSource('ov-hl') as GeoJSONSource).setData({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: g }] });
   }
   clearHighlight() {
     this.hlKey = null;

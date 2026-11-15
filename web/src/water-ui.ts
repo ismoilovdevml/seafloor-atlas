@@ -38,6 +38,8 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 export class WaterUI {
   man!: WaterManifest;
   open = false;
+  /** the surface-temperature layer is on without the panel (the Time panel's Months mode drives it) */
+  headless = false;
   v: WaterVar = 't';
   depthIdx = 0;
   month = 0; // 0 = annual mean
@@ -115,6 +117,7 @@ export class WaterUI {
   async show(opts: { v?: WaterVar; depth?: number } = {}) {
     if (!this.man) return;
     this.host.beforeOpen();
+    this.headless = false;
     this.open = true;
     $('water').hidden = false;
     $('ui').classList.add('water-open');
@@ -145,6 +148,30 @@ export class WaterUI {
     if (writeHash) this.writeHash();
     this.host.onChange();
     this.host.layout();
+  }
+
+  /** Surface temperature for `month` (0 = annual) on the map without opening the panel. */
+  async showLayer(month: number) {
+    if (!this.man) return;
+    if (this.open) { await this.set({ month }); return; }
+    const first = !this.headless;
+    this.headless = true;
+    this.v = 't'; this.depthIdx = 0; this.month = month;
+    this.ensureLayer();
+    this.host.map.setLayoutProperty('water', 'visibility', 'visible');
+    if (first) this.host.underlay(true);
+    this.renderControls();
+    await this.draw();
+    this.host.onChange();
+  }
+  hideLayer() {
+    if (!this.headless) return;
+    this.headless = false;
+    if (!this.open) {
+      if (this.added) this.host.map.setLayoutProperty('water', 'visibility', 'none');
+      this.host.underlay(false);
+    }
+    this.host.onChange();
   }
 
   private ensureLayer() {
@@ -180,7 +207,8 @@ export class WaterUI {
     if (s.stretch !== undefined) this.stretch = s.stretch;
     if (!this.monthly && this.playing) this.setPlaying(false);
     this.renderControls();
-    if (this.open) { await this.draw(); this.writeHash(); }
+    if (this.open || this.headless) await this.draw();
+    if (this.open) this.writeHash();
     if (this.colPoint) this.chart.setMapDepth(this.depth);
     this.host.onChange();
   }
@@ -290,7 +318,7 @@ export class WaterUI {
       requestAnimationFrame((ts) => this.tick(ts));
     } else {
       this.month = Math.round(this.monthPos) % 12 + 1;
-      if (this.open) { this.renderControls(); this.draw(); }
+      if (this.open || this.headless) { this.renderControls(); this.draw(); }
     }
   }
   /** Fetch the twelve monthly surface-temperature layers (about 6.6 MB); resolves with how many loaded. */
@@ -320,7 +348,7 @@ export class WaterUI {
   // ---------- hover ----------
   /** {label, value} for the readout, or null when the panel is closed. */
   readout(lon: number, lat: number): { label: string; value: string } | null {
-    if (!this.open) return null;
+    if (!this.open && !this.headless) return null;
     const meta = this.man.variables[this.v];
     const where = this.depth === 0 ? 'surface' : `${this.depth.toLocaleString('en-US')} m`;
     const label = `${TITLES[this.v]}, ${where}`;

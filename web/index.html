@@ -20,6 +20,8 @@
       <symbol id="i-profile" viewBox="0 0 24 24"><path d="M3 7.5h18" stroke="currentColor" stroke-width="1.4" stroke-dasharray="2 2.2" stroke-linecap="round"/><path d="M3 10.5c2 0 2.6 1.5 4 4.2s2 4.3 3.3 4.3 1.6-3 3-5.3c1.2-2 2.4-2.4 3.7-2.6S20 10.6 21 10.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <symbol id="i-sea" viewBox="0 0 24 24"><path d="M3 9.5c1.5 0 1.5-1.3 3-1.3s1.5 1.3 3 1.3 1.5-1.3 3-1.3 1.5 1.3 3 1.3 1.5-1.3 3-1.3 1.5 1.3 3 1.3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 12.5v7M9.2 16.8 12 19.6l2.8-2.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <symbol id="i-water" viewBox="0 0 24 24"><path d="M12 3.5c3.2 4 5.6 7.1 5.6 10.2a5.6 5.6 0 0 1-11.2 0C6.4 10.6 8.8 7.5 12 3.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9.3 14.2a2.8 2.8 0 0 0 2.6 2.7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+      <symbol id="i-time" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M12 7.2V12l3.2 2.1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-step" viewBox="0 0 20 20"><path d="M6 4.5v11M15 4.5l-7 5.5 7 5.5z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
       <symbol id="i-close" viewBox="0 0 24 24"><path d="m6.5 6.5 11 11m0-11-11 11" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
       <symbol id="i-chev" viewBox="0 0 20 20"><path d="M5 7.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     </defs>
@@ -79,6 +81,27 @@
         <summary>Data sources and licences</summary>
         <div class="credits-body" id="credits-body"></div>
       </details>
+      <details class="about-sources" id="about-privacy">
+        <summary>Privacy</summary>
+        <div class="credits-body">
+          <p>No cookies, no analytics, no account. Panel and layer preferences stay in your browser’s local storage.</p>
+          <p>The site is served by GitHub Pages, which logs IP addresses. Other hosts are contacted only when you use what needs them: Hugging Face for the zoom 6–7 depth tiles, Wikimedia Commons for a wreck photo when its card opens, and USGS for live earthquakes when you switch them on.</p>
+        </div>
+      </details>
+      <details class="about-sources" id="about-disclaimer">
+        <summary>Disclaimer</summary>
+        <div class="credits-body">
+          <p>Data are provided as is, without warranty of any kind. Depths derived from GEBCO are not for navigation.</p>
+          <p>Each layer keeps its source licence (some are non-commercial); see <a href="https://github.com/ismoilovdevml/seafloor-atlas/blob/main/LICENSES.md" target="_blank" rel="noopener">LICENSES.md</a> in the repository.</p>
+        </div>
+      </details>
+      <details class="about-sources" id="about-a11y">
+        <summary>Accessibility</summary>
+        <div class="credits-body">
+          <p>Every control works from the keyboard with a visible focus ring, panels are labelled for screen readers, and reduced-motion settings stop the animations.</p>
+          <p>Found a barrier? Please report it in the <a href="https://github.com/ismoilovdevml/seafloor-atlas/issues" target="_blank" rel="noopener">GitHub issues</a>.</p>
+        </div>
+      </details>
       <p class="about-keys"><kbd>/</kbd> or <kbd id="about-cmd">⌘K</kbd> search <kbd>Esc</kbd> close</p>
     </section>
 
@@ -133,6 +156,33 @@
             <div class="info" id="info-plates" hidden>
               <p>Where tectonic plates meet, coloured by how they move. Click a boundary for the two plates and their speed.</p>
               <p class="src">Bird (2003) PB2002, ODC-By 1.0.</p>
+            </div>
+          </li>
+          <li class="row" id="row-quakes">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-quakes" /> <span class="row-name">Earthquakes</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-quakes" aria-label="About earthquakes"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="row-sub">
+              <fieldset class="radio-list" id="quake-mode">
+                <legend class="sr-only">Which earthquakes</legend>
+                <label class="check-row"><input type="radio" name="quake-mode" value="history" checked /> <span>Since 1900 <span class="muted">magnitude 5.5 and up</span></span></label>
+                <label class="check-row"><input type="radio" name="quake-mode" value="live" /> <span>Last 30 days, live <span class="muted">2.5 and up</span></span></label>
+              </fieldset>
+              <p class="sub-note" id="quake-live-note" hidden></p>
+              <button class="time-link" type="button" data-time="quakes"><svg width="15" height="15" aria-hidden="true"><use href="#i-time"/></svg>Watch them year by year</button>
+            </div>
+            <div class="info" id="info-quakes" hidden>
+              <p class="stat" id="quakes-stat">Every earthquake of magnitude 5.5 or more since 1900, sized by magnitude and coloured by depth.</p>
+              <p>Early decades miss smaller events and depths are often fixed defaults; magnitudes are of mixed types. Click a circle for its card and the USGS event page.</p>
+              <p class="src" id="quakes-src"></p>
+            </div>
+          </li>
+          <li class="row" id="row-seamounts">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-seamounts" /> <span class="row-name">Seamounts</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-seamounts" aria-label="About seamounts"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="info" id="info-seamounts" hidden>
+              <p class="stat" id="seamounts-stat">69,770 undersea mountains at least 100 m tall, from two satellite-gravity catalogues.</p>
+              <p>Filled: a sonar sounding sits in the summit cell. Open ring: the summit depth is predicted from gravity. Taller seamounts first; the small ones appear as you zoom in.</p>
+              <p class="src" id="seamounts-src"></p>
             </div>
           </li>
           <li class="row on" id="row-features">
@@ -207,6 +257,36 @@
               <p class="src">OBIS (2026) www.obis.org; OBIS speciesgrids (OBIS + GBIF), CC BY-NC 4.0; <a href="https://www.aquamaps.org" target="_blank" rel="noopener">AquaMaps</a> (version 10/2019), CC BY-NC 3.0.</p>
             </div>
           </li>
+          <li class="row" id="row-chl">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-chl" /> <span class="row-name">Phytoplankton</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-chl" aria-label="About phytoplankton"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="row-sub"><button class="time-link" type="button" data-time="months"><svg width="15" height="15" aria-hidden="true"><use href="#i-time"/></svg>See the seasons</button></div>
+            <div class="info" id="info-chl" hidden>
+              <p class="stat">Chlorophyll-a seen from space, a measure of floating algae: from <strong>0.02 mg/m³</strong> in the South Pacific gyre to over 3 in the Peru upwelling.</p>
+              <p>Log scale, averaged over 2003–2026. Lakes are masked. Coastal values run high in muddy water, and polar seas have no data in winter.</p>
+              <p class="src">Chlorophyll-a: NASA OBPG, MODIS-Aqua R2022.0 climatology (doi:10.5067/AQUA/MODIS/L3M/CHL/2022.0)</p>
+            </div>
+          </li>
+          <li class="row" id="row-winds">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-winds" /> <span class="row-name">Winds</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-winds" aria-label="About winds"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="row-sub"><button class="time-link" type="button" data-time="months"><svg width="15" height="15" aria-hidden="true"><use href="#i-time"/></svg>See the seasons</button></div>
+            <div class="info" id="info-winds" hidden>
+              <p class="stat">Mean wind 10 m above the surface, 1991–2020: the trade winds, the westerlies and the monsoon that reverses over the Arabian Sea (from the NE in January, from the SW in July).</p>
+              <p>A monthly mean is a vector average, so it is calmer than any single day where winds change direction. Point at the map for speed and direction.</p>
+              <p class="src">Winds: NCEP/NCAR Reanalysis 1, 1991-2020 monthly means (NOAA PSL)</p>
+            </div>
+          </li>
+          <li class="row" id="row-currents">
+            <label class="row-main"><input type="checkbox" role="switch" id="t-currents" /> <span class="row-name">Ocean currents</span></label>
+            <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-currents" aria-label="About ocean currents"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="row-sub"><button class="time-link" type="button" data-time="months"><svg width="15" height="15" aria-hidden="true"><use href="#i-time"/></svg>See the seasons</button></div>
+            <div class="info" id="info-currents" hidden>
+              <p class="stat">Surface currents (top 30 m), 2015–2024: the Gulf Stream, Kuroshio and Agulhas reach about 1.3 m/s even as monthly means.</p>
+              <p>Averaging smooths eddies and meanders, so the jets look broader and slower than on any one day; no data under sea ice. One flow layer at a time: winds or currents.</p>
+              <p class="src">Currents: OSCAR v2.0 (ESR, NASA PO.DAAC), 2015-2024 monthly means</p>
+            </div>
+          </li>
         </ul>
       </section>
 
@@ -216,9 +296,14 @@
           <li class="row ov" id="ov-cables">
             <label class="row-main"><input type="checkbox" role="switch" id="t-cables" /> <span class="row-name">Internet cables</span></label>
             <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-cables" aria-label="About internet cables"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
-            <div class="row-sub"><label class="check-row"><input type="checkbox" id="t-landing" checked /> <span>Landing points</span></label></div>
+            <div class="row-sub">
+              <label class="check-row"><input type="checkbox" id="t-landing" checked /> <span>Landing points</span></label>
+              <label class="check-row"><input type="checkbox" id="t-cables-osm" /> <span>Also show OpenStreetMap cables</span></label>
+              <button class="time-link" type="button" data-time="cables"><svg width="15" height="15" aria-hidden="true"><use href="#i-time"/></svg>Watch them being laid</button>
+            </div>
             <div class="info" id="info-cables" hidden>
               <p class="stat" id="ovn-cables">Submarine telecom cables as of 14 November 2022, with the points where they come ashore.</p>
+              <p id="ovn-cables-osm">The OpenStreetMap supplement adds cables mapped since, mostly near European coasts, and is refreshed weekly.</p>
             </div>
           </li>
           <li class="row ov" id="ov-shipping">
@@ -253,6 +338,7 @@
           <li class="row ov" id="ov-wind">
             <label class="row-main"><input type="checkbox" role="switch" id="t-wind" /> <span class="row-name">Offshore wind farms</span></label>
             <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-wind" aria-label="About offshore wind farms"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
+            <div class="row-sub"><button class="time-link" type="button" data-time="wind"><svg width="15" height="15" aria-hidden="true"><use href="#i-time"/></svg>Watch them being built</button></div>
             <div class="info" id="info-wind" hidden>
               <p class="stat" id="ovn-wind">Offshore wind farms mapped in OpenStreetMap.</p>
             </div>
@@ -328,7 +414,38 @@
           <p class="ov-unit" id="marine-unit"></p>
           <ul class="key" id="marine-masked"><li><span class="veil-chip" aria-hidden="true"></span><span id="marine-masked-t"></span></li></ul>
         </section>
-        <section class="lg" id="ovl-cables" hidden aria-labelledby="lg-cables-t"><h3 id="lg-cables-t">Internet cables</h3><ul class="key ov-key" id="ovk-cables"></ul></section>
+        <section class="lg" id="lg-quakes" hidden aria-labelledby="lg-quakes-t">
+          <h3 id="lg-quakes-t">Earthquakes since 1900</h3>
+          <div class="ramp-bar" id="quake-bar"></div><div class="ramp-ticks" id="quake-ticks" aria-hidden="true"></div>
+          <p class="ov-unit" id="quake-cap">Hypocentre depth</p>
+          <div class="size-key" id="quake-sizes"></div>
+          <ul class="key"><li><span class="veil-chip" id="quake-unknown" aria-hidden="true"></span><span>Depth not known</span></li></ul>
+          <p class="lg-att">Earthquakes: USGS ANSS ComCat (public domain)</p>
+        </section>
+        <section class="lg" id="lg-seamounts" hidden aria-labelledby="lg-seamounts-t">
+          <h3 id="lg-seamounts-t">Seamounts</h3>
+          <ul class="key" id="seamount-key"></ul>
+          <p class="ov-unit">Larger circle, taller seamount; smaller ones appear as you zoom in</p>
+          <p class="lg-att">Seamounts: SDUST2026SM (Gao et al. 2026) and SIO 2023 / Kim &amp; Wessel 2011 (Gevorgian et al. 2023), CC BY 4.0; summits from GEBCO_2026</p>
+        </section>
+        <section class="lg" id="lg-history" hidden aria-labelledby="lg-history-t">
+          <h3 id="lg-history-t">Seafloor measured</h3>
+          <ul class="key" id="history-key"></ul>
+          <p class="lg-att">Mapping history from the GEBCO_2019-GEBCO_2026 Type Identifier grids (GEBCO Compilation Group); official percentages from Seabed 2030 / GEBCO announcements</p>
+        </section>
+        <section class="lg" id="lg-chl" hidden aria-labelledby="lg-chl-t">
+          <h3 id="lg-chl-t">Phytoplankton</h3>
+          <div class="ramp-bar" id="chl-bar"></div><div class="ramp-ticks" id="chl-ticks" aria-hidden="true"></div>
+          <p class="ov-unit">Chlorophyll-a near the surface, log scale; lakes masked</p>
+          <p class="lg-att">Chlorophyll-a: NASA OBPG, MODIS-Aqua R2022.0 climatology (doi:10.5067/AQUA/MODIS/L3M/CHL/2022.0)</p>
+        </section>
+        <section class="lg" id="lg-flow" hidden aria-labelledby="lg-flow-t">
+          <h3 id="lg-flow-t">Winds</h3>
+          <div class="ramp-bar flow-bar" id="flow-bar"></div><div class="ramp-ticks" id="flow-ticks" aria-hidden="true"></div>
+          <p class="ov-unit" id="flow-cap"></p>
+          <p class="lg-att" id="flow-att"></p>
+        </section>
+        <section class="lg" id="ovl-cables" hidden aria-labelledby="lg-cables-t"><h3 id="lg-cables-t">Internet cables</h3><ul class="key ov-key" id="ovk-cables"></ul><p class="lg-att" id="ovl-cables-att"></p></section>
         <section class="lg" id="ovl-shipping" hidden aria-labelledby="lg-shipping-t"><h3 id="lg-shipping-t">Shipping traffic</h3><div class="ov-key" id="ovk-shipping"></div></section>
         <section class="lg" id="ovl-wrecks" hidden aria-labelledby="lg-wrecks-t"><h3 id="lg-wrecks-t">Shipwrecks</h3><ul class="key ov-key" id="ovk-wrecks"></ul></section>
         <section class="lg" id="ovl-platforms" hidden aria-labelledby="lg-platforms-t"><h3 id="lg-platforms-t">Oil &amp; gas platforms</h3><ul class="key ov-key" id="ovk-platforms"></ul></section>
@@ -346,6 +463,7 @@
         <div class="r-pos"><dt class="sr-only">Latitude</dt><dd id="r-lat"></dd></div>
         <div class="r-pos"><dt class="sr-only">Longitude</dt><dd id="r-lon"></dd></div>
         <div class="r-extra" id="r-extra" hidden><dt id="r-extra-dt"></dt><dd id="r-extra-dd"></dd></div>
+        <div class="r-extra" id="r-extra2" hidden><dt id="r-extra2-dt"></dt><dd id="r-extra2-dd"></dd></div>
       </dl>
     </div>
 
@@ -435,6 +553,60 @@
       </div>
     </section>
 
+    <section class="time tool-panel" id="time" hidden aria-labelledby="time-title" data-mode="years">
+      <header class="time-head">
+        <h2 id="time-title">Time</h2>
+        <div class="seg time-modes" id="time-modes" role="radiogroup" aria-label="Time scale"></div>
+        <p class="time-sum" id="time-sum" aria-live="polite"></p>
+        <button class="min-btn" id="time-min" aria-expanded="true" aria-controls="time" aria-label="Minimise time"><svg width="18" height="18" aria-hidden="true"><use href="#i-chev"/></svg></button>
+        <button class="close" id="time-close" aria-label="Close time and show everything again"><svg width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
+      </header>
+      <div class="time-now">
+        <p class="time-big"><output class="time-value" id="time-value" for="time-range">2004</output><span class="time-unit" id="time-unit"></span></p>
+        <div class="time-text">
+          <p class="time-headline" id="time-headline"></p>
+          <p class="time-sub" id="time-sub" hidden></p>
+        </div>
+      </div>
+      <div class="time-sets" id="time-sets"></div>
+      <div class="time-control">
+        <div class="time-buttons">
+          <button class="time-step" id="time-back" type="button" aria-label="Step back"><svg width="16" height="16" aria-hidden="true"><use href="#i-step"/></svg></button>
+          <button class="sea-play time-play" id="time-play" type="button" aria-pressed="false" aria-label="Play">
+            <svg class="i-play" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M6 3.5v13l11-6.5z" fill="currentColor"/></svg>
+            <svg class="i-pause" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M5 3.5h3.5v13H5zM11.5 3.5H15v13h-3.5z" fill="currentColor"/></svg>
+          </button>
+          <button class="time-step fwd" id="time-fwd" type="button" aria-label="Step forward"><svg width="16" height="16" aria-hidden="true"><use href="#i-step"/></svg></button>
+        </div>
+        <div class="time-scale">
+          <div class="time-strip" id="time-strip" aria-hidden="true"></div>
+          <input type="range" id="time-range" min="1900" max="2026" step="1" value="2004" aria-label="Time" />
+          <div class="time-ticks" id="time-ticks" aria-hidden="true"></div>
+        </div>
+      </div>
+      <div class="time-opts">
+        <div class="seg time-only" id="time-only" role="radiogroup" aria-label="Which years to show" hidden>
+          <button type="button" role="radio" data-only="0" aria-checked="true">All up to this year</button>
+          <button type="button" role="radio" data-only="1" aria-checked="false">This year only</button>
+        </div>
+        <div class="time-speed-wrap"><span class="time-speed-label" aria-hidden="true">Speed</span><div class="seg time-speed" id="time-speed" role="radiogroup" aria-label="Playback speed"></div></div>
+        <p class="time-keys"><kbd>Space</kbd> play <kbd>[</kbd> <kbd>]</kbd> step</p>
+      </div>
+      <p class="time-note" id="time-note"></p>
+    </section>
+
+    <div class="time-offer" id="time-offer" role="status" hidden>
+      <span id="time-offer-text"></span>
+      <button class="text-btn" type="button" id="time-offer-go">Open Time</button>
+      <button class="close" type="button" id="time-offer-x" aria-label="Dismiss"><svg width="16" height="16" aria-hidden="true"><use href="#i-close"/></svg></button>
+    </div>
+
+    <div class="loading" id="loading" aria-hidden="true" hidden>
+      <span class="loading-label"><span id="loading-text">Loading map</span> · <span id="loading-pct">0%</span></span>
+      <span class="loading-track"><span class="loading-fill" id="loading-fill"></span></span>
+    </div>
+    <p class="sr-only" id="loading-live" role="status" aria-live="polite"></p>
+
     <!-- ================= tools: bottom centre on desktop, the Tools tab on a phone ================= -->
     <nav class="toolbar" id="toolbar" aria-label="Tools">
       <button class="tool" id="profile-btn" type="button" aria-pressed="false" aria-controls="profile">
@@ -445,6 +617,9 @@
       </button>
       <button class="tool" id="water-btn" type="button" aria-pressed="false" aria-controls="water">
         <svg width="20" height="20" aria-hidden="true"><use href="#i-water"/></svg><span>Ocean water</span>
+      </button>
+      <button class="tool" id="time-btn" type="button" aria-pressed="false" aria-controls="time">
+        <svg width="20" height="20" aria-hidden="true"><use href="#i-time"/></svg><span>Time</span><span class="tool-dot" id="time-dot" hidden></span>
       </button>
     </nav>
 
