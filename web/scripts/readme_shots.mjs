@@ -16,6 +16,8 @@ const SHOTS = [
   { name: 'cables', hash: '#layers=cables', cam: { center: [-35, 25], zoom: 1.95, pitch: 0, bearing: 0 } },
   { name: 'north-sea', hash: '#layers=platforms,pipelines,wind', cam: { center: [3.5, 56.5], zoom: 5.3, pitch: 0, bearing: 0 } },
   { name: 'shipping', hash: '#layers=shipping', cam: { center: [60, 15], zoom: 2.3, pitch: 0, bearing: 0 } },
+  { name: 'time-quakes', hash: '#layers=quakes&time=quakes-2004', cam: { center: [120, 0], zoom: 1.6, pitch: 0, bearing: 0 } },
+  { name: 'monsoon', hash: '#layers=chl,winds&time=month-7', cam: { center: [68, 8], zoom: 1.9, pitch: 0, bearing: 0 } },
 ];
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
