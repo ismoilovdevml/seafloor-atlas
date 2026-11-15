@@ -1,24 +1,74 @@
 {
   "title": "Seafloor Atlas: an interactive globe of the whole ocean floor and how much of it has been measured",
   "upload_type": "software",
-  "description": "<p>An interactive 3D globe of the whole ocean floor built from open data (GEBCO_2026), with the code and data pipeline behind it. It shows the shape of the seafloor, which parts were directly measured by ships (GEBCO type identifier grid), how sure the depth is elsewhere (model disagreement with AUST_2026_BAT, SWOT prediction confidence, seal dives from SO-ABBA), the water above it (World Ocean Atlas 2023 temperature, salinity, TEOS-10 density), marine life (OBIS, ES50, AquaMaps) and human activity at sea (cables, shipping, wrecks, platforms, pipelines, wind farms).</p><p>Key results computed in the repository: 30.8 % of the seafloor directly measured (GEBCO_2026), +4.1 million km&sup2; between the 2025 and 2026 grids; median error of 10 m at the 14 deepest places against published surveys; ocean volume 1.338 billion km&sup3;; national waters 38.0 % vs high seas 26.4 % measured.</p><p>Live viewer: https://ismoilovdevml.github.io/seafloor-atlas/ . Zoom 6&ndash;7 tiles: https://huggingface.co/datasets/ismoilovdev/seafloor-atlas-tiles . Data layers keep their own licences (listed in README.md); some are non-commercial.</p>",
+  "description": "<p>An interactive 3D globe of the whole ocean floor built from open data (GEBCO_2026), with the code and data pipeline behind it. It shows the shape of the seafloor, which parts were directly measured by ships (GEBCO type identifier grid), how sure the depth is elsewhere (model disagreement with AUST_2026_BAT, SWOT prediction confidence, seal dives from SO-ABBA), the water above it (World Ocean Atlas 2023 temperature, salinity, TEOS-10 density), marine life (OBIS, ES50, AquaMaps) and human activity at sea (cables, shipping, wrecks, platforms, pipelines, wind farms).</p><p>Key results computed in the repository: 30.8 % of the seafloor directly measured (GEBCO_2026), +4.1 million km&sup2; between the 2025 and 2026 grids; median error of 10 m at the 14 deepest places against published surveys; ocean volume 1.338 billion km&sup3;; national waters 38.0 % vs high seas 26.4 % measured.</p><p>Live viewer: https://ismoilovdevml.github.io/seafloor-atlas/ . Zoom 6&ndash;7 tiles: https://huggingface.co/datasets/ismoilovdev/seafloor-atlas-tiles . Code is MIT; data layers keep their own licences (per-file table in LICENSES.md); some are non-commercial or ShareAlike.</p>",
   "creators": [
-    { "name": "Ismoilov, Otabek" }
+    {
+      "name": "Ismoilov, Otabek",
+      "affiliation": "Independent researcher"
+    }
   ],
   "license": "MIT",
   "keywords": [
-    "bathymetry", "seafloor", "GEBCO", "Seabed 2030", "ocean mapping", "web map", "MapLibre",
-    "World Ocean Atlas", "OBIS", "marine biodiversity", "submarine cables", "open data"
+    "bathymetry",
+    "seafloor",
+    "GEBCO",
+    "Seabed 2030",
+    "ocean mapping",
+    "web map",
+    "MapLibre",
+    "World Ocean Atlas",
+    "OBIS",
+    "marine biodiversity",
+    "submarine cables",
+    "open data"
   ],
   "related_identifiers": [
-    { "identifier": "https://ismoilovdevml.github.io/seafloor-atlas/", "relation": "isDocumentedBy", "resource_type": "other" },
-    { "identifier": "https://huggingface.co/datasets/ismoilovdev/seafloor-atlas-tiles", "relation": "isSupplementedBy", "resource_type": "dataset" },
-    { "identifier": "10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa", "relation": "references", "resource_type": "dataset" },
-    { "identifier": "10.5281/zenodo.23850291", "relation": "references", "resource_type": "dataset" },
-    { "identifier": "10.5281/zenodo.22711109", "relation": "references", "resource_type": "dataset" },
-    { "identifier": "10.5281/zenodo.19121676", "relation": "references", "resource_type": "dataset" },
-    { "identifier": "10.5281/zenodo.17673974", "relation": "references", "resource_type": "dataset" },
-    { "identifier": "10.25923/54bh-1613", "relation": "references", "resource_type": "publication" },
-    { "identifier": "10.25923/70qt-9574", "relation": "references", "resource_type": "publication" }
-  ]
+    {
+      "identifier": "https://ismoilovdevml.github.io/seafloor-atlas/",
+      "relation": "isDocumentedBy",
+      "resource_type": "other"
+    },
+    {
+      "identifier": "https://huggingface.co/datasets/ismoilovdev/seafloor-atlas-tiles",
+      "relation": "isSupplementedBy",
+      "resource_type": "dataset"
+    },
+    {
+      "identifier": "10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa",
+      "relation": "references",
+      "resource_type": "dataset"
+    },
+    {
+      "identifier": "10.5281/zenodo.23850291",
+      "relation": "references",
+      "resource_type": "dataset"
+    },
+    {
+      "identifier": "10.5281/zenodo.22711109",
+      "relation": "references",
+      "resource_type": "dataset"
+    },
+    {
+      "identifier": "10.5281/zenodo.19121676",
+      "relation": "references",
+      "resource_type": "dataset"
+    },
+    {
+      "identifier": "10.5281/zenodo.17673974",
+      "relation": "references",
+      "resource_type": "dataset"
+    },
+    {
+      "identifier": "10.25923/54bh-1613",
+      "relation": "references",
+      "resource_type": "publication"
+    },
+    {
+      "identifier": "10.25923/70qt-9574",
+      "relation": "references",
+      "resource_type": "publication"
+    }
+  ],
+  "notes": "Licences: the code is MIT. The data files and figures are not MIT: each keeps the licence of its source (GEBCO terms with attribution; CC BY 4.0; CC0; public domain; ODbL 1.0 for OpenStreetMap-derived layers; CC BY-NC 4.0 for OBIS speciesgrids; CC BY-NC 3.0 for AquaMaps; CC BY-NC-SA 3.0 for the TeleGeography cable snapshot). Per-file details are in LICENSES.md. Some layers are non-commercial or ShareAlike. Depths are not for navigation; data provided as is. Part of the code and analysis was written with an AI assistant (Claude) under the author's direction."
 }

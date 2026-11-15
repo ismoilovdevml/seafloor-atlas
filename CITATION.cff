@@ -5,6 +5,8 @@ type: software
 authors:
   - family-names: Ismoilov
     given-names: Otabek
+    alias: ismoilovdevml
+    affiliation: Independent researcher
 version: 1.0.0
 doi: "10.5281/zenodo.24228191"
 identifiers:
@@ -12,7 +14,14 @@ identifiers:
     value: "10.5281/zenodo.24228190"
     description: "Concept DOI, all versions"
 date-released: 2026-11-15
-license: MIT
+# Code is MIT; data files keep their source licences (see LICENSES.md), some non-commercial or ShareAlike.
+license:
+  - MIT
+  - CC-BY-4.0
+  - CC-BY-NC-4.0
+  - CC-BY-NC-3.0
+  - CC-BY-NC-SA-3.0
+  - ODbL-1.0
 repository-code: "https://github.com/ismoilovdevml/seafloor-atlas"
 url: "https://ismoilovdevml.github.io/seafloor-atlas/"
 keywords:

@@ -81,7 +81,7 @@ Where ships never went, GEBCO and an independent gravity + deep-learning model (
 
 ![Marine life](figures/fig10_obis.png)
 
-Raw species counts mostly show where scientists sampled (records vs species ρ = 0.77). Corrected for sampling (ES50) and in the AquaMaps model, the Coral Triangle comes first while the North Sea drops from first to fifth. 45 % of the ocean has no species record at all at ~40 km resolution.
+*Figure licence: CC BY-NC 4.0 (OBIS speciesgrids, AquaMaps).* Raw species counts mostly show where scientists sampled (records vs species ρ = 0.77). Corrected for sampling (ES50) and in the AquaMaps model, the Coral Triangle comes first while the North Sea drops from first to fifth. 45 % of the ocean has no species record at all at ~40 km resolution.
 
 ## How it is built
 
@@ -160,7 +160,7 @@ The built site is about 404 MB (2026-11-15: depth tiles 195 MB, coverage 51 MB, 
 | Submarine cables | TeleGeography Submarine Cable Map, snapshot 2022-11-14 | CC BY-NC-SA 3.0 |
 | Platforms, pipelines, wind farms, OSM submarine cables | © OpenStreetMap contributors | ODbL |
 
-Code: MIT. Some data layers are non-commercial (NC); the site is non-commercial.
+**Code: MIT. Data and figures keep their source licences**: per-file table in [LICENSES.md](LICENSES.md). Some layers are non-commercial (CC BY-NC, CC BY-NC-SA) or ShareAlike (ODbL); the site is non-commercial. Depths are not for navigation; data is provided as is.
 
 ## Cite
 
