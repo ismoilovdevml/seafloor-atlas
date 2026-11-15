@@ -229,4 +229,5 @@ Disallow: /history/
 
 Sitemap: ${SITE}/sitemap.xml
 `);
+// IndexNow key file lives at public/<key>.txt (Bing, Yandex, Seznam, Naver); ping with scripts/indexnow.sh
 console.log(`wrote about, ${stories.length} view pages, sitemap (${urls.length} urls), robots.txt`);
