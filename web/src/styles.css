@@ -202,7 +202,7 @@ kbd { font: 600 11.5px/1 var(--sans); color: var(--ink-3); border: 1px solid var
 .row-name { font-size: 14.5px; font-weight: 500; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row.on .row-name { color: var(--ink); }
 .tag { font-size: 11.5px; font-weight: 600; color: var(--ink-3); border: 1px solid var(--line-strong); border-radius: 4px; padding: 1px 5px; }
-.base-dot { width: 30px; height: 18px; border-radius: 9px; flex: none; background: linear-gradient(90deg, #d4ecc6, #62b8b1 30%, #374f8a 65%, #140a22); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.base-dot { width: 30px; height: 8px; border-radius: 2px; flex: none; background: linear-gradient(90deg, #d4ecc6, #62b8b1 30%, #374f8a 65%, #140a22); box-shadow: inset 0 0 0 1px var(--line-strong); }
 .row[aria-busy='true'] .row-name::after { content: ' loading…'; color: var(--ink-3); font-weight: 400; font-size: 12.5px; }
 .info-btn {
   width: 34px; height: 34px; margin-right: 2px; border: 0; border-radius: 50%; background: none; color: var(--ink-3);
