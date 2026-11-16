@@ -1,0 +1,22 @@
+tid,group,meaning
+0,land,land
+10,direct,single beam
+11,direct,multibeam
+12,direct,seismic
+13,direct,isolated sounding
+14,direct,ENC sounding
+15,direct,lidar
+16,direct,optical light sensor
+17,direct,combination of direct measurement methods
+40,indirect,predicted from satellite-derived gravity
+41,indirect,interpolated by a computer algorithm
+42,indirect,digital bathymetric contours from charts
+43,indirect,digital bathymetric contours from ENCs
+44,indirect,multiple sources in a gridded data set guided by satellite gravity
+45,indirect,predicted from airborne gravity
+46,indirect,grounded-iceberg draft
+47,indirect,grounded Argo float
+48,indirect,animal-borne data logger
+70,unknown,pre-generated grid
+71,unknown,unknown source
+72,unknown,steering points
