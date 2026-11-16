@@ -18,7 +18,6 @@ const DOI_CONCEPT = '10.5281/zenodo.24228190';
 const VERSION = '1.3.0';
 const DOI_VERSION = '10.5281/zenodo.24287662';
 const DOI_DATASET = '10.5281/zenodo.24287579'; // cell-level record (netCDF + tables), CC BY 4.0
-const ESSD_MS = 'essd-2026-954'; // submitted 2026-11-16, not yet peer reviewed
 const UPDATED = '2026-11-16';
 
 export const KEY = {
@@ -167,7 +166,7 @@ const aboutBody = `<p class="crumbs"><a href="/">Seafloor Atlas</a> › About</p
 <h2>Frequently asked questions</h2>
 ${faq.map(([q, a]) => `<h3>${esc(q)}</h3>\n<p>${esc(a)}</p>`).join('\n')}
 <h2>For researchers</h2>
-<p>The measured share is computed from the public GEBCO Type Identifier grids of every release from 2019 to 2026 (codes 10–17 = direct measurement), on one fixed ocean mask, with every number traceable to a script. Code, derived data and figures are archived on Zenodo (<a href="https://doi.org/${DOI_VERSION}">doi:${DOI_VERSION}</a>, version ${VERSION}; all versions <a href="https://doi.org/${DOI_CONCEPT}">doi:${DOI_CONCEPT}</a>). The cell-level record behind these numbers (one netCDF file on the native 15″ grid plus tables, CC BY 4.0) is archived at <a href="https://doi.org/${DOI_DATASET}">doi:${DOI_DATASET}</a>. A data description paper about it has been submitted to <em>Earth System Science Data</em> (manuscript ${ESSD_MS}); it has not yet been peer reviewed.</p>
+<p>The measured share is computed from the public GEBCO Type Identifier grids of every release from 2019 to 2026 (codes 10–17 = direct measurement), on one fixed ocean mask, with every number traceable to a script. Code, derived data and figures are archived on Zenodo (<a href="https://doi.org/${DOI_VERSION}">doi:${DOI_VERSION}</a>, version ${VERSION}; all versions <a href="https://doi.org/${DOI_CONCEPT}">doi:${DOI_CONCEPT}</a>). The cell-level record behind these numbers (one netCDF file on the native 15″ grid plus tables, CC BY 4.0) is archived at <a href="https://doi.org/${DOI_DATASET}">doi:${DOI_DATASET}</a>.</p>
 <pre>Ismoilov, O. (2026). Seafloor Atlas: an interactive globe of the whole ocean floor
 and how much of it has been measured (Version ${VERSION}). Zenodo. https://doi.org/${DOI_VERSION}
 
