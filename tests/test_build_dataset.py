@@ -61,3 +61,89 @@ def test_area_from_lat_bnds_matches_history_rows():
     bnds = np.stack([-90 + i / 240, -90 + (i + 1) / 240], axis=1)
     a = bd.area_from_lat_bnds(bnds, 1 / 240)[::-1]
     assert np.allclose(a, history.row_area_km2(0, 4), rtol=1e-12)
+
+
+# ---------------------------------------------------------------- connectivity (inland_below_sea_level)
+
+def _brute_inland(mask: np.ndarray) -> np.ndarray:
+    """Reference: flood fill on the whole array, 8-connectivity, longitude wrap; largest component = world ocean."""
+    h, w = mask.shape
+    comp = np.full(mask.shape, -1)
+    sizes = []
+    for i0, j0 in zip(*np.nonzero(mask)):
+        if comp[i0, j0] >= 0:
+            continue
+        k = len(sizes)
+        stack, n = [(i0, j0)], 0
+        comp[i0, j0] = k
+        while stack:
+            i, j = stack.pop()
+            n += 1
+            for di in (-1, 0, 1):
+                for dj in (-1, 0, 1):
+                    ii, jj = i + di, (j + dj) % w
+                    if 0 <= ii < h and mask[ii, jj] and comp[ii, jj] < 0:
+                        comp[ii, jj] = k
+                        stack.append((ii, jj))
+        sizes.append(n)
+    if not sizes:
+        return np.zeros(mask.shape, bool)
+    return mask & (comp != int(np.argmax(sizes)))
+
+
+def test_inland_wrap_joins_across_180_degrees():
+    m = np.zeros((6, 8), bool)
+    m[:, 0] = m[:, 7] = True                     # one ocean, split by the edge of the array
+    m[2:4, 3:5] = True                           # a lake
+    inl = bd.inland_from_mask(m, strip=2)
+    assert inl[:, [0, 7]].max() == 0             # both edge columns are the world ocean
+    assert (inl[2:4, 3:5] == 1).all() and inl.astype(bool).sum() == 4
+
+
+def test_inland_diagonal_contact_across_strip_and_wrap_edges():
+    m = np.zeros((6, 8), bool)
+    m[:3, 0] = True                              # ocean: rows 0-2 in column 0 ...
+    m[3:, 7] = True                              # ... continue diagonally across 180 deg AND a strip edge (row 2|3)
+    m[0, 4] = True                               # isolated cell -> inland
+    inl = bd.inland_from_mask(m, strip=3)
+    assert inl[:, [0, 7]].max() == 0
+    assert inl[0, 4] == 1 and inl.astype(bool).sum() == 1
+
+
+def test_inland_matches_flood_fill_on_random_masks():
+    rng = np.random.default_rng(3)
+    for strip in (1, 3, 4, 7):
+        for _ in range(5):
+            m = rng.random((12, 15)) < 0.45
+            assert np.array_equal(bd.inland_from_mask(m, strip=strip) > 0, _brute_inland(m)), strip
+
+
+def test_inland_ranks_follow_area():
+    m = np.zeros((5, 10), bool)
+    m[:, 0] = True                                # world ocean (5 cells)
+    m[1, 3] = True                                # small lake (1 cell)
+    m[1:3, 6:8] = True                            # larger lake (4 cells)
+    area = np.array([1.0, 1.0, 1.0, 1.0, 1.0])
+    inl = bd.inland_from_mask(m, strip=2, area_row=area)
+    assert (inl[1:3, 6:8] == 1).all() and inl[1, 3] == 2
+
+
+def test_connect_mask_only_adds_connectivity():
+    ocean = np.array([[True, False, False, True]])
+    t26 = np.array([[11, 40, 0, 11]], dtype=np.int8)
+    e15 = np.array([[-5, -3, -3, -5]], dtype=np.int16)
+    assert bd.connect_mask(ocean, t26, e15).tolist() == [[True, True, False, True]]
+
+
+def test_ellipsoid_area_total_and_sphere_bias():
+    lat_bnds = np.stack([np.arange(-90, 90, 5.0), np.arange(-85, 95, 5.0)], axis=1)
+    a_e = bd.ellipsoid_area_from_lat_bnds(lat_bnds, 360.0)
+    assert np.isclose(a_e.sum(), 510_065_621.7, rtol=1e-8)          # WGS84 surface area
+    a_s = bd.area_from_lat_bnds(lat_bnds, 360.0)
+    assert np.isclose(a_s.sum(), a_e.sum(), rtol=1e-8)              # authalic sphere: same total area
+    assert a_s[0] < a_e[0] and a_s[18] > a_e[18]                    # sphere too small near the poles, large at equator
+
+
+def test_inland_name_lookup():
+    assert bd.inland_name((36.5, 49.6, 44.4, 55.7)) == "Caspian Sea and Caspian Depression"
+    assert bd.inland_name((0.0, 1.0, 0.0, 1.0)) == ""

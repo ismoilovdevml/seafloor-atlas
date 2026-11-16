@@ -13,6 +13,13 @@ if [ ! -f "$G/gebco_2026_elev_1arcmin.tif" ]; then
     "$G/gebco_2026_elev_1arcmin.tif"
 fi
 
+# Full 15" copy of the same mirror object (3.3 GB): used by pipeline/build_dataset.py for the connectivity of the
+# ocean mask (inland_below_sea_level); its overview level 1 is the 1' file above
+if [ ! -f "$G/GEBCO_2026_15s.tif" ]; then
+  U="https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/ausantarctic/gebco/GEBCO_2026.tif"
+  for i in $(seq 1 30); do curl -fL -C - --max-time 3600 -o "$G/GEBCO_2026_15s.tif" "$U" && break; sleep 5; done
+fi
+
 # TID grid: official file from BODC/CEDA (99 MB zip)
 if [ ! -f "$G/gebco_2026_tid.tif" ]; then
   U="https://dap.ceda.ac.uk/bodc/gebco/global/gebco_2026/type_identifier_grid/netcdf/gebco_2026_tid.zip?download=1"
