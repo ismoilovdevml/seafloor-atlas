@@ -50,6 +50,8 @@ All numbers are computed in this repository from the data listed below, area-wei
 
 **Agrees with earlier work.** Niyazi et al. (2025, *Frontiers in Marine Science*, doi:10.3389/fmars.2025.1543885) measured the same thing from the 2019–2024 grids and got 12.4 % for 2019 and 28.5 % for 2024. This repository gets 12.43 % and 28.54 %. What it adds: the area that drops out of "measured" between releases (0.8–4.6 million km² each time), the share measured in at least one release (33.0 %), the 2025 and 2026 grids, and code you can rerun.
 
+**Dataset.** The cell-level record behind these numbers (netCDF, 15″, per-release measured bitmask, first/last measured release, re-coded and inland flags, plus tidy CSV tables) is archived on Zenodo: [doi:10.5281/zenodo.24287579](https://doi.org/10.5281/zenodo.24287579) (CC BY 4.0). It is built by `pipeline/build_dataset.py`.
+
 **The cell size matters.** A 15″ cell is 463 m wide at the equator but only 80 m at 80°. On blocks of the same width everywhere, the share barely moves (31.1 %) and the Arctic stays the least measured. But if one sounding is allowed to count for a whole block, the share grows with the block: 33.5 % on ~0.9 km blocks, 37.7 % on ~1.9 km. So coverage numbers can only be compared at a stated cell size. Details: [docs/sensitivity_cellsize.md](docs/sensitivity_cellsize.md).
 
 ## What the data shows

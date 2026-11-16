@@ -26,6 +26,11 @@
   ],
   "related_identifiers": [
     {
+      "identifier": "10.5281/zenodo.24287579",
+      "relation": "compiles",
+      "resource_type": "dataset"
+    },
+    {
       "identifier": "https://seaflooratlas.org/",
       "relation": "isDocumentedBy",
       "resource_type": "other"
