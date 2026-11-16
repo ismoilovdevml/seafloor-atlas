@@ -80,7 +80,7 @@ jobs:
         if: steps.refresh.outputs.changed != ''
         run: |
           git config user.name ismoilovdevml
-          git config user.email ismoilovdevarchlinux@gmail.com
+          git config user.email 107093598+ismoilovdevml@users.noreply.github.com
           git add web/public/data/platforms.geojson web/public/data/pipelines.geojson \
             web/public/data/windfarms.geojson web/public/data/wrecks.geojson \
             web/public/data/cables-osm.geojson docs/cables-osm.md
