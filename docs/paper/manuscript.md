@@ -1,7 +1,7 @@
 ---
 title: "How much of the seafloor has been measured? A reproducible, release-by-release accounting of the GEBCO Type Identifier grids, 2019–2026"
 author: "Otabek Ismoilov"
-date: "Preprint, version 2, 16 November 2026"
+date: "16 November 2026"
 bibliography: references.bib
 link-citations: true
 lang: en-GB
@@ -11,7 +11,7 @@ header-includes:
   - \usepackage{fancyhdr}
   - \pagestyle{fancy}
   - \fancyhead{}
-  - \fancyhead[C]{\small This is a non-peer-reviewed preprint submitted to EarthArXiv.}
+  - \fancyhead[C]{\small Manuscript not yet peer reviewed.}
   - \fancyfoot[C]{\thepage}
   - \renewcommand{\headrulewidth}{0pt}
   - \usepackage{newunicodechar}
@@ -41,7 +41,7 @@ Main sources:
 
 **Otabek Ismoilov**, Independent researcher. ORCID: https://orcid.org/0009-0008-2785-3691. Correspondence: ismoilovdev@gmail.com.
 
-**Status:** This is a non-peer-reviewed preprint submitted to EarthArXiv.
+**Status:** This manuscript has not been peer reviewed.
 
 **Keywords:** bathymetry; GEBCO; Seabed 2030; ocean mapping; type identifier grid; reproducibility
 
@@ -281,7 +281,7 @@ Otabek Ismoilov: conceptualization, project administration, validation (review o
 
 # Use of AI tools
 
-Much of the code (the data pipeline, the analysis scripts and the figure scripts), the analyses run with it, the repository documentation and drafts of this manuscript, including this text, were produced by an AI assistant, Anthropic's Claude used through Claude Code, under the author's direction. The author defined the questions and scope, directed the work, reviewed the outputs and the text, and takes full responsibility for the content, including any errors. The AI assistant is not an author. The model was Claude Opus 5.5 (model identifier claude-opus-5-5), used between 12 and 16 November 2026.
+Much of the code (the data pipeline, the analysis scripts and the figure scripts), the analyses run with it, the repository documentation and earlier versions of this manuscript, including this text, were produced by an AI assistant, Anthropic's Claude used through Claude Code, under the author's direction. The author defined the questions and scope, directed the work, reviewed the outputs and the text, and takes full responsibility for the content, including any errors. The AI assistant is not an author. The model was Claude Opus 5.5 (model identifier claude-opus-5-5), used between 12 and 16 November 2026.
 
 # Competing interests
 
