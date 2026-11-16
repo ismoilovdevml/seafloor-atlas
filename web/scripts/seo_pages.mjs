@@ -15,8 +15,10 @@ const SITE = 'https://seaflooratlas.org';
 const REPO = 'https://github.com/ismoilovdevml/seafloor-atlas';
 const ORCID = 'https://orcid.org/0009-0008-2785-3691';
 const DOI_CONCEPT = '10.5281/zenodo.24228190';
-const VERSION = '1.2.0';
-const DOI_VERSION = '10.5281/zenodo.24260821';
+const VERSION = '1.3.0';
+const DOI_VERSION = '10.5281/zenodo.24287662';
+const DOI_DATASET = '10.5281/zenodo.24287579'; // cell-level record (netCDF + tables), CC BY 4.0
+const ESSD_MS = 'essd-2026-954'; // submitted 2026-11-16, not yet peer reviewed
 const UPDATED = '2026-11-16';
 
 export const KEY = {
@@ -95,7 +97,7 @@ const dataset = {
   name: 'Seafloor Atlas: an interactive globe of the whole ocean floor and how much of it has been measured',
   description: `Web tiles, derived grids and statistics built from the GEBCO 2019–2026 grids and their Type Identifier grids: seafloor depth, the share of the seafloor directly measured by ships (${KEY.measured} in GEBCO 2026, area-weighted), release-by-release changes, and regional statistics, with the code that computes them.`,
   url: `${SITE}/`, sameAs: [REPO, `https://doi.org/${DOI_CONCEPT}`],
-  identifier: [`https://doi.org/${DOI_CONCEPT}`, `https://doi.org/${DOI_VERSION}`],
+  identifier: [`https://doi.org/${DOI_DATASET}`, `https://doi.org/${DOI_CONCEPT}`, `https://doi.org/${DOI_VERSION}`],
   version: VERSION, creator: person, isAccessibleForFree: true,
   license: `${REPO}/blob/main/LICENSES.md`,
   keywords: ['bathymetry', 'seafloor', 'ocean floor map', 'GEBCO', 'Seabed 2030', 'ocean mapping', 'type identifier grid', 'multibeam', 'ocean depth'],
@@ -103,7 +105,10 @@ const dataset = {
   temporalCoverage: '2019/2026',
   variableMeasured: ['seafloor depth', 'share of the seafloor directly measured', 'ocean area', 'ocean volume'],
   includedInDataCatalog: { '@type': 'DataCatalog', name: 'Zenodo', url: 'https://zenodo.org' },
-  distribution: [{ '@type': 'DataDownload', encodingFormat: 'application/zip', contentUrl: `https://doi.org/${DOI_VERSION}` }],
+  distribution: [
+    { '@type': 'DataDownload', name: 'Cell-level record (netCDF-4, CF-1.8) and CSV tables', encodingFormat: 'application/x-netcdf', contentUrl: `https://doi.org/${DOI_DATASET}` },
+    { '@type': 'DataDownload', name: 'Code and derived web data', encodingFormat: 'application/zip', contentUrl: `https://doi.org/${DOI_VERSION}` },
+  ],
   isBasedOn: 'https://doi.org/10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa',
   dateModified: UPDATED,
 };
@@ -162,9 +167,12 @@ const aboutBody = `<p class="crumbs"><a href="/">Seafloor Atlas</a> › About</p
 <h2>Frequently asked questions</h2>
 ${faq.map(([q, a]) => `<h3>${esc(q)}</h3>\n<p>${esc(a)}</p>`).join('\n')}
 <h2>For researchers</h2>
-<p>The measured share is computed from the public GEBCO Type Identifier grids of every release from 2019 to 2026 (codes 10–17 = direct measurement), on one fixed ocean mask, with every number traceable to a script. Code, derived data and figures are archived on Zenodo (<a href="https://doi.org/${DOI_VERSION}">doi:${DOI_VERSION}</a>, version ${VERSION}; all versions <a href="https://doi.org/${DOI_CONCEPT}">doi:${DOI_CONCEPT}</a>). A preprint describing the method has been submitted to EarthArXiv.</p>
+<p>The measured share is computed from the public GEBCO Type Identifier grids of every release from 2019 to 2026 (codes 10–17 = direct measurement), on one fixed ocean mask, with every number traceable to a script. Code, derived data and figures are archived on Zenodo (<a href="https://doi.org/${DOI_VERSION}">doi:${DOI_VERSION}</a>, version ${VERSION}; all versions <a href="https://doi.org/${DOI_CONCEPT}">doi:${DOI_CONCEPT}</a>). The cell-level record behind these numbers (one netCDF file on the native 15″ grid plus tables, CC BY 4.0) is archived at <a href="https://doi.org/${DOI_DATASET}">doi:${DOI_DATASET}</a>. A data description paper about it has been submitted to <em>Earth System Science Data</em> (manuscript ${ESSD_MS}); it has not yet been peer reviewed.</p>
 <pre>Ismoilov, O. (2026). Seafloor Atlas: an interactive globe of the whole ocean floor
-and how much of it has been measured (Version ${VERSION}). Zenodo. https://doi.org/${DOI_VERSION}</pre>
+and how much of it has been measured (Version ${VERSION}). Zenodo. https://doi.org/${DOI_VERSION}
+
+Dataset: Ismoilov, O. (2026). A cell-level record of directly measured seafloor
+in the GEBCO grid releases 2019–2026 (Version 1.0.0). Zenodo. https://doi.org/${DOI_DATASET}</pre>
 `;
 const aboutLd = [
   dataset,
