@@ -51,6 +51,15 @@ CHECKLISTS = {
 - [ ] the scripts that sample the grid: `change.py`, `regions.py`, `hypsometry.py`, `trenches.py`, `features.py`, `disagree.py`, `uncertainty.py`, `seals.py`
 - [ ] overlays that use the "at sea" test and depths: `.venv/bin/python pipeline/refresh_overlays.py --no-fetch --allow-count-change`
 - [ ] bump the Actions cache key `sea-inputs-gebco{cur}` in `.github/workflows/refresh-data.yml`
+- [ ] mapping history with the new release: `.venv/bin/python pipeline/history.py fetch {new}`, `convert {new}`, `build`, `tiles`
+- [ ] cell-level dataset: `.venv/bin/python pipeline/build_dataset.py inputs connectivity build tables verify checksums`
+      (add the new release to the bitmask; `verify` must say VERIFY OK) and `pipeline/sensitivity_cellsize.py run report figure`
+- [ ] follow-up analyses: `pipeline/distance.py run`, `pipeline/blindtest.py run figure` (needs the {cur} and {new} elevation),
+      `pipeline/official_bracket.py`, `pipeline/shipping_gap.py`; compare the new official Seabed 2030 figure
+- [ ] website text: `.venv/bin/python pipeline/eez_cards.py`, then `cd web && node scripts/seo_pages.mjs`
+      (update KEY numbers in seo_pages.mjs first; `npx vitest run test/seo.test.ts` checks them against README)
+- [ ] README numbers, figures and screenshots (`web/scripts/readme_shots.mjs`, `pipeline/readme_images.py`)
+- [ ] new Zenodo dataset version (owner's decision: permanent DOI) and a GitHub release for the code
 """,
     "woa": """Rebuild the Ocean water layer with WOA{new_short} (currently WOA{cur_short}):
 

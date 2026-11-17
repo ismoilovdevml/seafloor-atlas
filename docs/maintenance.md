@@ -35,7 +35,7 @@ GitHub release, so releases stay a manual decision of the owner.
    change), so most weeks end with "no content change" and no commit.
 5. `npx vitest run test/overlays.test.ts` runs on the new files (cards from real features, attribution text).
    If it fails, nothing is committed.
-6. Commit as `ismoilovdevml <ismoilovdevarchlinux@gmail.com>` with a message such as
+6. Commit as `ismoilovdevml <107093598+ismoilovdevml@users.noreply.github.com>` with a message such as
    `Refresh data 2026-11-23: platforms, wrecks` and the before → after counts; push to `main`; start `pages.yml`
    (a push made with `GITHUB_TOKEN` does not trigger other workflows, so the job dispatches the deploy itself).
 7. If any layer failed, the run ends red with the reason in the job summary.
