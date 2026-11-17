@@ -104,6 +104,22 @@ Western European EEZs are almost fully surveyed (France 99.9 %, Ireland 97.7 %);
 
 Where ships never went, GEBCO and an independent gravity + deep-learning model (AUST_2026_BAT) differ by a median of 60 m, and by more than 100 m over a third of that area. In the Southern Ocean, 97,933 seal dives went more than 20 m deeper than the chart allows even after allowing for position error, mostly on the Antarctic shelf.
 
+### How far to the nearest measurement, and how wrong the predictions were
+
+| Distance to the nearest measurement | Predicted vs later measured depth |
+|---|---|
+| ![distance](figures/fig_distance_to_measurement.png) | ![blind test](figures/fig_blindtest.png) |
+
+Half of the ocean floor is within 3.5 km of a measured cell in GEBCO_2026 (31.5 km in GEBCO_2019), but one cell in twelve (8.1 %) is more than 50 km away; the farthest deep point, in the central Indian Ocean, is 525 km from any measurement. Where a satellite-gravity prediction in GEBCO_2024 was replaced by a measurement in GEBCO_2025 (18.3 million cells), the prediction was off by a median 31 m and by more than 100 m in 22 % of the cells, and the error stops growing beyond about 5 km from earlier data. Details: [docs/distance.md](docs/distance.md), [docs/blindtest.md](docs/blindtest.md).
+
+### The official figure and the shipping lanes
+
+| Seabed 2030 rule applied to the TID grids | Unmeasured seafloor under ship tracks |
+|---|---|
+| ![bracket](figures/fig_official_bracket.png) | ![shipping gap](figures/fig_shipping_gap.png) |
+
+Applying the Seabed 2030 definition (one sounding per 100–800 m cell, by depth) to the public grids gives a range for each release. The official figures for 2021–2026 fall inside it (2026: 20.4–30.8 %, official 28.7 %); those for 2019 and 2020 lie above it, which the grids cannot explain. 19.7 % of the unmeasured seafloor (49.0 million km²) lies under at least one ship track recorded in 2015–2021. The World Bank / IMF traffic raster is weighted, not a count of positions, so the shipping layer is shown as relative intensity. Details: [docs/official_bracket.md](docs/official_bracket.md), [docs/shipping_gap.md](docs/shipping_gap.md).
+
 ### Where life is, and where nobody has looked
 
 ![Marine life](figures/fig10_obis.png)
