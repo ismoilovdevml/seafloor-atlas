@@ -64,7 +64,9 @@ const demMaxZoom = maxZoomFor('dem');
 const sampler = new TileSampler(tilesBase, { ...meta, maxzoom: demMaxZoom });
 
 // ---------- map ----------
-const AUTO_EXAG: [number, number][] = [[0, 60], [2, 50], [3.5, 30], [5, 14], [6.5, 6], [8, 3]];
+// whole-globe zooms stay at about x20: at x50 steep walls on the rim (Aleutian, Kuril trenches, Andes) stood out as a
+// sawtooth silhouette, while the relief inside the disc comes mostly from the hillshade and barely changes
+const AUTO_EXAG: [number, number][] = [[0, 22], [2, 20], [3.5, 20], [5, 14], [6.5, 6], [8, 3]];
 function autoExaggeration(z: number): number {
   if (z <= AUTO_EXAG[0][0]) return AUTO_EXAG[0][1];
   for (let i = 1; i < AUTO_EXAG.length; i++) {
