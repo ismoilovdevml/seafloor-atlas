@@ -53,7 +53,8 @@ CHECKLISTS = {
 - [ ] bump the Actions cache key `sea-inputs-gebco{cur}` in `.github/workflows/refresh-data.yml`
 - [ ] mapping history with the new release: `.venv/bin/python pipeline/history.py fetch {new}`, `convert {new}`, `build`, `tiles`
 - [ ] cell-level dataset: `.venv/bin/python pipeline/build_dataset.py inputs connectivity build tables verify checksums`
-      (add the new release to the bitmask; `verify` must say VERIFY OK) and `pipeline/sensitivity_cellsize.py run report figure`
+      (add the new release to the bitmask; `verify` must say VERIFY OK), `pipeline/sensitivity_cellsize.py run report figure`
+      and `pipeline/survey_types.py`
 - [ ] follow-up analyses: `pipeline/distance.py run`, `pipeline/blindtest.py run figure` (needs the {cur} and {new} elevation),
       `pipeline/official_bracket.py`, `pipeline/shipping_gap.py`; compare the new official Seabed 2030 figure
 - [ ] website text: `.venv/bin/python pipeline/eez_cards.py`, then `cd web && node scripts/seo_pages.mjs`

@@ -62,6 +62,14 @@ All numbers are computed in this repository from the data listed below, area-wei
 
 Dark lines are single ship tracks; solid areas are full multibeam surveys. Everything grey has never been reached by sonar: its depth is predicted from tiny bumps in sea-surface gravity measured by satellites, which resolve only features a few kilometres across.
 
+### Mapping, release by release
+
+| Measured share per GEBCO release | How it was measured |
+|---|---|
+| ![history](figures/fig13_mapping_history.png) | ![survey types](figures/fig14_survey_types.png) |
+
+The measured share grew from 12.4 % in GEBCO_2019 to 30.8 % in GEBCO_2026, but it is not a running total: 33.0 % was measured in at least one release. Multibeam sonar is 26.4 % of the seafloor in 2026 and carries almost all of the growth; 3.0 % is coded as a combination of direct methods (a code first used in 2020) and 0.6 % as single-beam. Table: [docs/survey_types.md](docs/survey_types.md).
+
 ### The deepest places are the best known; the average seafloor is the least known
 
 ![Depth distribution and coverage by depth](figures/fig3_depth.png)
