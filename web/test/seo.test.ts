@@ -1,6 +1,6 @@
 // Guards for the static SEO pages written by scripts/seo_pages.mjs (committed under public/).
 import { describe, expect, it } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const WEB = join(__dirname, '..');
@@ -42,5 +42,27 @@ describe('static SEO pages', () => {
     const types = jsonLd(about).map((o) => (o as { '@type': string })['@type']);
     expect(types).toEqual(expect.arrayContaining(['Dataset', 'FAQPage', 'BreadcrumbList']));
     expect(jsonLd(read(`public/views/${stories[0].id}/index.html`)).length).toBe(2);
+  });
+});
+
+describe('EEZ report cards and downloads', () => {
+  const eez: { eez: { slug: string; share: number | null; ocean_km2: number; name: string }[] } = JSON.parse(read('public/data/eez.json'));
+  const rows = eez.eez.filter((r) => r.share !== null && r.ocean_km2 > 0);
+  it('has a page per EEZ with its share, listed in the sitemap and the index', () => {
+    const sm = read('public/sitemap.xml'); const idx = read('public/eez/index.html');
+    for (const r of rows) {
+      const html = read(`public/eez/${r.slug}/index.html`);
+      expect(html).toContain(`${(r.share! * 100).toFixed(1)} %`);
+      expect(sm).toContain(`<loc>https://seaflooratlas.org/eez/${r.slug}/</loc>`);
+      expect(idx).toContain(`href="/eez/${r.slug}/"`);
+    }
+  });
+  it('serves every dataset CSV table linked from the about page', () => {
+    const files = readdirSync(join(WEB, '../dataset/tables')).filter((f) => f.endsWith('.csv'));
+    expect(files.length).toBeGreaterThan(5);
+    for (const f of files) {
+      expect(read(`public/data/tables/${f}`)).toBe(read(`../dataset/tables/${f}`));
+      expect(about).toContain(`href="/data/tables/${f}"`);
+    }
   });
 });

@@ -1,4 +1,5 @@
 import '@fontsource-variable/newsreader/opsz.css';
+import { atFromHash } from './at';
 import '@fontsource-variable/atkinson-hyperlegible-next/wght.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './styles.css';
@@ -1502,6 +1503,9 @@ const linkedWater = waterReady ? water.fromHash(location.hash) : null;
 const linkedTime = timeFromHash(location.hash);
 if (linkedLayers) { overlays.apply(linkedLayers); if (linkedLayers.extra) applyExtra(linkedLayers.extra); }
 if (linked) playStory(linked, true);
+// #at=lon,lat[,zoom] opens the globe at a place (EEZ report-card links); a story takes precedence
+const linkedAt = linked ? null : atFromHash(location.hash);
+if (linkedAt) map.jumpTo({ center: [linkedAt.lon, linkedAt.lat], zoom: linkedAt.zoom, pitch: 0, bearing: 0 });
 // #sea=<metres> opens the sea-level panel at that level (after a story, which resets it)
 if (linkedSea !== null) openSea(linkedSea);
 // #water=t-1000 opens the ocean-water panel on that variable and depth
@@ -1525,6 +1529,8 @@ window.addEventListener('hashchange', () => {
   if (ts && (!timeUI?.open || hashWithTime('', ts) !== hashWithTime('', timeUI.state))) openTime(ts);
   const tn = tourFromHash(location.hash);
   if (tn && (!tour?.active || tour.index !== tn - 1)) startTour(tn);
+  const at = s ? null : atFromHash(location.hash);
+  if (at) map.flyTo({ center: [at.lon, at.lat], zoom: at.zoom, pitch: 0, bearing: 0, essential: true });
 });
 
 // ---------- test/capture hooks ----------

@@ -5,7 +5,7 @@
 // The map itself is a WebGL app that search engines cannot read; these pages carry the text.
 // usage: node scripts/seo_pages.mjs        (run after changing stories.json or the numbers below; commit the output)
 // Numbers: KEY must match the README "Key numbers" table (web/test/seo.test.ts checks this).
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, copyFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -133,6 +133,29 @@ const faq = [
     'No. It is an independent open-source project built on their public data and is not endorsed by them.'],
 ];
 
+
+// ---------- downloads: the dataset's CSV tables are served from the site; the netCDF stays on Zenodo ----------
+const TABLES_SRC = join(WEB, '..', 'dataset', 'tables');
+const TABLES = existsSync(TABLES_SRC) ? readdirSync(TABLES_SRC).filter((f) => f.endsWith('.csv')).sort() : [];
+mkdirSync(join(PUB, 'data', 'tables'), { recursive: true });
+for (const f of TABLES) copyFileSync(join(TABLES_SRC, f), join(PUB, 'data', 'tables', f));
+const TABLE_INFO = {
+  'global_by_release.csv': 'Global measured share per GEBCO release, with new, re-coded and ever-measured area and the official Seabed 2030 figure',
+  'by_latitude_band_by_release.csv': 'Measured share per 5° latitude band and release',
+  'by_depth_bin_by_release.csv': 'Measured share per 250 m depth bin and release',
+  'by_ocean_by_release.csv': 'Measured share per ocean basin (Marine Regions Global Oceans and Seas) and release',
+  'by_zone_by_release.csv': 'National waters (all EEZs) vs high seas per release',
+  'by_tid_code_by_release.csv': 'Area per GEBCO Type Identifier code and release (survey types)',
+  'recoded_away_by_destination_tid.csv': 'Area leaving the measured codes per transition, by the code it received',
+  'cellsize_sensitivity_2026.csv': 'Measured share on blocks of near-constant width (cell-size sensitivity)',
+  'inland_components.csv': 'Areas below sea level not connected to the world ocean (e.g. Caspian Sea)',
+  'tid_codes.csv': 'GEBCO Type Identifier codes and their meaning',
+};
+const downloadsHtml = `<h2>Downloads</h2>
+<p>Tables (CSV, CC BY 4.0, from the dataset <a href="https://doi.org/${DOI_DATASET}">doi:${DOI_DATASET}</a>; column definitions in its README):</p>
+<ul>${TABLES.map((f) => `<li><a href="/data/tables/${f}" download>${f}</a>${TABLE_INFO[f] ? ` – ${esc(TABLE_INFO[f])}` : ''}</li>`).join('')}
+<li><a href="/data/eez.json" download>eez.json</a> – measured share per EEZ, GEBCO 2026</li></ul>
+<p>The full cell-level record (one netCDF-4 file, 783 MB, every 15″ cell) is on Zenodo: <a href="https://doi.org/${DOI_DATASET}">doi:${DOI_DATASET}</a>.</p>`;
 // ---------- about ----------
 const aboutBody = `<p class="crumbs"><a href="/">Seafloor Atlas</a> › About</p>
 <h1>How much of the ocean floor has actually been measured?</h1>
@@ -161,10 +184,13 @@ const aboutBody = `<p class="crumbs"><a href="/">Seafloor Atlas</a> › About</p
 <li><strong>Follow winds, currents and phytoplankton</strong> through the seasons, and see marine life records and their gaps.</li>
 <li><strong>Human activity at sea</strong>: submarine cables, shipping lanes, shipwrecks, oil and gas platforms, pipelines, wind farms.</li>
 </ul>
+<h2>National waters</h2>
+<p>How much of each country’s seafloor is measured: <a href="/eez/">ranking of exclusive economic zones</a>.</p>
 <h2>Famous places on the seafloor</h2>
 <ul class="views">${stories.map((s) => `<li><a href="/views/${s.id}/">${esc(s.title)}<small>${fmtCoord(s.center)}</small></a></li>`).join('')}</ul>
 <h2>Frequently asked questions</h2>
 ${faq.map(([q, a]) => `<h3>${esc(q)}</h3>\n<p>${esc(a)}</p>`).join('\n')}
+${downloadsHtml}
 <h2>For researchers</h2>
 <p>The measured share is computed from the public GEBCO Type Identifier grids of every release from 2019 to 2026 (codes 10–17 = direct measurement), on one fixed ocean mask, with every number traceable to a script. Code, derived data and figures are archived on Zenodo (<a href="https://doi.org/${DOI_VERSION}">doi:${DOI_VERSION}</a>, version ${VERSION}; all versions <a href="https://doi.org/${DOI_CONCEPT}">doi:${DOI_CONCEPT}</a>). The cell-level record behind these numbers (one netCDF file on the native 15″ grid plus tables, CC BY 4.0) is archived at <a href="https://doi.org/${DOI_DATASET}">doi:${DOI_DATASET}</a>.</p>
 <pre>Ismoilov, O. (2026). Seafloor Atlas: an interactive globe of the whole ocean floor
@@ -222,8 +248,68 @@ ${img ? `<figure><img src="${img}" width="1200" height="630" loading="eager" alt
   void i;
 }
 
+// ---------- one report card per EEZ (data: public/data/eez.json from pipeline/eez_cards.py) ----------
+const eezData = JSON.parse(readFileSync(join(PUB, 'data', 'eez.json'), 'utf8'));
+const eezRows = eezData.eez.filter((r) => r.share !== null && r.ocean_km2 > 0);
+const pct = (x) => `${(x * 100).toFixed(1)} %`;
+const km2 = (x) => `${Math.round(x).toLocaleString('en-US')} km²`;
+const nRanked = eezData.meta.n_ranked;
+const eezRow = (r) => `<tr><td><a href="/eez/${r.slug}/">${esc(r.name)}</a></td><td>${esc(r.sovereign || '')}</td><td>${km2(r.ocean_km2)}</td><td>${pct(r.share)}</td></tr>`;
+const sorted = [...eezRows].sort((a, b) => (a.rank ?? 1e9) - (b.rank ?? 1e9) || b.share - a.share);
+mkdirSync(join(PUB, 'eez'), { recursive: true });
+writeFileSync(join(PUB, 'eez', 'index.html'), page({
+  path: '/eez/',
+  title: 'How much of each country’s seafloor is mapped? EEZ ranking | Seafloor Atlas',
+  description: `Directly measured share of the seafloor in ${eezRows.length} exclusive economic zones, from the GEBCO 2026 grid. All national waters together: ${KEY.eez}; the high seas: ${KEY.highSeas}.`,
+  image: null, imageAlt: 'Seafloor Atlas',
+  body: `<p class="crumbs"><a href="/">Seafloor Atlas</a> › National waters</p>
+<h1>How much of each country’s seafloor has been measured?</h1>
+<p class="lede">The share of the seafloor in each exclusive economic zone (EEZ) that is directly measured, mostly by ship sonar, in the GEBCO 2026 grid. All EEZs together are ${KEY.eez} measured, the high seas ${KEY.highSeas}, the whole ocean ${KEY.measured}.</p>
+<p>Ranked: ${nRanked} EEZs larger than ${eezData.meta.ranked_min_km2.toLocaleString('en-US')} km² (smaller ones carry boundary errors of a few percent). A low value means the data are not in the public grid, not necessarily that the area was never surveyed.</p>
+<table><tr><th>EEZ</th><th>Sovereign</th><th>Ocean area</th><th>Measured</th></tr>
+${sorted.map(eezRow).join('\n')}
+</table>`,
+  jsonld: [{ '@context': 'https://schema.org', '@type': 'BreadcrumbList', itemListElement: [
+    { '@type': 'ListItem', position: 1, name: 'Seafloor Atlas', item: `${SITE}/` },
+    { '@type': 'ListItem', position: 2, name: 'National waters', item: `${SITE}/eez/` }] }],
+}));
+for (const r of eezRows) {
+  const at = r.lon !== null ? `/#at=${r.lon},${r.lat},${r.zoom}` : '/';
+  const rankLine = r.rank ? `It ranks ${r.rank} of ${nRanked} exclusive economic zones larger than ${eezData.meta.ranked_min_km2.toLocaleString('en-US')} km².` : `It is too small (under ${eezData.meta.ranked_min_km2.toLocaleString('en-US')} km²) to be ranked reliably.`;
+  const body = `<p class="crumbs"><a href="/">Seafloor Atlas</a> › <a href="/eez/">National waters</a> › ${esc(r.name)}</p>
+<h1>How much of the seafloor in ${esc(r.name)} is mapped?</h1>
+<p class="lede">${pct(r.share)} of the seafloor in the ${esc(r.geoname || r.name)} is directly measured in the GEBCO 2026 grid, mostly by ship sonar. ${rankLine}</p>
+<p><a class="cta" href="${at}">See it on the 3D globe</a></p>
+<table>
+<tr><td>Seafloor area (ocean part of the zone)</td><td>${km2(r.ocean_km2)}</td></tr>
+<tr><td>Directly measured</td><td>${km2(r.measured_km2)} (${pct(r.share)})</td></tr>
+<tr><td>All national waters together</td><td>${KEY.eez}</td></tr>
+<tr><td>High seas</td><td>${KEY.highSeas}</td></tr>
+<tr><td>Whole ocean</td><td>${KEY.measured}</td></tr>
+${r.sovereign ? `<tr><td>Sovereign</td><td>${esc(r.sovereign)}</td></tr>` : ''}
+</table>
+<h2>What these numbers mean</h2>
+<p>"Directly measured" means the cell is coded TID 10–17 (multibeam, single beam, lidar, seismic or other direct soundings) in the GEBCO 2026 Type Identifier grid; everything else is estimated, mostly from satellite gravity. The numbers describe what has been shared with GEBCO: national and commercial surveys that were not contributed count as unmeasured. Zone boundaries come from Marine Regions (World EEZ v12, CC BY 4.0), rasterised on a 1′ grid, so very small zones carry errors of a few percent.</p>
+<p>In the 3D globe, switch on <em>What’s actually measured</em> to see which parts of this zone were surveyed. <a href="/about/">How the measured share is computed</a> · <a href="https://doi.org/${DOI_DATASET}">Dataset (doi:${DOI_DATASET})</a></p>`;
+  mkdirSync(join(PUB, 'eez', r.slug), { recursive: true });
+  writeFileSync(join(PUB, 'eez', r.slug, 'index.html'), page({
+    path: `/eez/${r.slug}/`,
+    title: `${r.name}: how much of the seafloor is mapped? | Seafloor Atlas`,
+    description: clip(`${pct(r.share)} of the seafloor in the ${r.geoname || r.name} is directly measured (GEBCO 2026). Area ${km2(r.ocean_km2)}${r.rank ? `, rank ${r.rank} of ${nRanked}` : ''}. See it on an interactive 3D globe.`),
+    image: null, imageAlt: `${r.name} seafloor mapping`, body,
+    jsonld: [
+      { '@context': 'https://schema.org', '@type': 'Place', name: r.geoname || r.name, url: `${SITE}/eez/${r.slug}/`,
+        ...(r.lon !== null ? { geo: { '@type': 'GeoCoordinates', latitude: r.lat, longitude: r.lon } } : {}) },
+      { '@context': 'https://schema.org', '@type': 'BreadcrumbList', itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Seafloor Atlas', item: `${SITE}/` },
+        { '@type': 'ListItem', position: 2, name: 'National waters', item: `${SITE}/eez/` },
+        { '@type': 'ListItem', position: 3, name: r.name, item: `${SITE}/eez/${r.slug}/` }] },
+    ],
+  }));
+}
+
 // ---------- sitemap + robots ----------
-const urls = ['/', '/about/', ...stories.map((s) => `/views/${s.id}/`)];
+const urls = ['/', '/about/', ...stories.map((s) => `/views/${s.id}/`), '/eez/', ...eezRows.map((r) => `/eez/${r.slug}/`)];
 writeFileSync(join(PUB, 'sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${urls.map((u) => `  <url><loc>${SITE}${u}</loc><lastmod>${UPDATED}</lastmod></url>`).join('\n')}
