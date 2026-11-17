@@ -1,7 +1,7 @@
 {
  "layer": "shipping",
  "title": "Shipping traffic density",
- "units": "AIS position reports per km² per year",
+ "units": "relative AIS traffic intensity (raster value per km² per year; the source calls it AIS positions, but the values are weighted, see docs/shipping_gap.md)",
  "period": "2015-01/2021-02",
  "scale": "log10",
  "log10Min": 2.5,

@@ -1,13 +1,17 @@
 """Global shipping traffic density -> web/public/tiles/shipping/{z}/{x}/{y}.webp + legend.json.
 
 Source: World Bank / IMF "Global Shipping Traffic Density" (dataset 0037580, CC BY 4.0):
-shipdensity_global.tif inside shipdensity_global.zip, Int32 count of AIS positions per 0.005 deg cell,
-Jan 2015 - Feb 2021, all vessel types. 72006 x 33998, about 85 S to 85 N, 9.8 GB uncompressed.
+shipdensity_global.tif inside shipdensity_global.zip, Int32 per 0.005 deg cell, Jan 2015 - Feb 2021, all vessel
+types. 72006 x 33998, about 85 S to 85 N, 9.8 GB uncompressed. The catalogue calls the values the "total number of AIS
+positions" (from hourly positions), but they are not counts: the raster sums to 6.56e14, ~6.6e5 times the ~1e9 hourly
+messages of the IMF AIS set, and a single ship's hourly fix in empty ocean carries 10^2-10^6.6 (median ~10^5.3);
+see pipeline/shipping_gap.py unit-check and docs/shipping_gap.md. The values are a relative intensity in undocumented
+raster units.
 
 Steps (see docs/data-contract.md, "Shipping traffic density"):
 1. stream the GeoTIFF straight out of the zip (/vsizip/, 128-row strips read in file order, no 9.8 GB
    extract) and sum 4 x 4 blocks -> 0.02 deg grid of counts (data/derived/shipping_counts_0p02deg.tif);
-2. counts / (cell area km2 * years) -> AIS positions per km2 per year;
+2. block sums / (cell area km2 * years) -> raster value per km2 per year (relative intensity);
 3. warp to Web Mercator at z5 x 512 px with GDAL 'average', 2x2 means for z4..z0 (same as the DEM);
 4. colour-map log10(density) and write lossy WebP RGBA (0 traffic = transparent).
 """
@@ -158,7 +162,7 @@ def legend(info: dict, maxzoom: int, tile: int) -> dict:
     return {
         "layer": "shipping",
         "title": "Shipping traffic density",
-        "units": "AIS position reports per km² per year",
+        "units": "relative AIS traffic intensity (raster value per km² per year; the source calls it AIS positions, but the values are weighted, see docs/shipping_gap.md)",
         "period": "2015-01/2021-02",
         "scale": "log10",
         "log10Min": LOG_MIN, "log10Max": LOG_MAX,

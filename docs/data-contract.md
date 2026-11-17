@@ -83,10 +83,12 @@ Details and roll-back: `docs/maintenance.md`.
 
 * Source: World Bank Data Catalog dataset 0037580 "Global Shipping Traffic Density",
   `shipdensity_global.zip` (https://datacatalog.worldbank.org/search/dataset/0037580). IMF World Seaborne
-  Trade Monitoring System: number of AIS positions reported by all ship types in each 0.005° cell
-  (about 500 m), Jan 2015 to Feb 2021, 85° S to 85° N. Licence CC BY 4.0.
+  Trade Monitoring System, all ship types, one value per 0.005° cell (about 500 m), Jan 2015 to Feb 2021,
+  85° S to 85° N. Licence CC BY 4.0. The catalogue describes the values as the number of AIS positions; they are
+  not (the raster sums to 6.56e14 and one hourly fix of one ship carries 10^2-10^6.6), so the unit is an
+  undocumented relative intensity (`docs/shipping_gap.md`).
 * Processing: 4 x 4 block sums (0.02° grid, `data/derived/shipping_counts_0p02deg.tif`), divided by the
-  spherical cell area and by 74/12 years, giving **AIS positions per km² per year**
+  spherical cell area and by 74/12 years, giving **raster value per km² per year** (relative intensity)
   (`data/derived/shipping_density_0p02deg.tif`). Warped to Web Mercator 512 px z5 with GDAL `average`,
   z4..z0 are 2x2 means (zeros included, so every level is an area mean).
 * Encoding: **lossy** WebP RGBA (quality 35, alpha quality 35: about 38.6 MB for 1,365 tiles), 512 px, z0-5; tiles with nothing to draw are tiny lossless transparent WebPs, so every z/x/y exists. Colour = matplotlib `inferno` (from 0.18 up) on
@@ -97,8 +99,8 @@ Details and roll-back: `docs/maintenance.md`.
   alphaMax, colormap, stops: [{value, log10, color}], tileSize, minzoom, maxzoom, source, sourceUrl,
   licence, attribution, tiles, emptyTiles, bytes}`; `stops` are the colours at log10Min, every whole log10 step and log10Max, for a
   legend bar.
-* The values are counts of AIS position reports, so they mix vessel numbers, speed and reporting rate,
-  and are best read as relative intensity. Satellite AIS coverage was weaker before about 2017 and in
+* The values are weighted AIS positions with an undocumented weight, so they mix vessel numbers, speed,
+  reporting rate and that weight, and can only be read as relative intensity. Satellite AIS coverage was weaker before about 2017 and in
   some busy regions, and the poles beyond 85° are not covered (transparent).
 
 ### Shipwrecks (`data/wrecks.geojson`)

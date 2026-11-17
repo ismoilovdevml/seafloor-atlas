@@ -328,8 +328,8 @@ export class OverlayUI {
     const ticks = lg.stops.filter((s) => Number.isInteger(s.log10) && s.log10 % 1 === 0 && s.log10 >= Math.ceil(lg.log10Min))
       .map((s) => `<span style="left:${pos(s.log10)}%">10${sup(s.log10)}</span>`).join('');
     const [y0, y1] = lg.period.split('/').map((x) => x.slice(0, 4));
-    $('ovk-shipping').innerHTML = `<div class="ov-bar" style="background:linear-gradient(90deg, ${grad})"></div><div class="ov-ticks" aria-hidden="true">${ticks}</div><p class="ov-unit">Ship position reports per km² per year, ${y0}–${y1}</p>`;
-    $('ovn-shipping').textContent = `AIS position reports per km² per year, ${y0}–${y1}. Read it as relative traffic: busy lanes, ports and fishing grounds glow.`;
+    $('ovk-shipping').innerHTML = `<div class="ov-bar" style="background:linear-gradient(90deg, ${grad})"></div><div class="ov-ticks" aria-hidden="true">${ticks}</div><p class="ov-unit">Relative traffic intensity, ${y0}–${y1}</p>`;
+    $('ovn-shipping').textContent = `Relative ship traffic from AIS position reports, ${y0}–${y1}. The source's values are weighted, not counts of ships or reports, so compare places with each other: busy lanes, ports and fishing grounds glow.`;
   }
 
   private renderCounts(id: OverlayId) {
