@@ -8,7 +8,7 @@ An interactive 3D globe of the whole ocean floor, built from open data. It shows
 
 ![Seafloor Atlas](docs/img/hero.jpg)
 
-New here? Press **Tour**: Ping, a small sonar buoy, walks you through the atlas in 12 short chapters. It moves the camera, switches the layers on and points at each control as it explains it. Every number it quotes comes from the data, with the source underneath. Start at any chapter with `#tour=N`.
+New here? Press **Tour**: Ping, a small sonar buoy, walks you through the atlas in 12 short chapters. It moves the camera, switches the layers on and points at each control as it explains it. Every number it quotes comes from the data, with the source underneath. Start at any chapter with `#tour=N`. The tour also speaks Uzbek: it switches by itself in an Uzbek browser, or add `&lang=uz`.
 
 ![Guided tour](docs/img/tour.jpg)
 

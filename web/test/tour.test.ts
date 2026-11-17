@@ -5,6 +5,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CHAPTERS } from '../src/tour-chapters';
 import { TEXT_EN } from '../src/tour-text-en';
+import { TEXT_UZ } from '../src/tour-text-uz';
+import { tourLang } from '../src/tour-lang';
 import { READ_MIN_MS, TOUR_LAYER_TOKENS, cameraFor, hashWithTour, nearCamera, readingMs, tourFromHash, wordCount } from '../src/tour-model';
 import { PRESETS, SEA_MAX, SEA_MIN, landAreaAt, type Hypsometry } from '../src/sealevel';
 import { BATHY_STOPS } from '../src/palette';
@@ -229,5 +231,30 @@ describe('tour numbers match their sources', () => {
     // main.ts writes the layer note from meta.stats.measured_fraction_area with one decimal, as FACTS does
     expect(read(join(WEB, 'src', 'main.ts'))).toContain('Seabed 2030 counts 28.7% for GEBCO 2026');
     expect(FACTS['Seabed 2030 figure 2026 (manifest)']).toBe('28.7');
+  });
+});
+
+describe('Uzbek tour text', () => {
+  // English "10,935" / "361.7" and Uzbek "10 935" / "361,7" are the same number
+  const enNums = (s: string) => numbersIn(s.replace(/(\d),(\d{3})\b/g, '$1$2')).sort();
+  const uzNums = (s: string) => (s.replace(/(\d)[  ](\d{3})\b/g, '$1$2').replace(/(\d),(\d)/g, '$1.$2').match(/\d+(?:\.\d+)?/g) ?? []).sort();
+  it('has every chapter and every UI string', () => {
+    expect(Object.keys(TEXT_UZ.chapters).sort()).toEqual(Object.keys(TEXT_EN.chapters).sort());
+    for (const [k, v] of Object.entries(TEXT_UZ.ui)) expect(typeof v === 'function' ? (v as (a: number, b: unknown) => string)(1, 'x') : v, k).toBeTruthy();
+    expect(TEXT_UZ.ui.count(3, 12)).toBe('3 / 12');
+  });
+  it('quotes exactly the English numbers in every chapter', () => {
+    for (const c of CHAPTERS) {
+      const en = TEXT_EN.chapters[c.id], uz = TEXT_UZ.chapters[c.id];
+      expect(uzNums(`${uz.title} ${uz.text}`), c.id).toEqual(enNums(`${en.title} ${en.text}`));
+      expect(uz.source).toBe(en.source);
+    }
+  });
+  it('is picked by #lang= first, then by the browser language', () => {
+    expect(tourLang(['uz-UZ', 'en'], '')).toBe('uz');
+    expect(tourLang(['en-US', 'uz'], '')).toBe('en');
+    expect(tourLang(['en-US'], '#tour=3&lang=uz')).toBe('uz');
+    expect(tourLang(['uz'], '#lang=en')).toBe('en');
+    expect(tourLang([], '')).toBe('en');
   });
 });

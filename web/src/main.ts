@@ -1,5 +1,6 @@
 import '@fontsource-variable/newsreader/opsz.css';
 import { atFromHash } from './at';
+import { tourLang } from './tour-lang';
 import '@fontsource-variable/atkinson-hyperlegible-next/wght.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './styles.css';
@@ -1484,7 +1485,9 @@ const tourHost: TourHost = {
 let tour: Tour | null = null;
 let tourP: Promise<Tour> | null = null;
 function loadTour(): Promise<Tour> {
-  tourP ??= import('./tour').then((m) => (tour = new m.Tour(tourHost)));
+  const uz = tourLang(navigator.languages ?? [navigator.language], location.hash) === 'uz';
+  tourP ??= Promise.all([import('./tour'), uz ? import('./tour-text-uz').then((m) => m.TEXT_UZ) : undefined])
+    .then(([m, text]) => (tour = new m.Tour(tourHost, undefined, text)));
   return tourP;
 }
 async function startTour(n = 1) { await (await loadTour()).start(n); }

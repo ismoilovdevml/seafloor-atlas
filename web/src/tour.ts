@@ -74,7 +74,8 @@ export class Tour {
   voice = false;
   /** id of the element spotlit now (null: none) */
   spotId: string | null = null;
-  readonly canSpeak = typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
+  /** read aloud only where the browser has speech, and for a non-English tour only with a voice for that language */
+  readonly canSpeak: boolean;
   readonly stats = { flights: 0, retries: 0, lastFlyMs: 0 };
   private token = 0;
   private elapsed = 0;
@@ -93,6 +94,10 @@ export class Tour {
   private applying: Promise<void> = Promise.resolve();
 
   constructor(private host: TourHost, readonly chapters: TourScene[] = CHAPTERS, private t: TourText = TEXT_EN) {
+    const speech = typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
+    let voiced = t.lang === 'en';
+    if (speech && !voiced) { try { voiced = speechSynthesis.getVoices().some((v) => v.lang.toLowerCase().startsWith(t.lang)); } catch { /* none */ } }
+    this.canSpeak = speech && voiced;
     this.root = document.createElement('section');
     this.build(this.root);
     this.spot = document.createElement('div');
@@ -369,8 +374,8 @@ export class Tour {
     const i = this.index, n = this.chapters.length, ch = this.chapters[i], tx = this.t.chapters[ch.id], u = this.t.ui;
     this.$('tour-count').textContent = u.count(i + 1, n);
     this.$('tour-title').textContent = tx.title;
-    // a number stays on the line of its unit ("10,935 m", "361.7 million km²")
-    this.$('tour-text').textContent = tx.text.replace(/(\d) (?=(m|km|cm|mg|million|years)\b)/g, '$1\u00a0');
+    // a number stays on the line of its unit ("10,935 m", "361.7 million km²") and of its thousands ("10 927")
+    this.$('tour-text').textContent = tx.text.replace(/(\d) (?=(m|km|cm|mg|million|years|yil)\b|\d{3}\b)/g, '$1\u00a0');
     this.$('tour-src').textContent = `${u.sourcePrefix}${tx.source}`;
     this.root.dataset.chapter = ch.id;
     this.$('tour-dots').querySelectorAll<HTMLButtonElement>('button').forEach((b, k) => {
