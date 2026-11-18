@@ -98,4 +98,4 @@ git push origin main                                                 # pages.yml
 To restore one file only: `git checkout <sha>~1 -- web/public/data/wrecks.geojson`, commit, push. To stop the
 weekly job while investigating: Actions → Refresh data → ⋯ → Disable workflow (or
 `gh workflow disable refresh-data.yml`). The site itself can be redeployed from any commit with
-Actions → Deploy viewer to GitHub Pages → Run workflow.
+Actions → Deploy viewer (Cloudflare Pages + GitHub Pages mirror) → Run workflow. The live site seaflooratlas.org is the Cloudflare Pages project `seafloor-atlas`; GitHub Pages is a mirror. The Cloudflare step needs the repository secret `CLOUDFLARE_API_TOKEN`.

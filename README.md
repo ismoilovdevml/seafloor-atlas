@@ -141,7 +141,7 @@ Gazetteer, PB2002, Marine Regions ──► features.py, plates.py, regions.py �
 
 * **"Measured"** = GEBCO type codes 10–17 (sonar, lidar, soundings). **"Ocean"** = type ≠ 0 and below sea level.
 * **Checks:** the COG mirror used for speed is identical to the official GEBCO server at 6 test sites; Challenger Deep reads −10,922 m at zoom 7 (official −10,927 m); the headline percentages are reproduced by two independent scripts; the viewer is tested in headless Chrome (90 checks: every layer, story, tool, deep link, phone layout, no console errors).
-* **Tiles:** Web Mercator 512 px lossless WebP (depth as Terrarium RGB). Zoom 0–5 on GitHub Pages; zoom 6–7 as PMTiles on [Hugging Face](https://huggingface.co/datasets/ismoilovdev/seafloor-atlas-tiles), read with HTTP range requests. Formats: [docs/data-contract.md](docs/data-contract.md). Prior work and how this differs: [docs/prior-work.md](docs/prior-work.md).
+* **Tiles:** Web Mercator 512 px lossless WebP (depth as Terrarium RGB). Zoom 0–5 on Cloudflare Pages (GitHub Pages mirror); zoom 6–7 as PMTiles on [Hugging Face](https://huggingface.co/datasets/ismoilovdev/seafloor-atlas-tiles), read with HTTP range requests. Formats: [docs/data-contract.md](docs/data-contract.md). Prior work and how this differs: [docs/prior-work.md](docs/prior-work.md).
 
 ## Run it
 
@@ -163,7 +163,7 @@ Every other layer has its own script in `pipeline/` (one per data source, each d
 
 * **Weekly (automatic):** `.github/workflows/refresh-data.yml` re-queries the OSM platforms, pipelines, wind farms and submarine cables (Overpass) and the Wikidata shipwrecks every Monday. Each new file is validated before it replaces the old one (schema, attribution, coordinates, feature count within ±20 %), only real changes are committed, then the site is redeployed.
 * **Monthly (automatic):** `.github/workflows/release-watch.yml` checks for a new GEBCO grid, World Ocean Atlas, OBIS speciesgrids build or AquaMaps version and opens one issue with the rebuild checklist. Those rebuilds run locally.
-* **Every deploy:** `pages.yml` warns above 750 MB and fails above 950 MB of built site (GitHub Pages limit 1 GB).
+* **Every deploy:** `pages.yml` warns above 750 MB and fails above 950 MB of built site (GitHub Pages limit 1 GB) and checks the Cloudflare Pages limits (20,000 files, 25 MiB per file).
 
 What runs when, the manual checklists and how to roll back a bad data commit: [docs/maintenance.md](docs/maintenance.md).
 
