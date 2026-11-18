@@ -62,6 +62,8 @@ const dataBase = synthetic ? 'tiles-synthetic/data' : 'data';
 configureTiles(tilesBase, meta.maxzoom, synthetic ? null : meta.hires);
 maplibregl.addProtocol(PROTOCOL, protocolHandler);
 const demMaxZoom = maxZoomFor('dem');
+/** highest zoom of the static tiles next to the page (fast); above it tiles come from the PMTiles archive */
+const staticMaxZoom = Math.min(meta.maxzoom, demMaxZoom);
 const sampler = new TileSampler(tilesBase, { ...meta, maxzoom: demMaxZoom });
 
 // ---------- map ----------
@@ -525,14 +527,26 @@ input.addEventListener('blur', () => setTimeout(() => { results.hidden = true; i
 let readToken = 0;
 let lastRead: { h: number; f: number | null } | null = null;
 let lastPoint: [number, number] | null = null;
+// The readout answers from the static tiles first (zoom meta.maxzoom, next to the page, fast), and refines from the
+// high-resolution archive only when the map itself is zoomed in that far. Reading every hover from the archive made
+// the readout hang for seconds on a slow link. Coordinates update at once, the values when they arrive.
 async function readout(lon: number, lat: number) {
   const t = ++readToken;
   lastPoint = [lon, lat];
-  const { h, f } = await sampler.sample([[lon, lat]]);
-  if (t !== readToken) return;
   $('readout-hint').hidden = true; $('readout-grid').hidden = false;
   $('r-lat').textContent = formatLat(lat);
   $('r-lon').textContent = formatLon(lon);
+  const zFast = staticMaxZoom;
+  showRead(lon, lat, await sampler.sample([[lon, lat]], zFast));
+  if (t !== readToken || demMaxZoom <= zFast || map.getZoom() < zFast) return;
+  const fine = await sampler.sample([[lon, lat]], demMaxZoom);
+  if (t === readToken && Number.isFinite(fine.h[0])) showRead(lon, lat, fine);
+  function showRead(lo: number, la: number, { h, f }: { h: number[]; f: (number | null)[] }) {
+    if (t !== readToken) return;
+    readLevel(lo, la, h, f);
+  }
+}
+function readLevel(lon: number, lat: number, h: number[], f: (number | null)[]) {
   lastRead = { h: h[0], f: f[0] };
   renderDepth();
   $('r-meas').textContent = f[0] === null ? 'land' : Number.isNaN(f[0]) ? 'n/a' : `${Math.round(f[0] * 100)}%`;
@@ -838,7 +852,8 @@ const water = new WaterUI({
   map, base: 'woa/',
   beforeOpen: () => { timeUI?.close(); if (seaOpen) closeSea(); if (profiling) setProfiling(false); if (marine.on) marine.set({ on: false }); if (oceanUI?.chlOn) oceanUI.setChl(false); },
   layout: () => updatePadding(),
-  seafloorAt: async (lon, lat) => (await sampler.sample([[lon, lat]])).h[0],
+  // static tiles only: the water-column caption should not wait on the high-resolution archive
+  seafloorAt: async (lon, lat) => (await sampler.sample([[lon, lat]], staticMaxZoom)).h[0],
   onChange: () => { renderWaterReadout(); syncWaterRow(); },
   underlay: (on) => setUnderlay(on),
 });
