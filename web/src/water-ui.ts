@@ -7,8 +7,8 @@
 import type { CanvasSource, Map as MlMap } from 'maplibre-gl';
 import { formatDepth, formatLat, formatLon } from './geo';
 import {
-  buildLut, cellFor, CMAPS, columnFromChunk, decimalsFor, decodeMapLayer, formatWater, gradientCss, hashWithWater, inflate,
-  layerKey, layerStep, legendTicks, MERC_WORLD, neighbours, renderMercator, sampleGrid, scaleRange, thermocline, waterFromHash,
+  BOTTOM, buildLut, cellFor, CMAPS, columnFromChunk, decimalsFor, decodeMapLayer, formatWater, gradientCss, hashWithWater, inflate,
+  depthLabel, layerKey, layerStep, legendTicks, MERC_WORLD, neighbours, renderMercator, sampleGrid, scaleRange, thermocline, waterFromHash, waterStops,
   type CellRef, type Column, type Grid, type WaterManifest, type WaterVar,
 } from './water';
 import { WaterChart, type PanelSpec } from './water-chart';
@@ -77,11 +77,12 @@ export class WaterUI {
       $('water-btn').hidden = true;
       return false;
     }
-    const depths = this.man.map.depths;
+    const depths = waterStops(this.man);
     $<HTMLInputElement>('water-depth').max = String(depths.length - 1);
-    const show = [0, 200, 1000, 2000, 5000];
+    const show = [0, 200, 1000, 2000, 5000, BOTTOM];
+    const tick = (d: number) => (d === BOTTOM ? 'floor' : d >= 1000 ? `${d / 1000} km` : d === 0 ? '0' : `${d} m`);
     $('water-depth-ticks').innerHTML = depths.map((d, i) => show.includes(d)
-      ? `<span style="left:${((100 * i) / (depths.length - 1)).toFixed(2)}%">${d >= 1000 ? `${d / 1000} km` : d === 0 ? '0' : `${d} m`}</span>` : '').join('');
+      ? `<span style="left:${((100 * i) / (depths.length - 1)).toFixed(2)}%">${tick(d)}</span>` : '').join('');
     $('month-strip').innerHTML = `<button type="button" role="radio" data-month="0" aria-checked="true">Year</button>`
       + MONTHS.map((m, i) => `<button type="button" role="radio" data-month="${i + 1}" aria-checked="false" aria-label="${MONTH_LONG[i]}">${m[0]}</button>`).join('');
     $('water-var').addEventListener('click', (e) => {
@@ -109,7 +110,8 @@ export class WaterUI {
     return true;
   }
 
-  get depth(): number { return this.man.map.depths[this.depthIdx]; }
+  get depth(): number { return waterStops(this.man)[this.depthIdx]; }
+  get atFloor(): boolean { return this.depth === BOTTOM; }
   /** month controls apply only to surface temperature (the monthly files) */
   get monthly(): boolean { return this.v === this.man.map.monthly.var && this.depth === this.man.map.monthly.depth; }
   get key(): string { return layerKey(this.v, this.depth, this.monthly ? this.month : 0); }
@@ -125,7 +127,7 @@ export class WaterUI {
     this.ensureLayer();
     this.host.map.setLayoutProperty('water', 'visibility', 'visible');
     this.host.underlay(true);
-    const depthIdx = opts.depth !== undefined ? Math.max(0, this.man.map.depths.indexOf(opts.depth)) : this.depthIdx;
+    const depthIdx = opts.depth !== undefined ? Math.max(0, waterStops(this.man).indexOf(opts.depth)) : this.depthIdx;
     await this.set({ v: opts.v ?? this.v, depthIdx });
     this.host.layout();
   }
@@ -209,7 +211,7 @@ export class WaterUI {
     this.renderControls();
     if (this.open || this.headless) await this.draw();
     if (this.open) this.writeHash();
-    if (this.colPoint) this.chart.setMapDepth(this.depth);
+    if (this.colPoint) this.chart.setMapDepth(this.atFloor ? null : this.depth);
     this.host.onChange();
   }
 
@@ -218,12 +220,12 @@ export class WaterUI {
     $('water-var').querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.var === this.v)));
     const di = $<HTMLInputElement>('water-depth');
     di.value = String(this.depthIdx);
-    const dtext = this.depth === 0 ? 'surface' : `${this.depth.toLocaleString('en-US')} m`;
+    const dtext = this.atFloor ? 'the seafloor' : this.depth === 0 ? 'surface' : `${this.depth.toLocaleString('en-US')} m`;
     di.setAttribute('aria-valuetext', dtext);
-    $('water-depth-out').textContent = this.depth === 0 ? 'Surface' : `${this.depth.toLocaleString('en-US')} m`;
+    $('water-depth-out').textContent = depthLabel(this.depth);
     // one-line state for the minimised header
     const mShown = this.monthly ? (this.playing ? Math.round(this.monthPos) % 12 + 1 : this.month) : 0;
-    $('water-sum').textContent = `${TITLES[this.v]} · ${this.depth === 0 ? 'Surface' : `${this.depth.toLocaleString('en-US')} m`}${mShown ? ` · ${MONTH_LONG[mShown - 1]}` : ''}`;
+    $('water-sum').textContent = `${TITLES[this.v]} · ${depthLabel(this.depth)}${mShown ? ` · ${MONTH_LONG[mShown - 1]}` : ''}`;
     // months: surface temperature only
     const mOn = this.monthly;
     $('water-months').setAttribute('aria-disabled', String(!mOn));
@@ -236,7 +238,8 @@ export class WaterUI {
     // legend
     const [lo, hi] = scaleRange(this.man, this.v, this.key, this.stretch);
     const unit = meta.units ? `, ${meta.units}` : '';
-    const label = this.v === 'd' ? `Potential density σ₀${unit}` : this.v === 's' ? 'Salinity (practical, no unit)' : `Temperature${unit}`;
+    const label = this.v === 'd' ? `Potential density ${this.atFloor ? 'σ₄' : 'σ₀'}${unit}` : this.v === 's' ? 'Salinity (practical, no unit)'
+      : `${this.atFloor ? 'Potential temperature θ' : 'Temperature'}${unit}`;
     $('water-legend-cap').textContent = `${label}${this.stretch ? ', stretched' : ''}`;
     $('water-bar').style.background = `linear-gradient(90deg, ${gradientCss(this.v)})`;
     $<HTMLInputElement>('water-stretch').checked = this.stretch;
@@ -250,7 +253,13 @@ export class WaterUI {
     const L = this.man.map.layers[layerKey(this.v, this.depth)];
     const vr = this.man.variables[this.v].range;
     let note: string;
-    if (this.playing || (mOn && this.month)) note = `Surface temperature in ${MONTH_LONG[(this.playing ? Math.round(this.monthPos) % 12 : this.month - 1)]}, averaged over 1991–2020.`;
+    const floorMin = (this.man.map.bottom?.sigma4_min_depth_m ?? 2000).toLocaleString('en-US');
+    if (this.atFloor && !this.stretch) {
+      note = this.v === 'd'
+        ? `Density of the water at the seafloor, referenced to 4,000 m (σ₄), shown where the floor is deeper than ${floorMin} m. The densest water, formed around Antarctica, spreads north along the bottom.`
+        : this.v === 's' ? 'Salinity of the deepest measured water in each cell. Water from the North Atlantic is saltier than the bottom water from Antarctica.'
+        : 'Temperature of the deepest measured water in each cell, without the warming from compression (θ). Bottom water below 0 °C sinks around Antarctica and creeps north along the ocean floor.';
+    } else if (this.playing || (mOn && this.month)) note = `Surface temperature in ${MONTH_LONG[(this.playing ? Math.round(this.monthPos) % 12 : this.month - 1)]}, averaged over 1991–2020.`;
     else if (!this.stretch && L && (L.p98 - L.p2) < 0.25 * (vr[1] - vr[0]))
       note = `At ${dtext} most water spans only ${fmt(L.p2, 2)}–${fmt(L.p98, 2)}${meta.units ? ` ${meta.units}` : ''}. Stretch the colours to see its structure.`;
     else if (this.v === 'd') note = 'Potential density: the density the water would have if brought to the surface (TEOS-10), minus 1,000 kg/m³. Denser water sinks under lighter water.';
@@ -350,8 +359,8 @@ export class WaterUI {
   readout(lon: number, lat: number): { label: string; value: string } | null {
     if (!this.open && !this.headless) return null;
     const meta = this.man.variables[this.v];
-    const where = this.depth === 0 ? 'surface' : `${this.depth.toLocaleString('en-US')} m`;
-    const label = `${TITLES[this.v]}, ${where}`;
+    const where = this.atFloor ? 'seafloor' : this.depth === 0 ? 'surface' : `${this.depth.toLocaleString('en-US')} m`;
+    const label = `${this.atFloor && this.v === 't' ? 'Potential temperature' : TITLES[this.v]}, ${where}`;
     let v = NaN;
     let L = this.man.map.layers[this.key];
     if (this.playing) {
@@ -419,7 +428,7 @@ export class WaterUI {
       v, title: v === 'd' ? 'σ₀' : TITLES[v], short: v === 't' ? 'T' : v === 's' ? 'S' : 'σ₀', units: this.man.variables[v].units, decimals: v === 't' ? 2 : 3,
       scale: this.man.variables[v].range,
     }));
-    this.chart.set(col, panels, this.depth);
+    this.chart.set(col, panels, this.atFloor ? null : this.depth);
     if (window.innerWidth < 760) $('wc-chart').scrollIntoView({ block: 'nearest' });
     this.host.layout();
     pt?.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [lon, lat] } }] });
@@ -431,7 +440,7 @@ export class WaterUI {
     const h = hashWithWater(location.hash, this.open ? { v: this.v, depth: this.depth } : null);
     if (h !== location.hash && !(h === '' && location.hash === '')) history.replaceState(null, '', h || location.pathname + location.search);
   }
-  fromHash(hash: string) { return this.man ? waterFromHash(hash, this.man.map.depths) : null; }
+  fromHash(hash: string) { return this.man ? waterFromHash(hash, waterStops(this.man)) : null; }
 
   renderStats() {
     const a = [...this.stats.renderMs].sort((x, y) => x - y);

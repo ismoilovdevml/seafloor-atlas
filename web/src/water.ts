@@ -6,21 +6,39 @@ import { MAX_MERC_LAT } from './geo';
 export type WaterVar = 't' | 's' | 'd';
 export const WATER_VARS: WaterVar[] = ['t', 's', 'd'];
 
-export interface LayerInfo { lo: number; step: number; hi: number; p2: number; p98: number; bytes: number; ocean_cells: number }
+export interface LayerInfo { lo: number; step: number; hi: number; p2: number; p98: number; bytes: number; ocean_cells: number;
+  /** default colour range of this layer when it differs from the variable's (the seafloor layers) */
+  range?: [number, number] }
+/** The "at the seafloor" layers (pipeline/woa.py bottom): theta, salinity, sigma4 at the deepest WOA level. */
+export interface BottomInfo { keys: Record<string, string>; sigma4_min_depth_m: number; level: string; t: string; s: string; d: string; z: string }
 export interface WaterManifest {
   period: string;
   citations: Record<string, string>;
   licence: string;
   variables: Record<WaterVar, { name: string; units: string; long: string; range: [number, number]; cmap: string }>;
   map: { res_deg: number; width: number; height: number; north: number; west: number; depths: number[];
-    monthly: { var: WaterVar; depth: number; months: number[] }; layers: Record<string, LayerInfo> };
+    monthly: { var: WaterVar; depth: number; months: number[] }; layers: Record<string, LayerInfo>; bottom?: BottomInfo };
   columns: { res_deg: number; width: number; height: number; chunk_deg: number; depths: number[];
     scale: number; offset: Record<WaterVar, number>; fill: number; vars: WaterVar[]; chunks: number };
 }
 
-/** Map-layer key in the manifest and file name: `t_1000`, monthly surface temperature `t_m03`. */
+/** Depth stop meaning "at the seafloor" (the deepest WOA level of each cell), after the fixed depths. */
+export const BOTTOM = -1;
+
+/** Map-layer key in the manifest and file name: `t_1000`, `t_bottom`, monthly surface temperature `t_m03`. */
 export function layerKey(v: WaterVar, depth: number, month = 0): string {
-  return month ? `${v}_m${String(month).padStart(2, '0')}` : `${v}_${depth}`;
+  if (month) return `${v}_m${String(month).padStart(2, '0')}`;
+  return depth === BOTTOM ? `${v}_bottom` : `${v}_${depth}`;
+}
+
+/** The depth slider's stops: the fixed map depths, then the seafloor when those layers are built. */
+export function waterStops(man: WaterManifest): number[] {
+  return man.map.bottom ? [...man.map.depths, BOTTOM] : man.map.depths;
+}
+
+/** 'Surface', '1,000 m' or 'Seafloor'. */
+export function depthLabel(d: number): string {
+  return d === BOTTOM ? 'Seafloor' : d === 0 ? 'Surface' : `${d.toLocaleString('en-US')} m`;
 }
 
 // ---------- colour scales ----------
@@ -63,7 +81,7 @@ export function gradientCss(v: WaterVar): string {
 export function scaleRange(man: WaterManifest, v: WaterVar, key: string, stretch: boolean): [number, number] {
   const L = man.map.layers[key];
   if (stretch && L && L.p98 > L.p2) return [L.p2, L.p98];
-  return man.variables[v].range;
+  return L?.range ?? man.variables[v].range;
 }
 
 /** ~5 round tick values inside [lo, hi]. */
@@ -249,15 +267,15 @@ export function thermocline(col: Column, minGradient = 0.02): { depth: number; g
   return best;
 }
 
-// ---------- deep link: #water=t-1000 (variable letter, depth in m) ----------
+// ---------- deep link: #water=t-1000 (variable letter, depth in m), #water=d-bottom (at the seafloor) ----------
 export function waterFromHash(hash: string, depths: number[]): { v: WaterVar; depth: number } | null {
-  const m = /(?:^#|[#&])water=([tsd])-(\d+)(?:&|$)/.exec(hash);
+  const m = /(?:^#|[#&])water=([tsd])-(\d+|bottom)(?:&|$)/.exec(hash);
   if (!m) return null;
-  const d = Number(m[2]);
+  const d = m[2] === 'bottom' ? BOTTOM : Number(m[2]);
   return depths.includes(d) ? { v: m[1] as WaterVar, depth: d } : null;
 }
 export function hashWithWater(hash: string, w: { v: WaterVar; depth: number } | null): string {
   const parts = hash.replace(/^#/, '').split('&').filter((p) => p && !p.startsWith('water='));
-  if (w) parts.push(`water=${w.v}-${w.depth}`);
+  if (w) parts.push(`water=${w.v}-${w.depth === BOTTOM ? 'bottom' : w.depth}`);
   return parts.length ? `#${parts.join('&')}` : '';
 }

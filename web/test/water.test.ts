@@ -3,7 +3,7 @@ import { deflateSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import {
   buildLut, cellFor, CMAPS, columnFromChunk, decodeMapLayer, hashWithWater, inflate, layerKey, legendTicks, lutIndex,
-  mercRowLat, neighbours, renderMercator, sampleGrid, scaleRange, thermocline, waterFromHash,
+  mercRowLat, neighbours, renderMercator, sampleGrid, scaleRange, thermocline, waterFromHash, BOTTOM, depthLabel, waterStops,
   type Column, type Grid, type WaterManifest,
 } from '../src/water';
 import { depthFrac, depthTicks } from '../src/water-chart';
@@ -140,6 +140,23 @@ describe('cells, profiles and links', () => {
     expect(waterFromHash('#water=x-0', depths)).toBeNull();
     expect(hashWithWater('#story=x', { v: 'd', depth: 0 })).toBe('#story=x&water=d-0');
     expect(hashWithWater('#water=d-0&sea=-120', null)).toBe('#sea=-120');
+  });
+
+  it('has a seafloor stop after the fixed depths, with its own key, label, link and colour range', () => {
+    const man = { variables: { t: { range: [-2, 32] } }, map: { depths: [0, 5000], bottom: { sigma4_min_depth_m: 2000 },
+      layers: { t_bottom: { p2: 0, p98: 20, range: [-1, 4] }, t_0: { p2: 0, p98: 29 } } } } as never;
+    expect(waterStops(man)).toEqual([0, 5000, BOTTOM]);
+    expect(waterStops({ map: { depths: [0, 5000] } } as never)).toEqual([0, 5000]);
+    expect(layerKey('d', BOTTOM)).toBe('d_bottom');
+    expect(depthLabel(BOTTOM)).toBe('Seafloor');
+    expect(depthLabel(0)).toBe('Surface');
+    expect(depthLabel(1500)).toBe('1,500 m');
+    expect(hashWithWater('#story=x', { v: 't', depth: BOTTOM })).toBe('#story=x&water=t-bottom');
+    expect(waterFromHash('#water=t-bottom', [0, 5000, BOTTOM])).toEqual({ v: 't', depth: BOTTOM });
+    expect(waterFromHash('#water=t-bottom', [0, 5000])).toBeNull();
+    expect(scaleRange(man, 't', 't_bottom', false)).toEqual([-1, 4]);
+    expect(scaleRange(man, 't', 't_bottom', true)).toEqual([0, 20]);
+    expect(scaleRange(man, 't', 't_0', false)).toEqual([-2, 32]);
     expect(layerKey('t', 0, 3)).toBe('t_m03');
     expect(layerKey('s', 1000)).toBe('s_1000');
   });

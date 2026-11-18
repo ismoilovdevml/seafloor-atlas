@@ -12,13 +12,21 @@ Climatology: WOA23 "decav91C0" = the 1991-2020 climate normal, objectively analy
           map/t_m<MM>.bin               monthly surface temperature, same encoding
           col/<i>_<j>.bin               1 deg water columns of a 30 x 30 deg region: int16 T, S, sigma0 at all
                                         102 levels, deflate compressed (lazily fetched by the viewer on click)
+  fetch-bottom : annual 0.25 deg t_an + s_an at all 102 levels, in slabs -> data/raw/woa23/levels/  ~ 850 MB
+  bottom : the "at the seafloor" layers from the deepest level with both T and S in each cell:
+          t_bottom = potential temperature theta (TEOS-10 pt0), s_bottom = practical salinity,
+          d_bottom = potential density sigma4 (referenced to 4,000 dbar) where that level is >= 2,000 m deep,
+          z_bottom = depth of that level; merged into web/public/woa/manifest.json (map.bottom, map.layers)
   check : prints the science spot checks (warm pool, Antarctic shelf, deep water, Atlantic/Bay of Bengal
           surface salinity, Mediterranean outflow tongue at 1,000 m)
 
 Density (TEOS-10, gsw): p = p_from_z(-z, lat); SA = SA_from_SP(SP, p, lon, lat); CT = CT_from_t(SA, t, p);
 sigma0 = rho(SA, CT, 0) - 1000 kg/m^3 (potential density anomaly referenced to the sea surface).
+At the seafloor, theta and sigma4 replace in-situ T and sigma0: in-situ T at 5,000 m is ~0.4 degC warmer from
+compression alone, and sigma0 can rank abyssal waters in the wrong order (Antarctic Bottom Water lighter than
+North Atlantic Deep Water in sigma0, heavier in sigma4).
 
-usage: .venv/bin/python pipeline/woa.py [fetch|build|check|all]
+usage: .venv/bin/python pipeline/woa.py [fetch|build|fetch-bottom|bottom|check|all]
 """
 from __future__ import annotations
 
@@ -44,7 +52,10 @@ VARS = {"t": "temperature", "s": "salinity"}
 # fixed colour ranges (same at every depth so depths are comparable); values outside are clamped in colour only
 RANGES = {"t": (-2.0, 32.0), "s": (32.0, 38.0), "d": (20.0, 28.0)}
 # map layers: uint16 q, value = lo + (q - 1) * step, q = 0 no data (step per variable)
-MAP_STEP = {"t": 0.01, "s": 0.005, "d": 0.005}
+MAP_STEP = {"t": 0.01, "s": 0.005, "d": 0.005, "z": 1.0}
+LEVELS = RAW / "levels"
+SLAB = 6                      # levels per OPeNDAP request in fetch_bottom (6 x 720 x 1440 float32 = 25 MB)
+BOTTOM_SIGMA4_MIN_Z = 2000.0  # sigma4 is the usual reference for abyssal water; shallower bottoms get no density
 # int16 water-column encoding: value = OFFSET + q * SCALE, q = -32768 means no data
 COL_SCALE = 0.001
 COL_OFFSET = {"t": 10.0, "s": 20.0, "d": 15.0}
@@ -296,9 +307,127 @@ def build() -> None:
         "sizes_bytes": sizes,
     }
     (OUT / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")))
+    if (LEVELS / "done.json").exists():
+        bottom()  # the manifest was just rewritten: merge the seafloor layers back in
     total = sum(p.stat().st_size for p in OUT.rglob("*") if p.is_file())
     print(f"wrote {OUT}: maps {sizes['map'] / 1e6:.1f} MB, columns {sizes['col'] / 1e6:.1f} MB in {nchunks} chunks, "
           f"total {total / 1e6:.1f} MB")
+
+
+# ---------------------------------------------------------------- at the seafloor
+
+def ensure_coords() -> dict:
+    RAW.mkdir(parents=True, exist_ok=True)
+    meta_p = RAW / "coords.json"
+    if not meta_p.exists():
+        meta_p.write_text(json.dumps({"q": coords(dods_url("t", "0.25", "00")), "one": coords(dods_url("t", "1.00", "00"))}))
+    return json.loads(meta_p.read_text())
+
+
+def fetch_bottom() -> None:
+    """All 102 annual levels of t_an and s_an at 0.25 deg, SLAB levels per request, one .npy per slab (resumable)."""
+    c = ensure_coords()
+    nl = len(c["q"]["depth"])
+    LEVELS.mkdir(parents=True, exist_ok=True)
+    jobs = [(v, k0) for v in VARS for k0 in range(0, nl, SLAB)]
+    for i, (v, k0) in enumerate(jobs, 1):
+        path = LEVELS / f"{v}_an_025_annual_L{k0:03d}.npy"
+        if path.exists():
+            continue
+        t0 = time.time()
+        a = _read(dods_url(v, "0.25", "00"), f"{v}_an", slice(k0, min(k0 + SLAB, nl)))
+        np.save(path.with_suffix(".tmp.npy"), a)
+        path.with_suffix(".tmp.npy").rename(path)
+        print(f"[{i}/{len(jobs)}] {path.name} {a.shape} in {time.time() - t0:.1f} s", flush=True)
+    (LEVELS / "done.json").write_text(json.dumps({"levels": nl, "slab": SLAB, "vars": list(VARS)}))
+    total = sum(p.stat().st_size for p in LEVELS.glob("*.npy"))
+    print(f"WOA23 0.25 deg levels: {total / 1e6:.0f} MB in {LEVELS}")
+
+
+def bottom_fields(slabs, depths) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Deepest level where both T and S exist, per cell. `slabs` yields (k0, T[l, y, x], S[l, y, x]) in increasing
+    k0 order; returns (T, S, depth) at that level, NaN where no level has both."""
+    tb = sb = zb = None
+    for k0, T, S in slabs:
+        if tb is None:
+            tb = np.full(T.shape[1:], np.nan, np.float32)
+            sb = np.full(T.shape[1:], np.nan, np.float32)
+            zb = np.full(T.shape[1:], np.nan, np.float32)
+        for j in range(T.shape[0]):
+            ok = np.isfinite(T[j]) & np.isfinite(S[j])
+            tb[ok], sb[ok], zb[ok] = T[j][ok], S[j][ok], depths[k0 + j]
+    return tb, sb, zb
+
+
+def bottom_properties(t: np.ndarray, sp: np.ndarray, z: np.ndarray, lon: np.ndarray, lat: np.ndarray,
+                      min_z_sigma4: float = BOTTOM_SIGMA4_MIN_Z) -> tuple[np.ndarray, np.ndarray]:
+    """(theta, sigma4) from in-situ T, practical salinity and depth (m, positive down); sigma4 is NaN where z is
+    shallower than min_z_sigma4. TEOS-10: theta = pt0_from_t(SA, t, p), sigma4 = rho(SA, CT, 4000 dbar) - 1000."""
+    import gsw
+
+    ok = np.isfinite(t) & np.isfinite(sp) & np.isfinite(z)
+    theta = np.full(t.shape, np.nan)
+    sig4 = np.full(t.shape, np.nan)
+    p = gsw.p_from_z(-z[ok].astype(np.float64), lat[ok])
+    sa = gsw.SA_from_SP(sp[ok], p, lon[ok], lat[ok])
+    theta[ok] = gsw.pt0_from_t(sa, t[ok], p)
+    s4 = gsw.sigma4(sa, gsw.CT_from_t(sa, t[ok], p))
+    s4[z[ok] < min_z_sigma4] = np.nan
+    sig4[ok] = s4
+    return theta, sig4
+
+
+def deep_range(a: np.ndarray, z: np.ndarray, step: float) -> list[float]:
+    """Default colour range for a seafloor layer: 2nd-98th percentile over cells whose bottom level is >= 2,000 m
+    (the abyssal water this layer is about), widened outward to whole steps x 10."""
+    v = a[np.isfinite(a) & (z >= BOTTOM_SIGMA4_MIN_Z)]
+    lo, hi = np.percentile(v, [2, 98])
+    g = step * 10
+    return [round(float(np.floor(lo / g) * g), 6), round(float(np.ceil(hi / g) * g), 6)]
+
+
+def bottom() -> None:
+    c = ensure_coords()
+    if not (LEVELS / "done.json").exists():
+        raise SystemExit("run `woa.py fetch-bottom` first")
+    latq, lonq, depths = np.array(c["q"]["lat"]), np.array(c["q"]["lon"]), np.array(c["q"]["depth"], float)
+    starts = sorted({int(p.stem.split("_L")[1]) for p in LEVELS.glob("t_an_025_annual_L*.npy")})
+
+    def slabs():
+        for k0 in starts:
+            yield k0, np.load(LEVELS / f"t_an_025_annual_L{k0:03d}.npy"), np.load(LEVELS / f"s_an_025_annual_L{k0:03d}.npy")
+
+    tb, sb, zb = bottom_fields(slabs(), depths)
+    LON, LAT = np.meshgrid(lonq, latq)
+    theta, sig4 = bottom_properties(tb, sb, zb, LON, LAT)
+    man_p = OUT / "manifest.json"
+    man = json.loads(man_p.read_text())
+    layers = man["map"]["layers"]
+    for key, a in (("t_bottom", theta), ("s_bottom", sb), ("d_bottom", sig4), ("z_bottom", zb)):
+        step = MAP_STEP[key[0]]
+        q, lo = quantise_u16(north_up(a), step)
+        blob = deflate(byte_planes(q))
+        (OUT / "map" / f"{key}.bin").write_bytes(blob)
+        ok = np.isfinite(a)
+        pct = np.nanpercentile(a, [2, 98]).tolist()
+        layers[key] = {"lo": round(lo, 6), "step": step, "hi": round(float(np.nanmax(a)), 5), "p2": round(pct[0], 4),
+                       "p98": round(pct[1], 4), "bytes": len(blob), "ocean_cells": int(ok.sum())}
+        if key != "z_bottom":
+            layers[key]["range"] = deep_range(a, zb, step)
+        print(f"{key}: {np.nanmin(a):.3f}..{np.nanmax(a):.3f}, cells {int(ok.sum())}, range {layers[key].get('range')}, "
+              f"{len(blob) / 1e6:.2f} MB", flush=True)
+    man["map"]["bottom"] = {
+        "keys": {"t": "t_bottom", "s": "s_bottom", "d": "d_bottom", "z": "z_bottom"},
+        "level": "deepest WOA23 standard level with both temperature and salinity in the 0.25 deg cell",
+        "t": "potential temperature theta (TEOS-10 pt0_from_t, reference 0 dbar), degC",
+        "s": "practical salinity (PSS-78) at that level",
+        "d": f"potential density anomaly sigma4 = rho(SA, CT, 4000 dbar) - 1000 kg/m3, only where that level is "
+             f">= {BOTTOM_SIGMA4_MIN_Z:.0f} m deep",
+        "z": "depth of that level, m (the WOA23 levels stop at 5,500 m; the seafloor can be deeper or between levels)",
+        "sigma4_min_depth_m": BOTTOM_SIGMA4_MIN_Z,
+    }
+    man_p.write_text(json.dumps(man, ensure_ascii=False, separators=(",", ":")))
+    print(f"merged seafloor layers into {man_p}")
 
 
 # ---------------------------------------------------------------- check
@@ -340,11 +469,27 @@ SPOTS = [
     ("Tropical surface sigma0", "d_0", 150.0, 0.0),
     ("Weddell Sea, 4,000 m sigma0", "d_4000", -30.0, -65.0),
 ]
+# seafloor spots: checked only when the seafloor layers are built
+BOTTOM_SPOTS = [
+    ("Weddell Sea abyssal plain, seafloor theta (AABW source, expect < 0)", "t_bottom", -30.0, -65.0),
+    ("Argentine Basin, seafloor theta (AABW flowing north)", "t_bottom", -45.0, -45.0),
+    ("Brazil Basin, seafloor theta", "t_bottom", -30.0, -15.0),
+    ("Canary Basin, seafloor theta (eastern N Atlantic, less AABW)", "t_bottom", -25.0, 30.0),
+    ("North Pacific, seafloor theta", "t_bottom", -150.0, 30.0),
+    ("Norwegian Sea basin, seafloor theta (expect < -0.5)", "t_bottom", 0.0, 69.0),
+    ("Weddell Sea, seafloor sigma4", "d_bottom", -30.0, -65.0),
+    ("Canary Basin, seafloor sigma4", "d_bottom", -25.0, 30.0),
+    ("Weddell Sea, depth of the deepest WOA level", "z_bottom", -30.0, -65.0),
+]
 
 
 def check() -> None:
     for label, key, lon, lat in SPOTS:
         print(f"{label:<66} {key:<7} ({lon:>7.2f}, {lat:>6.2f}): {map_value(key, lon, lat):8.3f}")
+    layers = json.loads((OUT / "manifest.json").read_text())["map"]["layers"]
+    if "t_bottom" in layers:
+        for label, key, lon, lat in BOTTOM_SPOTS:
+            print(f"{label:<66} {key:<8} ({lon:>7.2f}, {lat:>6.2f}): {map_value(key, lon, lat):8.3f}")
     c = column_at(-20.5, 30.5)
     ok = np.isfinite(c["t"])
     print("water column 20.5W 30.5N (Canary Basin), selected levels:")
@@ -356,12 +501,16 @@ def check() -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("step", nargs="?", default="all", choices=["fetch", "build", "check", "all"])
+    ap.add_argument("step", nargs="?", default="all", choices=["fetch", "build", "fetch-bottom", "bottom", "check", "all"])
     step = ap.parse_args().step
     if step in ("fetch", "all"):
         fetch()
+    if step in ("fetch-bottom", "all"):
+        fetch_bottom()
     if step in ("build", "all"):
-        build()
+        build()  # merges the seafloor layers too when the levels are fetched
+    if step == "bottom":
+        bottom()
     if step in ("check", "all"):
         check()
     sys.exit(0)

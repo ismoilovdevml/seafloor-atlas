@@ -100,3 +100,53 @@ def test_built_files_match_manifest_and_known_oceanography():
     ok = np.isfinite(c["t"])
     assert ok[0] and c["depth"][ok][-1] >= 4000
     assert np.all(np.diff(c["d"][ok]) > -0.01)                     # stably stratified column
+
+
+def test_bottom_fields_take_the_deepest_level_with_both_variables():
+    depths = np.array([0.0, 100.0, 1000.0, 4000.0])
+    nan = np.nan
+    # 3 cells: full column; T missing at the last level (S present); land (no data)
+    T = np.array([[[20.0, 20.0, nan]], [[10.0, 10.0, nan]], [[4.0, 4.0, nan]], [[1.0, nan, nan]]], np.float32)
+    S = np.array([[[35.0, 35.0, nan]], [[35.0, 35.0, nan]], [[34.9, 34.9, nan]], [[34.7, 34.7, nan]]], np.float32)
+    # two slabs, as fetch_bottom stores them
+    slabs = [(0, T[:2], S[:2]), (2, T[2:], S[2:])]
+    tb, sb, zb = woa.bottom_fields(iter(slabs), depths)
+    assert tb[0].tolist()[:2] == [1.0, 4.0]
+    assert zb[0].tolist()[:2] == [4000.0, 1000.0]   # second cell stops where T stops
+    assert sb[0, 1] == pytest.approx(34.9)
+    assert np.isnan(tb[0, 2]) and np.isnan(zb[0, 2])
+
+
+def test_bottom_properties_theta_cooler_than_in_situ_and_sigma4_only_deep():
+    t = np.array([2.0, 2.0, 15.0])
+    s = np.array([34.9, 34.9, 35.5])
+    z = np.array([5000.0, 2500.0, 500.0])
+    lon = np.zeros(3)
+    lat = np.full(3, -40.0)
+    theta, sig4 = woa.bottom_properties(t, s, z, lon, lat)
+    # adiabatic heating: in-situ 2 degC at 5,000 m is ~0.4 degC warmer than its potential temperature
+    assert 0.3 < t[0] - theta[0] < 0.6
+    assert t[1] - theta[1] < t[0] - theta[0]
+    # sigma4 of abyssal water is ~45-46 kg/m3; the 500 m bottom gets none
+    assert 45.0 < sig4[0] < 46.5 and 45.0 < sig4[1] < 46.5
+    assert np.isnan(sig4[2])
+
+
+def test_deep_range_ignores_shallow_cells():
+    a = np.array([0.1, 0.5, 1.0, 1.5, 2.0, 25.0, 28.0])
+    z = np.array([5000, 5000, 4000, 4000, 3000, 50, 20.0])
+    lo, hi = woa.deep_range(a, z, 0.01)
+    assert lo <= 0.1 and 2.0 <= hi < 3.0     # warm shelf water does not stretch the scale
+
+
+def test_seafloor_layers_when_built():
+    man_p = Path(woa.OUT) / "manifest.json"
+    man = json.loads(man_p.read_text())
+    if "bottom" not in man["map"]:
+        pytest.skip("seafloor layers not built (woa.py fetch-bottom + bottom)")
+    for k in ("t_bottom", "s_bottom", "d_bottom", "z_bottom"):
+        assert (Path(woa.OUT) / "map" / f"{k}.bin").exists()
+        assert man["map"]["layers"][k]["ocean_cells"] > 0
+    # Antarctic Bottom Water: the Weddell Sea floor is colder than the Canary Basin floor and denser in sigma4
+    assert woa.map_value("t_bottom", -30.0, -65.0) < 0.0 < woa.map_value("t_bottom", -25.0, 30.0)
+    assert woa.map_value("d_bottom", -30.0, -65.0) > woa.map_value("d_bottom", -25.0, 30.0)
