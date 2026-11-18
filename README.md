@@ -176,6 +176,17 @@ The built site is about 404 MB (2026-11-15: depth tiles 195 MB, coverage 51 MB, 
 3. viewer change (not written yet): today `web/src/tilesource.ts` reads PMTiles only above zoom 5 and only for `dem`/`coverage`, so the moved layer needs an "archive for all zooms" path in `fetchTile` (and its source must go through the `sfa://` protocol); then remove the folder from `web/public/tiles/`;
 4. run `npm test` and the browser QA, and check the size guard output in the Pages run.
 
+### Performance on slow GPUs
+
+Drawing the globe is limited by fill rate: the pixels drawn per frame grow with the square of the pixel ratio, and multisample antialiasing adds to that. `web/src/quality.ts` therefore caps the pixel ratio at 1.5 on touch screens and 2 elsewhere, antialiases only 1x screens, and lowers the pixel ratio in steps of 0.5 (down to 1) when the globe moves at under about 22 frames per second. Dragging the globe with a software GPU (SwiftShader, 2026-11-18):
+
+| Screen | Before | After |
+|---|---|---|
+| phone, 390 × 844, pixel ratio 3 | 6.7 fps | 22.7–27.3 fps (pixel ratio 1.5) |
+| desktop, 1440 × 900, pixel ratio 2 | 4.3 fps | 9.0 fps (stepped down to 1) |
+
+`?pr=<ratio>` and `?aa=0|1` override both settings for comparisons.
+
 ## Limits
 
 * Away from ship surveys the real detail is a few km (satellite gravity), so zooming in there shows smooth terrain.

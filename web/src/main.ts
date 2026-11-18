@@ -32,6 +32,7 @@ import type { HistoryUI } from './history-ui';
 import type { MonthId, MonthTarget, TimeUI, YearTarget } from './time-ui';
 import { tourFromHash, type TourTool } from './tour-model';
 import type { Tour, TourHost } from './tour';
+import { FrameGovernor, startQuality } from './quality';
 
 maplibregl.setWorkerUrl(workerUrl);
 
@@ -80,8 +81,10 @@ function autoExaggeration(z: number): number {
 // picks one zoom level higher and draws each tile pixel to one device pixel instead of stretching it 2x.
 // The files, their zoom levels (z0-5 static, z6-7 PMTiles) and the sampler (which reads the files at their real
 // 512 px) are unchanged. ?tilesize=512|256 forces either (QA compares the two).
+// pixel ratio and antialiasing for slow GPUs (quality.ts); ?pr= and ?aa= override
+const quality = startQuality(window.devicePixelRatio, window.matchMedia('(pointer: coarse)').matches, params);
 const forcedTile = Number(params.get('tilesize'));
-const rasterTileSize = forcedTile === 256 || forcedTile === 512 ? forcedTile : window.devicePixelRatio >= 1.5 ? meta.tileSize / 2 : meta.tileSize;
+const rasterTileSize = forcedTile === 256 || forcedTile === 512 ? forcedTile : quality.pixelRatio >= 1.5 ? meta.tileSize / 2 : meta.tileSize;
 const forcedTerrain = Number(params.get('terraintile'));
 // the terrain mesh stays at the files' 512 px: same sharpness on a 2x screen (mesh resolution only), 9 fewer
 // requests and 2.2 MB less at the first view (measured, see README)
@@ -95,7 +98,19 @@ const map = new maplibregl.Map({
   maxPitch: 78,
   maxZoom: 9.5,
   attributionControl: false,
-  canvasContextAttributes: { antialias: true },
+  canvasContextAttributes: { antialias: quality.antialias },
+  pixelRatio: quality.pixelRatio,
+});
+// step the pixel ratio down while the globe moves too slowly on this device (quality.ts)
+const governor = new FrameGovernor(quality.pixelRatio, Number(params.get('pr')) > 0);
+document.documentElement.dataset.pixelRatio = String(quality.pixelRatio);
+let lastMovingFrame = 0;
+map.on('render', () => {
+  if (!map.isMoving()) { lastMovingFrame = 0; return; }
+  const now = performance.now();
+  const next = lastMovingFrame ? governor.push(now - lastMovingFrame) : null;
+  lastMovingFrame = now;
+  if (next !== null) { map.setPixelRatio(next); document.documentElement.dataset.pixelRatio = String(next); lastMovingFrame = 0; }
 });
 map.setMissingStyleImageResolver((id) => { if (id === DOT_IMAGE && !map.hasImage(DOT_IMAGE)) map.addImage(DOT_IMAGE, makeDot(), { pixelRatio: 2 }); });
 let exagAuto = true;
