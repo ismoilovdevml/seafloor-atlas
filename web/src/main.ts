@@ -133,8 +133,13 @@ $<HTMLInputElement>('exag-auto').addEventListener('change', (e) => {
   if (exagAuto) applyExaggeration(autoExaggeration(map.getZoom()));
 });
 
-const loaded = new Promise<void>((res) => map.once('load', () => res()));
-await loaded;
+// start the start-up JSON downloads now, so they overlap with the style and first tiles instead of queuing after them
+const featureDataP = getJSON<GeoJSON.FeatureCollection<GeoJSON.Point, FeatureProps>>(`${dataBase}/features.geojson`);
+const hypsoP = getJSON<Hypsometry>('data/hypsometry.json');
+// Wait for the style only, not for 'load': 'load' fires after every first-view tile has arrived, and on a slow
+// connection that held back the rest of this module (the Tour button, layers, panels) for tens of seconds.
+// Sources and layers can be added as soon as the style is in.
+await new Promise<void>((res) => (map.isStyleLoaded() ? res() : map.once('style.load', () => res())));
 applyExaggeration(exagValue);
 
 // ---------- layer toggles ----------
@@ -427,7 +432,7 @@ storyList.addEventListener('click', (e) => {
 $('story-veil').addEventListener('click', () => { setVeil(true); $('story-veil').hidden = true; });
 
 // ---------- features + search ----------
-const featureData = await getJSON<GeoJSON.FeatureCollection<GeoJSON.Point, FeatureProps>>(`${dataBase}/features.geojson`);
+const featureData = await featureDataP;
 const features = featureData?.features ?? [];
 $('features-stat').innerHTML = features.length ? `<strong>${features.length.toLocaleString('en-US')}</strong> named undersea features.` : '';
 const esc = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -680,7 +685,7 @@ for (const id of FEATURE_LAYERS) {
 // The relief ramp is rebuilt for a sea level L (palette.seaLevelExpression) and swapped in with
 // setPaintProperty. At most one swap is in flight: the next one waits for the map's 'render' event, so a
 // fast drag or the animation never queues more ramp rebuilds than the GPU draws.
-const hypso = await getJSON<Hypsometry>('data/hypsometry.json');
+const hypso = await hypsoP;
 // legend chips use the same tint colours as the map ramp
 for (const [k, v] of Object.entries({ '--exposed-lo': EXPOSED_LOW, '--exposed-hi': EXPOSED_HIGH, '--flooded-lo': FLOODED_DEEP, '--flooded-hi': FLOODED_SHALLOW })) document.documentElement.style.setProperty(k, v);
 let seaLevel = 0;
