@@ -3,6 +3,7 @@
 // The map (custom `sfa://` protocol) and the depth sampler both go through fetchTile, so the
 // readout and profiles see exactly the tiles the map draws.
 import { PMTiles } from 'pmtiles';
+import { ChunkedSource, type ChunkedArchive } from './chunked';
 
 export type TileLayer = 'dem' | 'coverage' | 'new2026';
 
@@ -12,6 +13,9 @@ export interface HiresMeta {
   coverage?: string; // absolute URL of a PMTiles archive (veil RGBA WebP)
 }
 
+/** hires/manifest.json next to the page: the same archives cut into static pieces (chunked.ts); preferred when present. */
+export type ChunkedHires = Partial<Record<'dem' | 'coverage', ChunkedArchive>>;
+
 export const PROTOCOL = 'sfa';
 
 let staticBase = 'tiles/';
@@ -19,15 +23,17 @@ let lowMax = 5;
 const archives = new Map<TileLayer, PMTiles>();
 let hiresMax = 5;
 
-export function configureTiles(base: string, lowMaxZoom: number, hires?: HiresMeta | null) {
+export function configureTiles(base: string, lowMaxZoom: number, hires?: HiresMeta | null, chunked?: ChunkedHires | null) {
   staticBase = base.endsWith('/') ? base : `${base}/`;
   lowMax = lowMaxZoom;
   archives.clear();
   hiresMax = lowMax;
   if (hires && hires.maxzoom > lowMax) {
     for (const layer of ['dem', 'coverage'] as const) {
+      const pieces = chunked?.[layer];
       const url = hires[layer];
-      if (url) archives.set(layer, new PMTiles(url));
+      if (pieces) archives.set(layer, new PMTiles(new ChunkedSource(pieces)));
+      else if (url) archives.set(layer, new PMTiles(url));
     }
     if (archives.size) hiresMax = hires.maxzoom;
   }

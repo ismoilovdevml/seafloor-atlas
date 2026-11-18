@@ -841,3 +841,17 @@ Group); official percentages from Seabed 2030 / GEBCO announcements".
   shifts local sea level by up to tens of metres (most near former ice sheets). The viewer floods present-day
   topography (no sedimentation, erosion, reef growth or tectonics since). The 2σ band is Lambeck et al.'s own
   accuracy estimate, narrower than the spread between reconstructions (LGM −120 to −135 m).
+
+## High-resolution archives as static pieces (Cloudflare Pages)
+
+`hires/manifest.json` and `hires/<archive>/00000.bin ...` exist only in the Cloudflare Pages build (`pages.yml`,
+`scripts/split_pmtiles.mjs`). Each zoom 6-7 PMTiles archive from Hugging Face is cut into pieces of `chunk` bytes
+(1 MiB; the last one shorter), because Pages serves no HTTP range requests and allows 25 MiB per file.
+
+    {"dem": {"base": "hires/dem_z6-7/", "size": <bytes>, "chunk": 1048576, "count": <pieces>,
+             "sha256": "<whole archive>", "source": "<Hugging Face URL>"}, "coverage": {...}}
+
+Piece `i` holds bytes `[i * chunk, min((i + 1) * chunk, size))`. The script re-reads the pieces and checks that they
+join back to the archive's SHA-256. The viewer (`src/chunked.ts`) reads the manifest at start-up and falls back to
+the Hugging Face URLs in `tiles/meta.json` when it is missing (GitHub Pages mirror, local development).
+

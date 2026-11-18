@@ -9,7 +9,7 @@ import type { GeoJSONSource, MapGeoJSONFeature } from 'maplibre-gl';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { buildStyle, DOT_IMAGE, FEATURE_LAYERS, makeDot, type Meta } from './style';
 import { TileSampler } from './sampler';
-import { configureTiles, maxZoomFor, PROTOCOL, protocolHandler, tileActivity } from './tilesource';
+import { configureTiles, maxZoomFor, PROTOCOL, protocolHandler, tileActivity, type ChunkedHires } from './tilesource';
 import { ProfileChart } from './profile-chart';
 import { BATHY_STOPS, EXPOSED_HIGH, EXPOSED_LOW, FLOODED_DEEP, FLOODED_SHALLOW, PLATE_STYLE, seaLevelExpression, underlayExpression } from './palette';
 import {
@@ -59,7 +59,10 @@ if (!meta) {
 const synthetic = tilesBase === 'tiles-synthetic';
 const dataBase = synthetic ? 'tiles-synthetic/data' : 'data';
 // static z0..meta.maxzoom next to the page, PMTiles above it when meta.hires is set (tilesource.ts)
-configureTiles(tilesBase, meta.maxzoom, synthetic ? null : meta.hires);
+// the high-resolution archives as static pieces next to the page when the deploy added them (Cloudflare Pages),
+// else straight from Hugging Face with range requests (GitHub Pages mirror, local dev)
+const chunkedHires = synthetic ? null : await getJSON<ChunkedHires>('hires/manifest.json');
+configureTiles(tilesBase, meta.maxzoom, synthetic ? null : meta.hires, chunkedHires);
 maplibregl.addProtocol(PROTOCOL, protocolHandler);
 const demMaxZoom = maxZoomFor('dem');
 /** highest zoom of the static tiles next to the page (fast); above it tiles come from the PMTiles archive */

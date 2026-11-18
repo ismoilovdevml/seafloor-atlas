@@ -44,18 +44,47 @@ jobs:
       # seaflooratlas.org is served by Cloudflare Pages (project seafloor-atlas) since 2026-11-18: GitHub Pages was
       # slow and erratic from Central Asia (16 first-view tiles: 0.7-19 s vs 0.7-1.2 s). GitHub Pages stays as a
       # mirror. Needs the repository secret CLOUDFLARE_API_TOKEN (Account > Cloudflare Pages > Edit); skipped without it.
-      # Only changed files are uploaded (Pages deduplicates by content hash). Limits: 20,000 files, 25 MiB per file.
-      - name: Check Cloudflare Pages limits (20,000 files, 25 MiB per file)
+      # The Cloudflare build (dist-cf) also carries the zoom 6-7 PMTiles archives from Hugging Face cut into 1 MiB
+      # pieces (scripts/split_pmtiles.mjs, read by src/chunked.ts): Pages has no range requests, and range reads from
+      # Hugging Face took 2.5-14.5 s each from here. Only changed files are uploaded (Pages deduplicates by hash).
+      - name: Cloudflare token present?
+        id: cf
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          n=$(find dist -type f | wc -l); echo "files: $n"; test "$n" -le 20000
-          big=$(find dist -type f -size +25M); if [ -n "$big" ]; then echo "over 25 MiB: $big"; exit 1; fi
+          if [ -n "$CLOUDFLARE_API_TOKEN" ]; then echo "on=true" >> "$GITHUB_OUTPUT"
+          else echo "::warning::CLOUDFLARE_API_TOKEN not set: Cloudflare Pages (the live site) was NOT updated"; fi
+      - name: High-resolution archive URLs
+        if: steps.cf.outputs.on == 'true'
+        id: hires
+        run: |
+          echo "dem=$(jq -r '.hires.dem' dist/tiles/meta.json)" >> "$GITHUB_OUTPUT"
+          echo "coverage=$(jq -r '.hires.coverage' dist/tiles/meta.json)" >> "$GITHUB_OUTPUT"
+      - name: Cache the high-resolution archives
+        if: steps.cf.outputs.on == 'true'
+        uses: actions/cache@v6
+        with:
+          path: ~/hires
+          key: hires-${{ hashFiles('web/public/tiles/meta.json') }}
+      - name: Build the Cloudflare Pages site (dist + archive pieces)
+        if: steps.cf.outputs.on == 'true'
+        env:
+          DEM: ${{ steps.hires.outputs.dem }}
+          COV: ${{ steps.hires.outputs.coverage }}
+        run: |
+          mkdir -p ~/hires
+          [ -s ~/hires/dem_z6-7.pmtiles ] || curl -fL --retry 5 -o ~/hires/dem_z6-7.pmtiles "$DEM"
+          [ -s ~/hires/coverage_z6-7.pmtiles ] || curl -fL --retry 5 -o ~/hires/coverage_z6-7.pmtiles "$COV"
+          rm -rf dist-cf && cp -al dist dist-cf
+          node scripts/split_pmtiles.mjs dist-cf/hires 1048576 "dem=$HOME/hires/dem_z6-7.pmtiles@$DEM" "coverage=$HOME/hires/coverage_z6-7.pmtiles@$COV"
+          n=$(find dist-cf -type f | wc -l); echo "files: $n (Cloudflare Pages limit 20,000)"; test "$n" -le 20000
+          big=$(find dist-cf -type f -size +25M); if [ -n "$big" ]; then echo "over 25 MiB: $big"; exit 1; fi
       - name: Deploy to Cloudflare Pages
+        if: steps.cf.outputs.on == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 95c89337261f10f37ac1310191b2ebb7
-        run: |
-          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then echo "::warning::CLOUDFLARE_API_TOKEN not set: Cloudflare Pages (the live site) was NOT updated"; exit 0; fi
-          npx --yes wrangler@4.164.0 pages deploy dist --project-name seafloor-atlas --branch main --commit-hash "$GITHUB_SHA" --commit-message "$(git log -1 --format=%s | head -c 200)"
+        run: npx --yes wrangler@4.164.0 pages deploy dist-cf --project-name seafloor-atlas --branch main --commit-hash "$GITHUB_SHA" --commit-message "$(git log -1 --format=%s | head -c 200)"
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
