@@ -49,3 +49,16 @@ Status on 2026-11-16. Nothing has been submitted, uploaded or deposited.
     with the S3 object (multipart ETag). Its sha256 is in `dataset/inputs.sha256`.
 14. **Code release** must contain the 2026-11-16 changes to `pipeline/build_dataset.py` (connectivity, full-grid
     verify, inputs step), `pipeline/fetch_data.sh`, `tests/test_build_dataset.py` and `docs/essd/figures.py`.
+
+## Copernicus reference check (manuscript version 1, report of 18 Nov 2026)
+
+Three references were flagged; all three are fixed in the source for the next file upload (not needed before the
+editorial decision, per the editorial office):
+- Ref. 1 `aad2026gebcocog`: URL now points at the object page `source.coop/ausantarctic/gebco/GEBCO_2026.tif`
+  (HTTP 200; object 3,286,944,666 bytes, last modified 7 May 2026, checked 18 Nov 2026).
+- Ref. 5 `news2019`: the page exists (HTTP 200); the check failed because the PDF typeset "fl"/"fi" in the URL as
+  ligature glyphs. URLs are now set with `\urlstyle{tt}` + `xurl`; no URL in the PDF text contains a ligature.
+  Title corrected to the page title ("... definitive global map").
+- Ref. 10 `gebcodoc2026`: now cites the GEBCO_2026 grid DOI it ships with and the GEBCO_2026 grid page URL.
+All other references from 2010 on already carry DOIs; the GEBCO and Nippon Foundation news items have no DOI and keep
+their (checked, HTTP 200) URLs.
