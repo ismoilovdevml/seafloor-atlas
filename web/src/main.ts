@@ -34,6 +34,7 @@ import { tourFromHash, type TourTool } from './tour-model';
 import type { Tour, TourHost } from './tour';
 import { FrameGovernor, startQuality } from './quality';
 import { mountNav3d } from './nav3d';
+import { MeasureTool } from './measure';
 
 maplibregl.setWorkerUrl(workerUrl);
 
@@ -147,6 +148,31 @@ const hypsoP = getJSON<Hypsometry>('data/hypsometry.json');
 // Sources and layers can be added as soon as the style is in.
 await new Promise<void>((res) => (map.isStyleLoaded() ? res() : map.once('style.load', () => res())));
 mountNav3d(map, document.body);
+// "Measure distance" (measure.ts): the ruler under the compass, or right-click on the map
+const measureTool = new MeasureTool(map, {
+  beforeStart: () => { if (profiling) setProfiling(false); if (seaOpen) closeSea(); water.close(); timeUI?.close(); },
+  layout: () => updatePadding(),
+}, document.getElementById('ui')!, document.getElementById('nav-measure') as HTMLButtonElement);
+{
+  const menu = document.createElement('div');
+  menu.className = 'ctx-menu'; menu.hidden = true; menu.setAttribute('role', 'menu');
+  menu.innerHTML = '<button type="button" role="menuitem">Measure distance</button>';
+  document.body.appendChild(menu);
+  let at: [number, number] | null = null;
+  const hide = () => { menu.hidden = true; };
+  map.on('contextmenu', (e) => {
+    e.preventDefault();
+    at = [e.lngLat.lng, e.lngLat.lat];
+    menu.style.left = `${Math.min(e.originalEvent.clientX, window.innerWidth - 190)}px`;
+    menu.style.top = `${Math.min(e.originalEvent.clientY, window.innerHeight - 60)}px`;
+    menu.hidden = false;
+    menu.querySelector('button')!.focus({ preventScroll: true });
+  });
+  menu.querySelector('button')!.addEventListener('click', () => { hide(); if (at) measureTool.start(at); });
+  map.on('movestart', hide); map.on('click', hide);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); });
+  document.addEventListener('pointerdown', (e) => { if (!menu.contains(e.target as Node)) hide(); });
+}
 /** The compass sits just above the readout (and the phone legend), out of the way of an open side drawer or sheet. */
 function placeNav3d() {
   const el = document.getElementById('nav3d');
@@ -651,7 +677,7 @@ function setProfileSource(a: [number, number] | null, b: [number, number] | null
   (map.getSource('profile') as GeoJSONSource).setData({ type: 'FeatureCollection', features: feats });
 }
 function setProfiling(on: boolean) {
-  if (on) { closeSea(); water.close(); timeUI?.close(); }
+  if (on) { closeSea(); water.close(); timeUI?.close(); measureTool.stop(); }
   profiling = on;
   $('profile-btn').setAttribute('aria-pressed', String(on));
   $('ui').classList.toggle('profiling', on);
@@ -683,6 +709,7 @@ async function runProfile(a: [number, number], b: [number, number]) {
   return { len, z, min: Math.min(...h), meas };
 }
 map.on('click', (e) => {
+  if (measureTool.active) return; // measure.ts handles the click
   if (profiling) {
     const p: [number, number] = [e.lngLat.lng, e.lngLat.lat];
     if (!profileA || profilePts) {
@@ -870,7 +897,7 @@ document.addEventListener('visibilitychange', () => { lastT = 0; });
 // ---------- ocean water (WOA23) ----------
 const water = new WaterUI({
   map, base: 'woa/',
-  beforeOpen: () => { timeUI?.close(); if (seaOpen) closeSea(); if (profiling) setProfiling(false); if (marine.on) marine.set({ on: false }); if (oceanUI?.chlOn) oceanUI.setChl(false); },
+  beforeOpen: () => { timeUI?.close(); if (seaOpen) closeSea(); if (profiling) setProfiling(false); measureTool.stop(); if (marine.on) marine.set({ on: false }); if (oceanUI?.chlOn) oceanUI.setChl(false); },
   layout: () => updatePadding(),
   // static tiles only: the water-column caption should not wait on the high-resolution archive
   seafloorAt: async (lon, lat) => (await sampler.sample([[lon, lat]], staticMaxZoom)).h[0],
@@ -898,7 +925,7 @@ if (!waterReady) $('row-water').hidden = true;
 const touch = window.matchMedia('(hover: none)').matches;
 if (touch) $('readout-hint').textContent = 'Tap the seafloor to read its depth';
 const visible = (id: string) => !$(id).hidden && getComputedStyle($(id)).display !== 'none';
-const BOTTOM_PANELS = ['sea', 'water', 'profile', 'time'];
+const BOTTOM_PANELS = ['sea', 'water', 'profile', 'time', 'measure'];
 /** The tour's panel when it is on screen (it exists only once the tour chunk has loaded). */
 function tourEl(): HTMLElement | null { const t = document.getElementById('tour'); return t && !t.hidden && getComputedStyle(t).display !== 'none' ? t : null; }
 const phone = () => window.innerWidth <= 760;
@@ -988,7 +1015,7 @@ function setMinimised(id: string, on: boolean) {
   try { sessionStorage.setItem(MIN_KEY, JSON.stringify({ ...minStore(), [id]: on })); } catch { /* storage blocked: state lasts until reload */ }
   updatePadding();
 }
-for (const id of BOTTOM_PANELS) {
+for (const id of Object.keys(MIN_LABEL)) { // panels with a minimise button (measure has none)
   $(`${id}-min`).addEventListener('click', () => setMinimised(id, !$(id).classList.contains('min')));
   if (minStore()[id]) setMinimised(id, true);
 }
@@ -1379,7 +1406,7 @@ function loadTime(): Promise<TimeUI> {
       },
     } : null;
     const t = new m.TimeUI({
-      beforeOpen: () => { hideOffer(); if (seaOpen) closeSea(false); water.close(); if (profiling) setProfiling(false); },
+      beforeOpen: () => { hideOffer(); if (seaOpen) closeSea(false); water.close(); if (profiling) setProfiling(false); measureTool.stop(); },
       layout: () => updatePadding(),
       onChange: () => { updateTimeDot(); eventsUI?.refreshLegend(); updateLayersBadge(); },
     }, years, months, ago);

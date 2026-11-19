@@ -33,6 +33,8 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q webp
       - run: npm test
       - run: npm run build
+      - name: Start-up smoke test (no page errors; measure and tour respond)
+        run: node scripts/smoke.mjs
       - name: Check that tiles made it into the build
         run: |
           test -f dist/tiles/meta.json
