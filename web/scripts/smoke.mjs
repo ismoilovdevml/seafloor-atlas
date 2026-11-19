@@ -16,12 +16,20 @@ try {
   await page.goto(`http://localhost:${port}/`, { waitUntil: 'load', timeout: 60000 });
   await page.waitForTimeout(4000);
   // the measure tool and the tour are wired late in main.ts: both must react
-  await page.click('#nav-measure');
-  const measuring = await page.evaluate(() => !document.getElementById('measure')?.hidden);
+  let measuring = false;
+  for (let t0 = Date.now(); Date.now() - t0 < 30000 && !measuring;) {
+    await page.click('#nav-measure', { timeout: 2000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    measuring = await page.evaluate(() => !document.getElementById('measure')?.hidden);
+  }
   await page.keyboard.press('Escape');
-  await page.click('#tour-btn');
-  await page.waitForTimeout(1500);
-  const touring = await page.getAttribute('#tour-btn', 'aria-pressed');
+  // on a CI runner without a GPU start-up is slower: retry until the late-wired Tour button answers (30 s at most)
+  let touring = null;
+  for (let t0 = Date.now(); Date.now() - t0 < 30000 && touring !== 'true';) {
+    await page.click('#tour-btn', { timeout: 2000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+    touring = await page.getAttribute('#tour-btn', 'aria-pressed');
+  }
   await browser.close();
   if (errors.length) fail(`page errors:\n  ${errors.join('\n  ')}`);
   if (!measuring) fail('the measure button did not open its panel');
