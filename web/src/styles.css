@@ -755,3 +755,21 @@ input[role='switch']:checked::after { transform: translateX(12px); background: v
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ================= compass + 3D (nav3d.ts), above the readout ================= */
+.nav3d { position: fixed; z-index: 4; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.nav3d[hidden] { display: none; }
+.nav3d-ring { display: flex; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 3px; box-shadow: var(--shadow); }
+.nav3d-compass { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; background: var(--panel-solid); border: 1px solid var(--line-strong); padding: 0; }
+.nav3d-compass .needle { transform-box: view-box; transform-origin: 12px 12px; transition: transform 0.12s linear; }
+.nav3d-turn { width: 30px; height: 42px; display: grid; place-items: center; background: none; border: 0; color: var(--ink-3); padding: 0; border-radius: 999px; }
+.nav3d-turn:hover, .nav3d-compass:hover { color: var(--ink); background-color: var(--hover); }
+.nav3d-tilt { min-width: 46px; height: 36px; padding: 0 10px; border-radius: var(--r-ctl); background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); font: 700 13px/1 var(--sans); color: var(--ink); letter-spacing: 0.02em; }
+.nav3d-tilt[aria-pressed='true'] { color: var(--shelf); border-color: var(--line-strong); }
+@media (max-width: 760px) {
+  .nav3d { flex-direction: row-reverse; gap: 6px; }
+  .nav3d-compass { width: 40px; height: 40px; }
+  .nav3d-turn { width: 26px; height: 40px; }
+  .nav3d-tilt { height: 40px; }
+}
+@media (prefers-reduced-motion: reduce) { .nav3d-compass .needle { transition: none; } }

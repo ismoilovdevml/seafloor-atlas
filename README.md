@@ -30,6 +30,7 @@ New layers and the Time panel:
 * **Seamounts**: 69,770 from two satellite-gravity catalogues; filled when a sonar sounding sits on the summit (34.2 %), an open ring when the summit depth is only predicted.
 * **Phytoplankton** (MODIS-Aqua chlorophyll-a, lakes masked), **Winds** and **Ocean currents** as moving streaks that follow the globe; point anywhere for speed and direction.
 * **Time** (tool bar): *Years* plays earthquakes, internet cables, offshore wind farms or **seafloor mapping 2019→2026** (each GEBCO release lit up, our measured share next to the official Seabed 2030 figure); *Months* runs sea temperature, phytoplankton, winds and currents through the seasons together (the Indian monsoon and the Arabian Sea bloom in July); *Since the ice age* lowers the sea to the Last Glacial Maximum (−134 m, 20,500 years ago) and lets it rise to today.
+* A **compass and 3D switch** above the depth readout: the needle shows north (click to turn north up), the arrows rotate the map by 45°, **3D** tilts the camera and **2D** flattens it again.
 * A slim **loading bar** at the bottom while map detail streams in; **OpenStreetMap cables** as a supplement to the 2022 cable snapshot.
 
 ## Key numbers

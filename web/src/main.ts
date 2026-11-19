@@ -33,6 +33,7 @@ import type { MonthId, MonthTarget, TimeUI, YearTarget } from './time-ui';
 import { tourFromHash, type TourTool } from './tour-model';
 import type { Tour, TourHost } from './tour';
 import { FrameGovernor, startQuality } from './quality';
+import { mountNav3d } from './nav3d';
 
 maplibregl.setWorkerUrl(workerUrl);
 
@@ -145,6 +146,22 @@ const hypsoP = getJSON<Hypsometry>('data/hypsometry.json');
 // connection that held back the rest of this module (the Tour button, layers, panels) for tens of seconds.
 // Sources and layers can be added as soon as the style is in.
 await new Promise<void>((res) => (map.isStyleLoaded() ? res() : map.once('style.load', () => res())));
+mountNav3d(map, document.body);
+/** The compass sits just above the readout (and the phone legend), out of the way of an open side drawer or sheet. */
+function placeNav3d() {
+  const el = document.getElementById('nav3d');
+  if (!el) return;
+  const H = window.innerHeight, W = window.innerWidth;
+  const rect = (id: string) => document.getElementById(id)!.getBoundingClientRect();
+  const shown = (id: string) => { const e = document.getElementById(id); return !!e && !e.hidden && getComputedStyle(e).display !== 'none'; };
+  const ui = document.getElementById('ui')!;
+  const busy = ui.classList.contains('touring') || (phone() ? !!ui.dataset.tab && ui.dataset.tab !== 'none' : shown('layers'));
+  const anchors = (phone() ? ['readout', 'legend'] : ['readout']).filter(shown).map(rect);
+  el.hidden = busy || !anchors.length;
+  if (el.hidden) return;
+  el.style.bottom = `${Math.round(H - Math.min(...anchors.map((a) => a.top)) + 10)}px`;
+  el.style.right = `${Math.round(W - rect('readout').right)}px`;
+}
 applyExaggeration(exagValue);
 
 // ---------- layer toggles ----------
@@ -888,6 +905,7 @@ const phone = () => window.innerWidth <= 760;
 function updatePadding() {
   const W = window.innerWidth, H = window.innerHeight;
   const r = (id: string) => $(id).getBoundingClientRect();
+  placeNav3d();
   // drawers stop above the legend dock / readout that share their column
   const ui = $('ui').style;
   ui.setProperty('--legend-h', visible('legend') ? `${Math.round(r('legend').height) + 12}px` : '0px');
