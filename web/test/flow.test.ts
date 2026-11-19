@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { FlowLayer } from '../src/flow-layer';
 import { describe, expect, it } from 'vitest';
 import {
   bearingTo, compass16, decodeUV, flowKey, formatFlow, inArea, mercX, mercY, Particles, particleCount, randomIn, rampAt, sampleUV, spawnArea, stepScale,
@@ -96,6 +97,27 @@ describe('flow decoding and sampling', () => {
     const before = p.respawns;
     p.step(f, area, 0.01);
     expect(p.respawns - before).toBe(50);
+  });
+  it('a camera move that respawns particles never joins their old and new places with a segment', () => {
+    const g = { res_deg: 1, width: 360, height: 180, lat0: 89.5, lon0: -179.5, scale: 1, fill: -32768 };
+    const f: FlowField = { g, u: new Float32Array(360 * 180).fill(5), v: new Float32Array(360 * 180).fill(2) };
+    let area = spawnArea([[-60, -10, -40, 10]]);
+    const layer = new FlowLayer({ id: 't', count: () => 200, area: () => area, smax: 1, pxPerFrame: 1 });
+    layer.field = f;
+    const L = layer as unknown as { map: unknown; reseed(): void; advance(n: number): void; ring: Float32Array; ages: Float32Array; head: number };
+    L.map = { getZoom: () => 2, triggerRepaint() {} };
+    L.reseed();
+    for (let k = 0; k < 5; k++) L.advance(1);
+    area = spawnArea([[100, -10, 120, 10]]); // the globe was turned to the other side
+    layer.refreshArea();
+    for (let k = 0; k < 3; k++) {
+      L.advance(1);
+      const n = 200, K = L.ring.length / (n * 3), h = L.head, prev = (h + K - 1) % K;
+      for (let i = 0; i < n; i++) {
+        if (L.ages[i] < 1) continue; // the shader draws segment 0 only for particles at least one frame old
+        expect(Math.abs(L.ring[h * n * 3 + 3 * i] - L.ring[prev * n * 3 + 3 * i])).toBeLessThan(0.01);
+      }
+    }
   });
   it('speed ramp brightens monotonically', () => {
     const L = [0, 0.33, 0.66, 1].map((t) => { const [r, g, b] = rampAt(t); return 0.2126 * r + 0.7152 * g + 0.0722 * b; });

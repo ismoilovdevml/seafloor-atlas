@@ -156,8 +156,13 @@ export class FlowLayer implements CustomLayerInterface {
   /** The camera stopped somewhere else: particles outside the new view start again inside it. */
   refreshArea(prerun = 0) {
     if (!this.p || !this.field) { this.reseed(prerun); return; }
-    // respawned particles restart at age 0, so the shader hides the trail slots of their old life
+    // respawned particles restart at age 0, so the shader hides the trail slots of their old life. Their new place
+    // must be written as a slot with age 0 now: otherwise the next step stores age 1 and the newest segment joins
+    // the old life's last position to the new one, a long straight line across the globe after every drag.
     this.p.respawnOutside(this.field, this.opts.area());
+    this.head = (this.head + 1) % K;
+    this.writeSlot(this.head);
+    this.fullUpload = true;
     for (let i = 0; i < prerun; i++) this.advance(1);
     this.map?.triggerRepaint();
   }
