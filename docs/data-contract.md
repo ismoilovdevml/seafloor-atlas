@@ -871,3 +871,19 @@ Piece `i` holds bytes `[i * chunk, min((i + 1) * chunk, size))`. The script re-r
 join back to the archive's SHA-256. The viewer (`src/chunked.ts`) reads the manifest at start-up and falls back to
 the Hugging Face URLs in `tiles/meta.json` when it is missing (GitHub Pages mirror, local development).
 
+## AMOC at 26.5° N (`data/amoc.json`, pipeline/amoc.py)
+
+RAPID-MOCHA-WBTS v2024-2 (doi:10.5285/5c39bf4e-5140-5546-e063-7086abc027bc, OGL v3.0), fetched with the BODC
+Published Data Library download API. Monthly values April 2004 to November 2024 (248 months), rounded to 0.01.
+
+    {"title", "source", "doi", "citation", "licence", "units", "definition",
+     "line": {"coordinates": [[-80.05, 26.5], [-13.6, 26.5]], "note"},       approximate route of the array
+     "months": {"first": "2004-04", "last": "2024-11", "n": 248},
+     "monthly": {"amoc", "heat_pw", "florida_current", "ekman", "upper_mid_ocean", "thermocline",
+                 "intermediate", "upper_deep", "lower_deep", "bottom"},          arrays of n values (Sv / PW, null = gap)
+     "layer_labels": {...}, "stats": {"mean_sv", "sd_sv", "min", "max", "n_months", "heat_mean_pw",
+                 "annual": [{"year", "mean"}] (complete calendar years only), "layer_means_sv"}}
+
+Sv = 10^6 m³/s, positive northward. `amoc` is the maximum of the overturning streamfunction in depth coordinates
+(`amoc_depth_1m`). The viewer's "0–1,100 m" is Florida Current + Ekman + upper mid-ocean.
+

@@ -215,7 +215,7 @@ export function overlayLayers(labelFont: string): LayerSpecification[] {
 /** `osm`: the OpenStreetMap cable supplement is on too (only meaningful with cables). */
 export interface LayerState { ids: OverlayId[]; allWrecks: boolean; osm?: boolean; extra?: string[] }
 /** Tokens of the layers outside "Human activity" that share the layers= list (order kept as written). */
-export const EXTRA_LAYER_TOKENS = ['quakes', 'quakes-live', 'seamounts', 'chl', 'winds', 'currents'];
+export const EXTRA_LAYER_TOKENS = ['quakes', 'quakes-live', 'seamounts', 'chl', 'winds', 'currents', 'amoc'];
 /** `#layers=cables,wrecks` (alone or with story= / sea= / water=); `wrecks-all` = wrecks incl. bulk records. */
 export function layersFromHash(hash: string): LayerState | null {
   const m = /(?:^#|[#&])layers=([\w,-]*)(?:&|$)/.exec(hash);

@@ -41,7 +41,7 @@ export interface TourText {
 /** Every layer token a chapter may name. */
 export const TOUR_LAYER_TOKENS = [
   'veil', 'plates', 'new2026', 'disagree', 'uncertainty', 'seals', 'marine',
-  'quakes', 'quakes-live', 'seamounts', 'chl', 'winds', 'currents',
+  'quakes', 'quakes-live', 'seamounts', 'chl', 'winds', 'currents', 'amoc',
   'cables', 'cables-osm', 'shipping', 'wrecks', 'wrecks-all', 'platforms', 'pipelines', 'wind',
 ];
 

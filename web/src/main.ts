@@ -34,6 +34,7 @@ import { tourFromHash, type TourTool } from './tour-model';
 import type { Tour, TourHost } from './tour';
 import { FrameGovernor, startQuality } from './quality';
 import { mountNav3d } from './nav3d';
+import { amocCard, type AmocData } from './amoc';
 import { MeasureTool } from './measure';
 
 maplibregl.setWorkerUrl(workerUrl);
@@ -251,6 +252,7 @@ function extraTokens(): string[] {
   if (eventsUI?.seamountsOn) t.push('seamounts');
   if (oceanUI?.chlOn) t.push('chl');
   if (oceanUI?.flow) t.push(oceanUI.flow === 'wind' ? 'winds' : 'currents');
+  if ($<HTMLInputElement>('t-amoc').checked) t.push('amoc');
   return t;
 }
 function writeLayersHash(st: LayerState = overlays.state) {
@@ -370,6 +372,7 @@ $('plate-key').innerHTML = (Object.keys(PLATE_STYLE) as (keyof typeof PLATE_STYL
     <p><strong>Bathymetry</strong>: ${meta.citation}, <a href="https://doi.org/${doi}" target="_blank" rel="noopener">doi:${doi}</a>. ${meta.licence ?? 'Open Government Licence v3'}: <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/" target="_blank" rel="noopener">OGL v3</a>. Shown at ${meta.sourceResolutionArcsec / 60} arc-minute resolution up to zoom ${meta.maxzoom}${meta.hires ? `, the full ${meta.hires.sourceResolutionArcsec ?? 15}″ grid at zoom ${meta.maxzoom + 1}–${meta.hires.maxzoom}` : ''}. “Measured” = GEBCO type identifier 10–17 (direct survey).</p>
     <p><strong>Plate boundaries</strong>: Bird, P. (2003) An updated digital model of plate boundaries, <em>G³</em> 4(3), 1027, <a href="https://doi.org/10.1029/2001GC000252" target="_blank" rel="noopener">doi:10.1029/2001GC000252</a> (PB2002), ODC-By 1.0.</p>
     <p><strong>Undersea feature names</strong>: IHO-IOC GEBCO Gazetteer of Undersea Feature Names.</p>
+    <p><strong>Atlantic overturning (AMOC) at 26.5° N</strong>: Moat, B. I. et al. (2026), RAPID-MOCHA-WBTS v2024-2, NERC EDS British Oceanographic Data Centre, <a href="https://doi.org/10.5285/5c39bf4e-5140-5546-e063-7086abc027bc" target="_blank" rel="noopener">doi:10.5285/5c39bf4e-5140-5546-e063-7086abc027bc</a>, UK Open Government Licence v3.0. Data collected and made freely available by the RAPID program (UK NERC), the MOCHA program (US NSF) and the WBTS project (NOAA).</p>
     <p><strong>Ocean water</strong>: World Ocean Atlas 2023, 1991–2020 climate normal, objectively analysed means (NOAA NCEI). Temperature: Locarnini et al. (2024), NOAA Atlas NESDIS 89, <a href="https://doi.org/10.25923/54bh-1613" target="_blank" rel="noopener">doi:10.25923/54bh-1613</a>. Salinity: Reagan et al. (2024), NOAA Atlas NESDIS 90, <a href="https://doi.org/10.25923/70qt-9574" target="_blank" rel="noopener">doi:10.25923/70qt-9574</a>. Potential density computed here with TEOS-10 (gsw). Colour maps: cmocean (Thyng et al. 2016).</p>
     <p><strong>How sure is the depth?</strong> ${disagreeLg?.attribution ?? 'Model disagreement: AUST_2026_BAT (Yuan &amp; Yang 2026, doi:10.5281/zenodo.22711109, CC BY 4.0) minus GEBCO_2026 (OGL v3)'}. ${uncertaintyLg?.attribution ?? 'Prediction confidence: Nilsson, Phrampus, Sandwell et al. (2025), SWOT ML bathymetry confidence level v1.1, doi:10.5281/zenodo.17673974, CC BY 4.0'}. ${ATTRIBUTION_SEALS}.</p>
     <p><strong>Marine life</strong> (CC BY-NC 4.0 as a whole): OBIS (2026) Ocean Biodiversity Information System, IOC-UNESCO, <a href="https://www.obis.org" target="_blank" rel="noopener">www.obis.org</a>. OBIS speciesgrids (OBIS + GBIF), CC BY-NC 4.0. Predicted richness: <a href="https://www.aquamaps.org" target="_blank" rel="noopener">AquaMaps</a> (Kaschner et al. 2019, version 10/2019), CC BY-NC 3.0.</p>
@@ -426,6 +429,7 @@ function showCard(c: CardModel) {
     const img = $<HTMLImageElement>('f-img');
     img.onerror = () => { $('f-photo').hidden = true; };
     img.alt = c.image.alt; img.src = c.image.src;
+    $('f-photo').classList.toggle('chart', c.image.src.startsWith('data:image/svg+xml'));
     $('f-img-cap').textContent = c.image.credit;
     $('f-photo').hidden = false;
   }
@@ -1281,6 +1285,33 @@ boot('t-winds', () => !!oceanUI, loadOcean, (u, on) => u.setFlow('wind', on));
 boot('t-currents', () => !!oceanUI, loadOcean, (u, on) => u.setFlow('currents', on));
 if (synthetic) for (const id of ['row-quakes', 'row-seamounts']) $(id).hidden = true;
 
+// ---------- AMOC at 26.5 N (amoc.ts): the array's line, and a card with the monthly record ----------
+let amocP: Promise<AmocData | null> | null = null;
+async function setAmoc(on: boolean, card = true) {
+  const t = $<HTMLInputElement>('t-amoc');
+  t.checked = on;
+  rowState('row-amoc', null, on);
+  if (map.getLayer('amoc-line')) for (const id of ['amoc-casing', 'amoc-line']) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+  if (!on) { layersChanged(); return; }
+  amocP ??= getJSON<AmocData>(`${dataBase}/amoc.json`).then((d) => { if (!d) amocP = null; return d; });
+  const d = await amocP;
+  if (!d || !t.checked) { if (!d) { t.checked = false; rowState('row-amoc', null, false); } return; }
+  if (!map.getSource('amoc')) {
+    map.addSource('amoc', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: d.line.coordinates } } });
+    map.addLayer({ id: 'amoc-casing', type: 'line', source: 'amoc', paint: { 'line-color': '#000000', 'line-opacity': 0.5, 'line-width': 7 } });
+    map.addLayer({ id: 'amoc-line', type: 'line', source: 'amoc', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#f2b84b', 'line-width': 3, 'line-dasharray': [2, 1.2] } });
+    map.on('click', 'amoc-line', () => { const x = amocLast; if (x) { showCard(amocCard(x)); updatePadding(); } });
+    map.on('mouseenter', 'amoc-line', () => { if (!map.getCanvas().style.cursor) map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'amoc-line', () => { if (map.getCanvas().style.cursor === 'pointer') map.getCanvas().style.cursor = ''; });
+  }
+  amocLast = d;
+  for (const id of ['amoc-casing', 'amoc-line']) map.setLayoutProperty(id, 'visibility', 'visible');
+  if (card) { showCard(amocCard(d)); updatePadding(); }
+  layersChanged();
+}
+let amocLast: AmocData | null = null;
+$<HTMLInputElement>('t-amoc').addEventListener('change', (e) => setAmoc((e.target as HTMLInputElement).checked));
+
 /** Something on the map changed: hash, badge, readout, the Time panel's targets, the tool-bar dot. */
 function layersChanged() {
   writeLayersHash();
@@ -1290,6 +1321,7 @@ function layersChanged() {
   if (lastPoint) renderExtra(lastPoint[0], lastPoint[1]);
 }
 async function applyExtra(tokens: string[]) {
+  if (tokens.includes('amoc') !== $<HTMLInputElement>('t-amoc').checked) await setAmoc(tokens.includes('amoc'), false);
   const live = tokens.includes('quakes-live'), wantQ = live || tokens.includes('quakes'), wantS = tokens.includes('seamounts');
   if (wantQ || wantS || eventsUI) {
     const u = await loadEvents();

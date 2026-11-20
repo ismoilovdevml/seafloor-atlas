@@ -16,6 +16,7 @@ None of the depths here are for navigation. The data is provided as is, without 
 |---|---|---|---|
 | `web/public/tiles/dem/`, `tiles/coverage/`, `tiles/new2026/`, `web/public/history/`, `data/hypsometry.json`, `data/stories.json` (depth checks), HF dataset `ismoilovdev/seafloor-atlas-tiles` | GEBCO_2026 (and 2019–2025) grids, type identifier grids | GEBCO terms: public domain with attribution, no implied endorsement; CEDA lists OGL v3 for 2025–2026 | GEBCO Compilation Group (2026) GEBCO 2026 Grid, doi:10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa |
 | `data/features.geojson` | IHO-IOC GEBCO Gazetteer of Undersea Feature Names | cite | IHO-IOC GEBCO Gazetteer of Undersea Feature Names, www.gebco.net |
+| `data/amoc.json` | RAPID-MOCHA-WBTS AMOC at 26.5 N, v2024-2 (monthly transports) | UK Open Government Licence v3.0 | Moat, B. I. et al. (2026), doi:10.5285/5c39bf4e-5140-5546-e063-7086abc027bc; data from the RAPID (UK NERC), MOCHA (US NSF) and WBTS (NOAA) programmes |
 | `data/plates.geojson` | PB2002 (Bird 2003) via fraxen/tectonicplates | ODC-By 1.0 | Bird (2003), G³ 4(3) 1027 |
 | `web/public/woa/` | World Ocean Atlas 2023 (NOAA NCEI) | public (NOAA), cite | Locarnini et al. 2024; Reagan et al. 2024 |
 | `web/public/chl/` | NASA OBPG MODIS-Aqua R2022.0 | NASA open data, no restrictions | NASA OBPG, doi:10.5067/AQUA/MODIS/L3M/CHL/2022.0 |
