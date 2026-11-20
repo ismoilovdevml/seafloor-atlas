@@ -406,12 +406,13 @@ def bottom_properties(t: np.ndarray, sp: np.ndarray, z: np.ndarray, lon: np.ndar
     return theta, sig4
 
 
-def deep_range(a: np.ndarray, z: np.ndarray, step: float) -> list[float]:
+def deep_range(a: np.ndarray, z: np.ndarray, step: float, grain: float | None = None) -> list[float]:
     """Default colour range for a seafloor layer: 2nd-98th percentile over cells whose bottom level is >= 2,000 m
-    (the abyssal water this layer is about), widened outward to whole steps x 10."""
+    (the abyssal water this layer is about), widened outward to whole multiples of `grain` (default step x 10;
+    temperature uses whole degrees so the legend's end labels are the range itself, not a rounded neighbour)."""
     v = a[np.isfinite(a) & (z >= BOTTOM_SIGMA4_MIN_Z)]
     lo, hi = np.percentile(v, [2, 98])
-    g = step * 10
+    g = grain or step * 10
     return [round(float(np.floor(lo / g) * g), 6), round(float(np.ceil(hi / g) * g), 6)]
 
 
@@ -442,7 +443,7 @@ def bottom() -> None:
         layers[key] = {"lo": round(lo, 6), "step": step, "hi": round(float(np.nanmax(a)), 5), "p2": round(pct[0], 4),
                        "p98": round(pct[1], 4), "bytes": len(blob), "ocean_cells": int(ok.sum())}
         if key != "z_bottom":
-            layers[key]["range"] = deep_range(a, zb, step)
+            layers[key]["range"] = deep_range(a, zb, step, 1.0 if key == "t_bottom" else None)
         print(f"{key}: {np.nanmin(a):.3f}..{np.nanmax(a):.3f}, cells {int(ok.sum())}, range {layers[key].get('range')}, "
               f"{len(blob) / 1e6:.2f} MB", flush=True)
     man["map"]["bottom"] = {
