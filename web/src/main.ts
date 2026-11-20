@@ -11,7 +11,7 @@ import { buildStyle, DOT_IMAGE, FEATURE_LAYERS, makeDot, type Meta } from './sty
 import { TileSampler } from './sampler';
 import { configureTiles, maxZoomFor, PROTOCOL, protocolHandler, tileActivity, type ChunkedHires } from './tilesource';
 import { ProfileChart } from './profile-chart';
-import { BATHY_STOPS, EXPOSED_HIGH, EXPOSED_LOW, FLOODED_DEEP, FLOODED_SHALLOW, PLATE_STYLE, seaLevelExpression, underlayExpression } from './palette';
+import { BATHY_STOPS, EXPOSED_HIGH, EXPOSED_LOW, FLOODED_DEEP, FLOODED_SHALLOW, LAND_STOPS, PLATE_STYLE, seaLevelExpression, seaLevelStops, UNDERLAY_STOPS, underlayExpression } from './palette';
 import {
   KNEE_LEVEL, PRESETS, SEA_MAX, SEA_MIN, SLIDER_MAX, formatLevel, hashWithSea, landAreaAt, levelToPos, posToLevel, presetFor, seaFromHash, snapLevel,
   type Hypsometry,
@@ -35,6 +35,7 @@ import type { Tour, TourHost } from './tour';
 import { FrameGovernor, startQuality } from './quality';
 import { mountNav3d } from './nav3d';
 import { amocCard, type AmocData } from './amoc';
+import { PolarLayer, type PolarMeta } from './polar-layer';
 import { MeasureTool } from './measure';
 
 maplibregl.setWorkerUrl(workerUrl);
@@ -152,6 +153,17 @@ const hypsoP = getJSON<Hypsometry>('data/hypsometry.json');
 // Sources and layers can be added as soon as the style is in.
 await new Promise<void>((res) => (map.isStyleLoaded() ? res() : map.once('style.load', () => res())));
 mountNav3d(map, document.body);
+// the real relief of both polar caps beyond the Mercator tiles' 85.05 degrees (polar-layer.ts, pipeline/polar.py)
+let polarLayer: PolarLayer | null = null;
+if (!synthetic) {
+  void getJSON<PolarMeta>(`${tilesBase}/polar/polar.json`).then((pm) => {
+    if (!pm) return;
+    polarLayer = new PolarLayer(`${tilesBase}/polar/`, pm, seaLevelStops(0));
+    // right above the shaded relief: overlays (veil, coverage, age, ...) still draw over the disc between 83 and 85 degrees
+    const ids = map.getStyle().layers.map((l) => l.id);
+    map.addLayer(polarLayer, ids[ids.indexOf('hillshade') + 1]);
+  });
+}
 // "Measure distance" (measure.ts): the ruler under the compass, or right-click on the map
 // the ruler works from the first frame, but the panels it closes and the layout code are created further down:
 // until the end of this module has run (appReady) there is nothing to close and nothing to lay out yet
@@ -795,6 +807,7 @@ function applySeaPaint() {
   seaRenderPending = true;
   const t0 = performance.now();
   map.setPaintProperty('relief', 'color-relief-color', seaLevelExpression(seaLevel) as never);
+  polarLayer?.setStops(seaLevelStops(seaLevel));
   seaStats.applies++;
   map.once('render', () => {
     seaStats.applyToRender.push(performance.now() - t0);
@@ -941,6 +954,7 @@ const water = new WaterUI({
 /** The relief's neutral under-layer while a colour field (ocean water, phytoplankton) is on. */
 function setUnderlay(on: boolean) {
   map.setPaintProperty('relief', 'color-relief-color', (on ? underlayExpression() : seaLevelExpression(seaLevel)) as never);
+  polarLayer?.setStops(on ? [...UNDERLAY_STOPS, ...LAND_STOPS] : seaLevelStops(seaLevel));
   seaApplied = seaLevel;
   $('depth-legend').hidden = on; // the depth ramp legend does not describe the neutral under-layer
 }

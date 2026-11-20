@@ -49,6 +49,18 @@ Official citation: GEBCO Compilation Group (2026) GEBCO 2026 Grid (doi:10.5285/4
 * Polar rows: values poleward of 84.92 deg are the cap mean (same as z0-5), so the pole has no radial artefact at any zoom.
 * The viewer reads both homes through one `sfa://<layer>/{z}/{x}/{y}` protocol (`web/src/tilesource.ts`); the depth readout and profiles use the same path.
 
+## Polar relief (web/public/tiles/polar/)
+
+* `north.webp`, `south.webp`: GEBCO_2026 15" elevation poleward of 83 deg on an azimuthal-equidistant grid around each pole
+  (2048 x 2048, half-width 7 deg of latitude, 0.76 km per pixel), area-weighted bin means rounded to whole metres,
+  Terrarium RGB in lossless WebP. Built by `pipeline/polar.py`.
+* Pixel (i, j) centre: X = (j + 0.5) * 2R / N - R, Y = R - (i + 0.5) * 2R / N, d = hypot(X, Y);
+  north lat = 90 - d, lon = atan2(X, -Y); south lat = -90 + d, lon = atan2(X, Y). Pixels outside the disc hold one flat value.
+* `polar.json`: source, projection, encoding, size, radius_deg, pixel_km, per-pole min/max/mean and bytes.
+* The viewer (`web/src/polar-layer.ts`) drapes each image on a disc mesh over the globe, coloured with the depth ramp
+  and shaded in the shader, faded in between 83.05 and 83.3 deg where the Mercator tiles hold the same relief. This
+  replaces the flat cap MapLibre draws beyond 85.05 deg and the terraced rows of stretched tiles between ~83 and 85 deg.
+
 ## Vector overlays (web/public/data/)
 
 * `plates.geojson`: PB2002 boundary steps merged into lines. Properties: `type` in {ridge, rift, transform, subduction, convergent} (from PB2002 `STEPCLASS`: OSR/CRB/OTF+CTF/SUB/OCB+CCB), `cls`, `boundary` ("PA-NA"), `plates` (full names), `rate_mm_yr` (length-weighted mean relative velocity).

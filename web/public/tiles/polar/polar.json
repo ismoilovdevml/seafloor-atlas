@@ -1,0 +1,24 @@
+{
+ "source": "GEBCO_2026 Grid, 15 arc-second ice-surface elevation (GEBCO Compilation Group 2026, doi:10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa)",
+ "projection": "azimuthal equidistant around the pole, units = degrees of latitude from the pole; pixel (i, j) centre X = (j + 0.5) * 2R / N - R, Y = R - (i + 0.5) * 2R / N; north lon = atan2(X, -Y), south lon = atan2(X, Y)",
+ "encoding": "Terrarium RGB, lossless WebP: h = R * 256 + G + B / 256 - 32768 (metres)",
+ "size": 2048,
+ "radius_deg": 7.0,
+ "pixel_km": 0.76,
+ "poles": {
+  "north": {
+   "min_m": -5412.0,
+   "max_m": 1627.0,
+   "mean_m": -2926.0,
+   "empty_pixels_filled": 817052,
+   "bytes": 1897650
+  },
+  "south": {
+   "min_m": 1.0,
+   "max_m": 4388.0,
+   "mean_m": 2293.8,
+   "empty_pixels_filled": 817052,
+   "bytes": 1136820
+  }
+ }
+}

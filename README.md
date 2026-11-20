@@ -194,7 +194,7 @@ Drawing the globe is limited by fill rate: the pixels drawn per frame grow with 
 ## Limits
 
 * Away from ship surveys the real detail is a few km (satellite gravity), so zooming in there shows smooth terrain.
-* Beyond 85.05° N/S (outside Web Mercator) the globe shows a flat cap at the mean polar depth.
+* Poleward of 83° N/S the globe draws the relief from a separate polar grid (GEBCO_2026 15″ at 0.76 km per pixel, `tiles/polar/`), since Web Mercator tiles stop at 85.05°. The overlays (coverage, survey age, uncertainty and the rest) are Mercator tiles and stop at 85.05°.
 * "Measured" cells are 460 m averages; one ship track through a cell counts it as measured.
 * Cable routes are a 2022 snapshot (the open data is no longer updated; status as of 2022-11-14). The weekly OSM cable supplement adds mostly coastal chart cables: OSM rarely maps long-haul routes ([docs/cables-osm.md](docs/cables-osm.md)). Shipwrecks in Wikidata are mostly UK/Irish records; species records reflect sampling effort.
 * The ocean mask includes the Caspian Sea and lake beds below sea level (0.93 million km², 0.26 % of the area); regional tables exclude the Caspian.
