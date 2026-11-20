@@ -58,7 +58,7 @@ export function makeDot(): ImageData {
 
 /** tileSize: what MapLibre is told the raster tiles measure in CSS px (256 for our 512 px files on a 2x screen). */
 export interface TileOpts { tileSize: number; terrainTileSize: number }
-export function buildStyle(tilesBase: string, dataBase: string, meta: Meta, opts: TileOpts = { tileSize: meta.tileSize, terrainTileSize: meta.tileSize }): StyleSpecification {
+export function buildStyle(tilesBase: string, _dataBase: string, meta: Meta, opts: TileOpts = { tileSize: meta.tileSize, terrainTileSize: meta.tileSize }): StyleSpecification {
   const abs = (p: string) => new URL(p, window.location.href).href;
   // resolve the directory only: new URL() would percent-encode the {z}/{x}/{y} template braces
   const tiles = abs(`${tilesBase}/`);
@@ -84,8 +84,10 @@ export function buildStyle(tilesBase: string, dataBase: string, meta: Meta, opts
       'dem-relief': { ...dem },
       veil: { type: 'raster', tiles: [tileTemplate('coverage')], tileSize: opts.tileSize, minzoom: meta.minzoom, maxzoom: maxZoomFor('coverage') },
       new2026: { type: 'raster', tiles: [`${tiles}new2026/{z}/{x}/{y}.webp`], tileSize: opts.tileSize, minzoom: meta.minzoom, maxzoom: meta.maxzoom },
-      plates: { type: 'geojson', data: abs(`${dataBase}/plates.geojson`) },
-      features: { type: 'geojson', data: abs(`${dataBase}/features.geojson`) },
+      // Empty initially: `plates` loads lazily on first toggle (saves ~3.97 MB at startup), and `features` is
+      // populated once from main.ts's single fetch so the browser does not download and parse it twice.
+      plates: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+      features: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
       profile: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
       cursor: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
       // human-activity overlays (empty until switched on; see overlays.ts). Shipping tiles are only on the real set.

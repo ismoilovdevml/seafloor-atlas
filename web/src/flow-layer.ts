@@ -14,6 +14,8 @@ import type { CustomLayerInterface, CustomRenderMethodInput, Map as MlMap } from
 import { FLOW_RAMP, hexRgb, mercX, mercY, Particles, stepScale, type FlowField, type SpawnArea } from './flow';
 
 const K = 16; // trail slots (15 segments: about 20 px of trail at the top speed)
+const STEP_MS = 1000 / 60;
+const RAMP_F32 = new Float32Array(FLOW_RAMP.flatMap((c) => hexRgb(c).map((x) => x / 255)));
 
 const VERT = (prelude: string, define: string) => `#version 300 es
 ${prelude}
@@ -32,11 +34,11 @@ uniform float u_opacity;
 out vec4 v_color;
 out float v_side;
 void main() {
-  bool live = a_age >= u_d + 1.0 && abs(a_new.x - a_old.x) < 0.5;
   vec4 p0 = projectTile(a_old.xy);
   vec4 p1 = projectTile(a_new.xy);
-  vec2 s0 = p0.xy / p0.w * u_half_viewport;
-  vec2 s1 = p1.xy / p1.w * u_half_viewport;
+  bool live = a_age >= u_d + 1.0 && abs(a_new.x - a_old.x) < 0.5 && p0.w > 0.0 && p1.w > 0.0;
+  vec2 s0 = p0.xy / max(p0.w, 1e-5) * u_half_viewport;
+  vec2 s1 = p1.xy / max(p1.w, 1e-5) * u_half_viewport;
   vec2 dir = s1 - s0;
   float len = length(dir);
   dir = len > 1e-4 ? dir / len : vec2(1.0, 0.0);
@@ -113,7 +115,11 @@ export class FlowLayer implements CustomLayerInterface {
   private p: Particles | null = null;
   private head = 0;
   private lastT = 0;
+  private accMs = 0;
   private fullUpload = true;
+  private dirtySlots = 0;
+  private matMain = new Float32Array(16);
+  private matFallback = new Float32Array(16);
 
   constructor(private opts: FlowLayerOpts) { this.id = opts.id; this.smax = opts.smax; }
 
@@ -156,13 +162,22 @@ export class FlowLayer implements CustomLayerInterface {
   /** The camera stopped somewhere else: particles outside the new view start again inside it. */
   refreshArea(prerun = 0) {
     if (!this.p || !this.field) { this.reseed(prerun); return; }
-    // respawned particles restart at age 0, so the shader hides the trail slots of their old life. Their new place
-    // must be written as a slot with age 0 now: otherwise the next step stores age 1 and the newest segment joins
-    // the old life's last position to the new one, a long straight line across the globe after every drag.
-    this.p.respawnOutside(this.field, this.opts.area());
-    this.head = (this.head + 1) % K;
-    this.writeSlot(this.head);
-    this.fullUpload = true;
+    // Respawned particles restart at age 0, so the shader hides their old trail slots. Overwrite only those
+    // particles at the current `head` slot (without advancing `head`), so surviving particles keep their full
+    // trail intact while respawned ones start their next segment cleanly from their new position.
+    const moved = this.p.respawnOutside(this.field, this.opts.area());
+    if (moved > 0) {
+      const p = this.p, n = p.n, r = this.ring, o = this.head * n * 3;
+      for (let i = 0; i < n; i++) {
+        if (p.age[i] === 0) {
+          r[o + 3 * i] = mercX(p.lon[i]);
+          r[o + 3 * i + 1] = mercY(p.lat[i]);
+          r[o + 3 * i + 2] = p.speed[i];
+        }
+        this.ages[i] = p.age[i];
+      }
+      this.dirtySlots = Math.max(this.dirtySlots, 1);
+    }
     for (let i = 0; i < prerun; i++) this.advance(1);
     this.map?.triggerRepaint();
   }
@@ -183,6 +198,7 @@ export class FlowLayer implements CustomLayerInterface {
     p.step(f, this.opts.area(), stepScale(map.getZoom(), this.smax, this.opts.pxPerFrame), frames);
     this.head = (this.head + 1) % K;
     this.writeSlot(this.head);
+    this.dirtySlots = Math.min(K, this.dirtySlots + 1);
   }
 
   render(gl: WebGLRenderingContext | WebGL2RenderingContext, args: CustomRenderMethodInput) {
@@ -193,37 +209,67 @@ export class FlowLayer implements CustomLayerInterface {
     const now = performance.now();
     if (this.running && !document.hidden) {
       const t0 = now;
-      const frames = this.lastT ? Math.min(3, Math.max(0.25, (now - this.lastT) / (1000 / 60))) : 1;
-      this.advance(frames);
-      this.stats.frames++;
+      if (!this.lastT) {
+        this.advance(1);
+        this.stats.frames++;
+      } else {
+        // Fixed 60 Hz simulation step so trail length (K slots) and particle lifetime are identical on 30/60/120 Hz screens.
+        this.accMs = Math.min(3 * STEP_MS, this.accMs + Math.max(0, now - this.lastT));
+        let steps = 0;
+        while (this.accMs >= STEP_MS && steps < 3) {
+          this.advance(1);
+          this.accMs -= STEP_MS;
+          steps++;
+        }
+        if (steps > 0) this.stats.frames++;
+      }
       if (this.stats.cpuMs.length < 4000) this.stats.cpuMs.push(performance.now() - t0);
+    } else {
+      this.accMs = 0;
     }
-    this.lastT = this.running ? now : 0;
+    this.lastT = this.running && !document.hidden ? now : 0;
 
     const prog = this.program(g, args);
     g.useProgram(prog.prog);
     const L = prog.loc;
     const pd = args.defaultProjectionData;
-    g.uniformMatrix4fv(L.u_projection_matrix, false, new Float32Array(pd.mainMatrix));
+    this.matMain.set(pd.mainMatrix);
+    g.uniformMatrix4fv(L.u_projection_matrix, false, this.matMain);
     if (L.u_projection_tile_mercator_coords) g.uniform4f(L.u_projection_tile_mercator_coords, ...pd.tileMercatorCoords);
     if (L.u_projection_clipping_plane) g.uniform4f(L.u_projection_clipping_plane, ...pd.clippingPlane);
     if (L.u_projection_transition) g.uniform1f(L.u_projection_transition, pd.projectionTransition);
-    if (L.u_projection_fallback_matrix) g.uniformMatrix4fv(L.u_projection_fallback_matrix, false, new Float32Array(pd.fallbackMatrix));
-    const dpr = window.devicePixelRatio || 1;
+    if (L.u_projection_fallback_matrix) {
+      this.matFallback.set(pd.fallbackMatrix);
+      g.uniformMatrix4fv(L.u_projection_fallback_matrix, false, this.matFallback);
+    }
+    const dpr = this.map.getPixelRatio() || window.devicePixelRatio || 1;
     g.uniform2f(L.u_half_viewport, g.drawingBufferWidth / 2, g.drawingBufferHeight / 2);
     g.uniform1f(L.u_width, 1.25 * dpr);
     g.uniform1f(L.u_smax, this.smax);
     g.uniform1f(L.u_k, K - 1);
     g.uniform1f(L.u_opacity, this.opacity);
-    g.uniform3fv(L.u_ramp, new Float32Array(FLOW_RAMP.flatMap((c) => hexRgb(c).map((x) => x / 255))));
+    g.uniform3fv(L.u_ramp, RAMP_F32);
 
     const n = p.n, stride = 12;
     g.bindVertexArray(this.vao);
     g.bindBuffer(g.ARRAY_BUFFER, this.ringBuf);
-    if (this.fullUpload) { g.bufferData(g.ARRAY_BUFFER, this.ring, g.DYNAMIC_DRAW); this.fullUpload = false; }
-    else g.bufferSubData(g.ARRAY_BUFFER, this.head * n * stride, this.ring, this.head * n * 3, n * 3);
-    g.bindBuffer(g.ARRAY_BUFFER, this.ageBuf);
-    g.bufferData(g.ARRAY_BUFFER, this.ages, g.DYNAMIC_DRAW);
+    if (this.fullUpload || this.dirtySlots >= K) {
+      g.bufferData(g.ARRAY_BUFFER, this.ring, g.DYNAMIC_DRAW);
+      g.bindBuffer(g.ARRAY_BUFFER, this.ageBuf);
+      g.bufferData(g.ARRAY_BUFFER, this.ages, g.DYNAMIC_DRAW);
+      this.fullUpload = false;
+      this.dirtySlots = 0;
+    } else if (this.dirtySlots > 0) {
+      for (let d = 0; d < this.dirtySlots; d++) {
+        const s = (this.head - d + K) % K;
+        g.bufferSubData(g.ARRAY_BUFFER, s * n * stride, this.ring, s * n * 3, n * 3);
+      }
+      g.bindBuffer(g.ARRAY_BUFFER, this.ageBuf);
+      g.bufferSubData(g.ARRAY_BUFFER, 0, this.ages);
+      this.dirtySlots = 0;
+    } else {
+      g.bindBuffer(g.ARRAY_BUFFER, this.ageBuf);
+    }
     g.vertexAttribPointer(prog.attr.a_age, 1, g.FLOAT, false, 4, 0);
     g.vertexAttribDivisor(prog.attr.a_age, 1);
     g.enableVertexAttribArray(prog.attr.a_age);
@@ -260,10 +306,18 @@ export class FlowLayer implements CustomLayerInterface {
       return s;
     };
     const prog = g.createProgram()!;
-    g.attachShader(prog, sh(g.VERTEX_SHADER, VERT(args.shaderData.vertexShaderPrelude, args.shaderData.define)));
-    g.attachShader(prog, sh(g.FRAGMENT_SHADER, FRAG));
+    const vs = sh(g.VERTEX_SHADER, VERT(args.shaderData.vertexShaderPrelude, args.shaderData.define));
+    const fs = sh(g.FRAGMENT_SHADER, FRAG);
+    g.attachShader(prog, vs);
+    g.attachShader(prog, fs);
     g.linkProgram(prog);
-    if (!g.getProgramParameter(prog, g.LINK_STATUS)) throw new Error(`flow program: ${g.getProgramInfoLog(prog)}`);
+    g.deleteShader(vs);
+    g.deleteShader(fs);
+    if (!g.getProgramParameter(prog, g.LINK_STATUS)) {
+      const log = g.getProgramInfoLog(prog);
+      g.deleteProgram(prog);
+      throw new Error(`flow program: ${log}`);
+    }
     const names = ['u_projection_matrix', 'u_projection_tile_mercator_coords', 'u_projection_clipping_plane', 'u_projection_transition', 'u_projection_fallback_matrix',
       'u_d', 'u_k', 'u_half_viewport', 'u_width', 'u_smax', 'u_ramp', 'u_opacity'];
     p = {

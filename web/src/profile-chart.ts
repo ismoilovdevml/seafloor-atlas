@@ -39,6 +39,8 @@ export class ProfileChart {
     this.svg = el('svg', { role: 'img', tabindex: 0 });
     this.tip = document.createElement('div');
     this.tip.className = 'tip'; this.tip.hidden = true;
+    this.tip.setAttribute('role', 'status');
+    this.tip.setAttribute('aria-live', 'polite');
     root.append(this.svg, this.tip);
     new ResizeObserver(() => this.render()).observe(root);
     this.svg.addEventListener('pointermove', (e) => this.pointer(e));
@@ -115,12 +117,27 @@ export class ProfileChart {
     const xl = el('text', { x: M.l + pw, y: M.t + ph + 16, 'text-anchor': 'end' }, ax);
     xl.textContent = 'km';
 
-    // water column + seabed silhouette
-    const pts = dist.map((d, i) => [x(d), y(Number.isFinite(h[i]) ? h[i] : hMin)] as const);
-    const line = pts.map(([px, py], i) => `${i ? 'L' : 'M'}${px.toFixed(1)},${py.toFixed(1)}`).join('');
-    el('path', { d: `M${x(0)},${y(0)}${pts.map(([px, py]) => `L${px.toFixed(1)},${Math.max(py, y(0)).toFixed(1)}`).join('')}L${x(len)},${y(0)}Z`, fill: 'rgba(98,184,177,0.10)' }, svg);
-    el('path', { d: `${line}L${x(len)},${M.t + ph}L${x(0)},${M.t + ph}Z`, fill: '#1b2638' }, svg);
-    el('path', { d: line, fill: 'none', stroke: '#e6eef0', 'stroke-width': 2, 'stroke-linejoin': 'round' }, svg);
+    // water column + seabed silhouette (break stroke across missing/NaN tiles rather than dropping to hMin)
+    let line = '';
+    let waterPath = '';
+    let bedPath = '';
+    let run: [number, number][] = [];
+    const flushRun = () => {
+      if (!run.length) return;
+      line += run.map(([px, py], j) => `${j ? 'L' : 'M'}${px.toFixed(1)},${py.toFixed(1)}`).join('');
+      const [xStart] = run[0], [xEnd] = run[run.length - 1];
+      waterPath += `M${xStart.toFixed(1)},${y(0).toFixed(1)}${run.map(([px, py]) => `L${px.toFixed(1)},${Math.max(py, y(0)).toFixed(1)}`).join('')}L${xEnd.toFixed(1)},${y(0).toFixed(1)}Z`;
+      bedPath += `${run.map(([px, py], j) => `${j ? 'L' : 'M'}${px.toFixed(1)},${py.toFixed(1)}`).join('')}L${xEnd.toFixed(1)},${(M.t + ph).toFixed(1)}L${xStart.toFixed(1)},${(M.t + ph).toFixed(1)}Z`;
+      run = [];
+    };
+    for (let i = 0; i < dist.length; i++) {
+      if (Number.isFinite(h[i])) run.push([x(dist[i]), y(h[i])]);
+      else flushRun();
+    }
+    flushRun();
+    if (waterPath) el('path', { d: waterPath, fill: 'rgba(98,184,177,0.10)' }, svg);
+    if (bedPath) el('path', { d: bedPath, fill: '#1b2638' }, svg);
+    if (line) el('path', { d: line, fill: 'none', stroke: '#e6eef0', 'stroke-width': 2, 'stroke-linejoin': 'round' }, svg);
 
     // measured strip under the x labels: one cell per sample
     const sy = M.t + ph + 26, sh = 8;
@@ -158,12 +175,13 @@ export class ProfileChart {
     const i = this.idx;
     if (i === null) { this.tip.hidden = true; return; }
     const { dist, h, f } = this.data;
-    const px = this.x(dist[i]), py = this.y(h[i]);
+    const hi = h[i], ok = Number.isFinite(hi);
+    const px = this.x(dist[i]), py = ok ? this.y(hi) : this.root.clientHeight / 2;
     const H = this.root.clientHeight;
     el('line', { x1: px, x2: px, y1: 12, y2: H - 46, stroke: 'rgba(255,255,255,0.45)', 'stroke-width': 1 }, this.cross);
-    el('circle', { cx: px, cy: py, r: 5, fill: '#ffffff', stroke: '#04080f', 'stroke-width': 2 }, this.cross);
+    if (ok) el('circle', { cx: px, cy: py, r: 5, fill: '#ffffff', stroke: '#04080f', 'stroke-width': 2 }, this.cross);
     const fi = f[i];
-    this.tip.innerHTML = `<b>${formatDepth(h[i])}</b> at ${dist[i].toLocaleString('en-US', { maximumFractionDigits: 0 })} km<br>${fi === null ? 'land' : Number.isNaN(fi) ? 'coverage unknown' : `measured ${Math.round(fi * 100)}%`}`;
+    this.tip.innerHTML = `<b>${ok ? formatDepth(hi) : 'no data'}</b> at ${dist[i].toLocaleString('en-US', { maximumFractionDigits: 0 })} km<br>${fi === null ? 'land' : Number.isNaN(fi) ? 'coverage unknown' : `measured ${Math.round(fi * 100)}%`}`;
     this.tip.hidden = false;
     const W = this.root.clientWidth;
     this.tip.style.left = `${Math.min(W - 70, Math.max(70, px))}px`;

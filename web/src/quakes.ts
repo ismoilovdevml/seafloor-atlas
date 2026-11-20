@@ -20,9 +20,11 @@ export function quakesToGeoJSON(d: QuakeColumns): QuakeFC {
   const features: QuakeFC['features'] = new Array(d.n);
   for (let i = 0; i < d.n; i++) {
     const t = d.time[i];
+    const dep = d.depth_km[i];
     features[i] = {
       type: 'Feature', id: i, geometry: { type: 'Point', coordinates: [d.lon[i], d.lat[i]] },
-      properties: { mag: d.mag[i], depth: d.depth_km[i] ?? -1, time: t, year: new Date(t).getUTCFullYear(), id: d.id[i], place: d.place[i] },
+      // Clamp shallow above-sea-level hypocentres (e.g. -1..-3 km in volcanic edifices) to 0 km so -1 stays the unknown sentinel.
+      properties: { mag: d.mag[i], depth: dep == null ? -1 : Math.max(0, dep), time: t, year: new Date(t).getUTCFullYear(), id: d.id[i], place: d.place[i] },
     };
   }
   return { type: 'FeatureCollection', features };
@@ -33,10 +35,10 @@ export function liveToGeoJSON(fc: GeoJSON.FeatureCollection<GeoJSON.Point, Recor
   const features: QuakeFC['features'] = [];
   for (const [i, f] of fc.features.entries()) {
     const p = f.properties ?? {}, c = f.geometry?.coordinates;
-    // typeof, not Number(): Number(null) is 0, and the feed has null magnitudes for some events
+    // typeof, not Number(): Number(null) is 0, and the feed has null magnitudes/depths for some events
     const mag = typeof p.mag === 'number' ? p.mag : NaN, t = typeof p.time === 'number' ? p.time : NaN;
     if (!c || !Number.isFinite(mag) || !Number.isFinite(t)) continue;
-    const dep = Number(c[2]);
+    const dep = typeof c[2] === 'number' ? c[2] : NaN;
     features.push({
       type: 'Feature', id: i, geometry: { type: 'Point', coordinates: [c[0], c[1]] },
       properties: { mag, depth: Number.isFinite(dep) ? Math.max(0, Math.round(dep)) : -1, time: t, year: new Date(t).getUTCFullYear(), id: String(f.id ?? p.code ?? ''), place: String(p.place ?? ''), live: true },

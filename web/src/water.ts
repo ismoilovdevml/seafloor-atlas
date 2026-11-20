@@ -86,7 +86,9 @@ export function scaleRange(man: WaterManifest, v: WaterVar, key: string, stretch
 
 /** ~5 round tick values inside [lo, hi]. */
 export function legendTicks(lo: number, hi: number, target = 5): number[] {
-  const span = hi - lo, raw = span / target, mag = 10 ** Math.floor(Math.log10(raw));
+  const span = hi - lo;
+  if (!(span > 0) || !Number.isFinite(span)) return Number.isFinite(lo) ? [+lo.toFixed(6)] : [];
+  const raw = span / Math.max(1, target), mag = 10 ** Math.floor(Math.log10(raw));
   const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => span / s <= target) ?? 10 * mag;
   const out: number[] = [];
   for (let x = Math.ceil(lo / step - 1e-9) * step; x <= hi + 1e-9; x += step) out.push(+x.toFixed(6));
@@ -189,11 +191,20 @@ export function renderMercator(out: Uint8ClampedArray, size: number, a: Grid, lu
     const y0 = Math.floor(y), y1 = Math.min(H - 1, y0 + 1), ty = y - y0, yn = Math.round(y);
     const o0 = y0 * W, o1 = y1 * W, on = yn * W;
     let p = r * size * 4;
+    const blend = B && t > 0;
+    const mix = (va: number, vb: number) => {
+      if (va === va && vb === vb) return va * (1 - t) + vb * t;
+      return t < 0.5 ? va : vb;
+    };
     for (let i = 0; i < size; i++, p += 4) {
-      if (Number.isNaN(A[on + cn[i]])) { out[p + 3] = 0; continue; }
+      const ni = on + cn[i];
+      const nearA = A[ni], nearOk = blend ? (t < 0.5 ? nearA === nearA : B![ni] === B![ni]) : nearA === nearA;
+      if (!nearOk) { out[p + 3] = 0; continue; }
       const tx = cw[i], i00 = o0 + cx0[i], i10 = o0 + cx1[i], i01 = o1 + cx0[i], i11 = o1 + cx1[i];
       let v00 = A[i00], v10 = A[i10], v01 = A[i01], v11 = A[i11];
-      if (B) { v00 = v00 * (1 - t) + B[i00] * t; v10 = v10 * (1 - t) + B[i10] * t; v01 = v01 * (1 - t) + B[i01] * t; v11 = v11 * (1 - t) + B[i11] * t; }
+      if (blend) {
+        v00 = mix(v00, B![i00]); v10 = mix(v10, B![i10]); v01 = mix(v01, B![i01]); v11 = mix(v11, B![i11]);
+      }
       const w00 = (1 - tx) * (1 - ty), w10 = tx * (1 - ty), w01 = (1 - tx) * ty, w11 = tx * ty;
       let s = 0, w = 0;
       // NaN !== NaN: skip missing neighbours and renormalise the remaining weights

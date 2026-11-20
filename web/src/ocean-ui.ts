@@ -80,48 +80,57 @@ export class OceanUI {
   }
   /** WOA surface-temperature cells (one-cell margin) minus the Caspian and Lake Ontario: the chlorophyll ocean mask. */
   private oceanMask(): Promise<Uint8Array | null> {
-    this.mask ??= (async () => {
-      const man: WaterManifest | null = await fetch('woa/manifest.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
-      const L = man?.map.layers.t_0;
-      const r = L ? await fetch('woa/map/t_0.bin') : null;
-      if (!man || !L || !r?.ok) return null;
-      const v = decodeMapLayer(await inflate(await r.arrayBuffer()), L.lo, L.step);
-      return oceanMask(v, man.map.width, man.map.height, man.map.north, man.map.west, man.map.res_deg);
-    })().catch(() => null);
+    if (!this.mask) {
+      const req = (async () => {
+        const man: WaterManifest | null = await fetch('woa/manifest.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+        const L = man?.map.layers.t_0;
+        const r = L ? await fetch('woa/map/t_0.bin') : null;
+        if (!man || !L || !r?.ok) return null;
+        const v = decodeMapLayer(await inflate(await r.arrayBuffer()), L.lo, L.step);
+        return oceanMask(v, man.map.width, man.map.height, man.map.north, man.map.west, man.map.res_deg);
+      })().catch(() => null).then((m) => { if (!m && this.mask === req) this.mask = null; return m; });
+      this.mask = req;
+    }
     return this.mask;
   }
   private chlGrid(month: number): Promise<Grid | null> {
     const key = chlKey(month);
-    let p = this.chlGrids.get(key);
-    if (!p) {
-      p = (async () => {
-        const man = await this.manifests('chl') as ChlManifest | null;
-        if (!man) return null;
-        const [r, mask] = await Promise.all([fetch(`chl/${key}.bin`), this.oceanMask()]);
-        if (!r.ok) return null;
-        const g = man.grid, values = decodeMapLayer(await inflate(await r.arrayBuffer()), g.lo, g.step);
-        if (mask && mask.length === values.length) applyMask(values, mask);
-        return { values, width: g.width, height: g.height, north: g.north, west: g.west, res: g.res_deg };
-      })().catch(() => null).then((x) => { this.chlReady.set(key, x); return x; });
-      this.chlGrids.set(key, p);
-    }
+    const hit = this.chlGrids.get(key);
+    if (hit) { this.chlGrids.delete(key); this.chlGrids.set(key, hit); return hit; }
+    const p: Promise<Grid | null> = (async () => {
+      const man = await this.manifests('chl') as ChlManifest | null;
+      if (!man) return null;
+      const [r, mask] = await Promise.all([fetch(`chl/${key}.bin`), this.oceanMask()]);
+      if (!r.ok) return null;
+      const g = man.grid, values = decodeMapLayer(await inflate(await r.arrayBuffer()), g.lo, g.step);
+      if (mask && mask.length === values.length) applyMask(values, mask);
+      return { values, width: g.width, height: g.height, north: g.north, west: g.west, res: g.res_deg };
+    })().catch(() => null).then((x) => {
+      if (x && this.chlGrids.get(key) === p) this.chlReady.set(key, x);
+      else if (this.chlGrids.get(key) === p) { this.chlGrids.delete(key); this.chlReady.delete(key); }
+      return x;
+    });
+    this.chlGrids.set(key, p);
     return p;
   }
   private field(kind: FlowKind, month: number): Promise<FlowField | null> {
     const key = `${kind}/${flowKey(month)}`;
-    let p = this.fields.get(key);
-    if (!p) {
-      p = (async () => {
-        const man = await this.manifests(kind) as FlowManifest | null;
-        if (!man) return null;
-        const r = await fetch(`flow/${key}.bin`);
-        if (!r.ok) return null;
-        const g = man.grid;
-        const [u, v] = decodeUV(await inflate(await r.arrayBuffer()), g.width, g.height, g.scale);
-        return { g, u, v };
-      })().catch(() => null).then((x) => { this.fieldReady.set(key, x); return x; });
-      this.fields.set(key, p);
-    }
+    const hit = this.fields.get(key);
+    if (hit) { this.fields.delete(key); this.fields.set(key, hit); return hit; }
+    const p: Promise<FlowField | null> = (async () => {
+      const man = await this.manifests(kind) as FlowManifest | null;
+      if (!man) return null;
+      const r = await fetch(`flow/${key}.bin`);
+      if (!r.ok) return null;
+      const g = man.grid;
+      const [u, v] = decodeUV(await inflate(await r.arrayBuffer()), g.width, g.height, g.scale);
+      return { g, u, v };
+    })().catch(() => null).then((x) => {
+      if (x && this.fields.get(key) === p) this.fieldReady.set(key, x);
+      else if (this.fields.get(key) === p) { this.fields.delete(key); this.fieldReady.delete(key); }
+      return x;
+    });
+    this.fields.set(key, p);
     return p;
   }
   /** Fetches the twelve months of the layers that are on (before playing the year). */
@@ -173,6 +182,7 @@ export class OceanUI {
     $('lg-chl').hidden = !this.chlOn;
     $('lg-chl-t').textContent = `Phytoplankton, ${this.month ? MONTH_LONG[this.month - 1] : 'annual mean'}`;
   }
+  private chlFramesLeft = 0;
   private async drawChl() {
     const t = ++this.token;
     const g = await this.chlGrid(this.month);
@@ -188,9 +198,16 @@ export class OceanUI {
       // as in the water layer: play a few frames, and a tiny paint change redraws the terrain-draped texture cache
       src.play();
       this.host.map.setPaintProperty('chl', 'raster-opacity', this.stats.chlRenders % 2 ? CHL_OPACITY - 0.001 : CHL_OPACITY);
-      let n = 3;
-      const onRender = () => { if (--n > 0) return; this.host.map.off('render', onRender); src.pause(); };
-      this.host.map.on('render', onRender);
+      const already = this.chlFramesLeft > 0;
+      this.chlFramesLeft = 3;
+      if (!already) {
+        const onRender = () => {
+          if (--this.chlFramesLeft > 0) return;
+          this.host.map.off('render', onRender);
+          src.pause();
+        };
+        this.host.map.on('render', onRender);
+      }
       this.host.map.triggerRepaint();
     }
   }

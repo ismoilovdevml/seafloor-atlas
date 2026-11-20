@@ -49,6 +49,7 @@ export class TimeUI {
   speed = 1;
   private span: { first: number; last: number; values: number[]; unit: string } | null = null;
   private applied = new Set<YearSet>();
+  private autoMonths = new Set<MonthId>();
   private monthApplied = false;
   private agoApplied = false;
   private raf = 0;
@@ -83,12 +84,17 @@ export class TimeUI {
       const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-only]');
       if (b) { this.only = b.dataset.only === '1'; this.applyYear(); this.render(); this.writeHash(); }
     });
+    this.radioKeys($('time-only'), 'button[data-only]');
+    this.radioKeys($('time-sets'), 'button[role="radio"]');
     $('time-btn').addEventListener('click', () => (this.open ? this.close() : this.show()));
     $('time-close').addEventListener('click', () => this.close());
-    // keyboard inside the panel: Space plays / pauses (not on a button, which Space already presses), [ ] step
-    $('time').addEventListener('keydown', (e) => {
+    // Keyboard shortcuts while Time is open: Space plays / pauses (not when typing or focused on a button/link), [ ] step.
+    document.addEventListener('keydown', (e) => {
+      if (!this.open || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target as HTMLElement;
-      if (e.key === ' ' && !t.matches('button, select')) { e.preventDefault(); this.setPlaying(!this.playing); }
+      const typing = t.matches?.('input:not([type="checkbox"]):not([type="range"]), textarea, select') || t.isContentEditable;
+      if (typing) return;
+      if (e.key === ' ' && !t.closest?.('button, a, summary, [role="switch"], label, #tour')) { e.preventDefault(); this.setPlaying(!this.playing); }
       else if (e.key === '[' || e.key === ']') { e.preventDefault(); this.setPlaying(false); this.step(e.key === ']' ? 1 : -1); }
     });
     document.addEventListener('visibilitychange', () => { this.lastT = 0; });
@@ -153,7 +159,12 @@ export class TimeUI {
   /** Undo what a mode did to the map: all years shown, annual means, today's sea level. */
   private resetMode(m: TimeMode) {
     if (m === 'years') { for (const s of this.applied) this.years[s]?.apply(null, false); this.applied.clear(); }
-    if (m === 'months' && this.monthApplied) { for (const id of MONTH_ORDER) this.months[id]?.apply(0); this.monthApplied = false; }
+    if (m === 'months' && this.monthApplied) {
+      for (const id of this.autoMonths) this.months[id]?.setOn(false);
+      this.autoMonths.clear();
+      for (const id of MONTH_ORDER) this.months[id]?.apply(0);
+      this.monthApplied = false;
+    }
     if (m === 'ago' && this.agoApplied) { this.agoT?.apply(null); this.agoApplied = false; }
   }
 
@@ -171,12 +182,15 @@ export class TimeUI {
     if (m === 'months') {
       // nothing monthly on yet: the July-monsoon pairing, phytoplankton and winds
       if (!MONTH_ORDER.some((id) => this.months[id]?.isOn())) {
-        await Promise.all([this.months.chl?.setOn(true), this.months.wind?.setOn(true)]);
+        const auto: MonthId[] = (['chl', 'wind'] as MonthId[]).filter((id) => this.months[id]?.available);
+        for (const id of auto) this.autoMonths.add(id);
+        await Promise.all(auto.map((id) => this.months[id]?.setOn(true)));
       }
       this.span = { first: 1, last: 12, values: [], unit: '' };
     } else {
       const h = this.agoT!.history;
-      this.span = { first: 0, last: Math.round(h.ago[h.ago.length - 1] / 100) * 100, values: [], unit: '' };
+      // Ceil to 100 yr so the oldest point in the record is never clipped outside [0, sp.last].
+      this.span = { first: 0, last: Math.ceil(h.ago[h.ago.length - 1] / 100) * 100, values: [], unit: '' };
       this.ago = Math.min(this.ago, this.span.last);
     }
     this.renderStrip();
@@ -215,6 +229,7 @@ export class TimeUI {
   private async toggleMonthLayer(id: MonthId) {
     const t = this.months[id];
     if (!t?.available) return;
+    this.autoMonths.delete(id); // user took explicit control of this layer
     await t.setOn(!t.isOn());
     await this.applyCurrent();
     this.render();
@@ -284,7 +299,7 @@ export class TimeUI {
     if (on === this.playing) return;
     this.playing = on;
     $('time-play').setAttribute('aria-pressed', String(on));
-    $('time-play').setAttribute('aria-label', on ? 'Pause' : 'Play');
+    $('time-play').setAttribute('aria-label', 'Play');
     cancelAnimationFrame(this.raf);
     if (on && this.span) {
       // at the end of a range, play starts again from the beginning
@@ -378,8 +393,12 @@ export class TimeUI {
       value = this.ago ? Math.round(this.ago).toLocaleString('en-US') : 'Today';
       unit = this.ago ? 'years ago' : '';
       aria = formatAgo(this.ago);
-      const k = a.history.ago.findIndex((x) => x >= this.ago);
-      const band = a.history.lo && a.history.hi && k >= 0 ? (a.history.hi[k] - a.history.lo[k]) / 2 : NaN;
+      let band = NaN;
+      if (a.history.lo && a.history.hi) {
+        const loV = levelAtAgo({ ago: a.history.ago, level: a.history.lo }, this.ago);
+        const hiV = levelAtAgo({ ago: a.history.ago, level: a.history.hi }, this.ago);
+        band = (hiV - loV) / 2;
+      }
       head = { main: `Sea level <strong>${L < -0.05 ? '−' : ''}${Math.abs(L).toFixed(L > -10 ? 1 : 0)} m</strong>${Number.isFinite(band) && band > 0.05 ? ` (±${band.toFixed(band < 10 ? 1 : 0)} m)` : ''}; ${a.landNote(L)}`, sub: agoEvent(this.ago, a.history) };
       note = `${a.attribution}. A global mean: local coasts differed, and today’s land and seafloor are simply flooded or drained.`;
     }
@@ -403,7 +422,7 @@ export class TimeUI {
     if (this.mode === 'years') {
       sets.setAttribute('role', 'radiogroup'); sets.setAttribute('aria-label', 'Follow');
       sets.innerHTML = `<span class="time-sets-label" aria-hidden="true">Follow</span>` + YEAR_SETS.filter((s) => this.years[s]?.available).map((s) =>
-        `<button type="button" role="radio" data-set="${s}" aria-checked="${s === this.set}"${this.years[s]!.isOn() && s !== this.set ? ' class="also"' : ''}>${YEAR_SET_LABEL[s]}</button>`).join('');
+        `<button type="button" role="radio" data-set="${s}" aria-checked="${s === this.set}" tabindex="${s === this.set ? 0 : -1}"${this.years[s]!.isOn() && s !== this.set ? ' class="also"' : ''}>${YEAR_SET_LABEL[s]}</button>`).join('');
     } else if (this.mode === 'months') {
       sets.setAttribute('role', 'group'); sets.setAttribute('aria-label', 'Layers that follow the month');
       sets.innerHTML = `<span class="time-sets-label" aria-hidden="true">Show</span>` + MONTH_ORDER.filter((id) => this.months[id]?.available).map((id) =>
@@ -412,7 +431,11 @@ export class TimeUI {
     sets.hidden = this.mode === 'ago';
     const onlyOk = this.mode === 'years' && !!this.years[this.set]?.supportsOnly;
     $('time-only').hidden = !onlyOk;
-    $('time-only').querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.setAttribute('aria-checked', String((b.dataset.only === '1') === this.only)));
+    $('time-only').querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
+      const on = (b.dataset.only === '1') === this.only;
+      b.setAttribute('aria-checked', String(on));
+      b.tabIndex = on ? 0 : -1;
+    });
     const at0 = this.span && (this.mode === 'years' ? this.year <= this.span.first : this.mode === 'ago' ? this.ago >= this.span.last : false);
     const atEnd = this.span && (this.mode === 'years' ? this.year >= this.span.last : this.mode === 'ago' ? this.ago <= 0 : false);
     $<HTMLButtonElement>('time-back').disabled = !!at0;

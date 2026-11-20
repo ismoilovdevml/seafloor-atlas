@@ -136,8 +136,8 @@ export class OverlayUI {
     let p = this.files.get(key);
     if (!p) {
       const t0 = performance.now();
-      p = fetch(`${this.host.dataBase}/${DATA_FILES[key]}`).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((fc: FC | null) => {
-        if (!fc) return null;
+      const req = fetch(`${this.host.dataBase}/${DATA_FILES[key]}`).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((fc: FC | null) => {
+        if (!fc) { if (this.files.get(key) === req) this.files.delete(key); return null; }
         fc.features.forEach((f, i) => {
           f.properties = f.properties ?? {};
           f.properties._i = i;
@@ -150,6 +150,7 @@ export class OverlayUI {
         this.loadMs[key] = Math.round(performance.now() - t0);
         return fc;
       });
+      p = req;
       this.files.set(key, p);
     }
     return p;
@@ -323,12 +324,29 @@ export class OverlayUI {
     if (!lg) { $('ov-shipping').hidden = true; return; }
     const span = lg.log10Max - lg.log10Min;
     const pos = (l: number) => ((100 * (l - lg.log10Min)) / span).toFixed(1);
-    const grad = lg.stops.map((s) => `${s.color} ${pos(s.log10)}%`).join(', ');
+    const safeColor = (c: string) => (/^#[0-9a-fA-F]{3,8}$|^rgba?\([\d.,\s%]+\)$/.test(c) ? c : '#888');
+    const grad = lg.stops.map((s) => `${safeColor(s.color)} ${pos(s.log10)}%`).join(', ');
     const sup = (n: number) => String(n).split('').map((d) => '⁰¹²³⁴⁵⁶⁷⁸⁹'[Number(d)]).join('');
-    const ticks = lg.stops.filter((s) => Number.isInteger(s.log10) && s.log10 % 1 === 0 && s.log10 >= Math.ceil(lg.log10Min))
-      .map((s) => `<span style="left:${pos(s.log10)}%">10${sup(s.log10)}</span>`).join('');
     const [y0, y1] = lg.period.split('/').map((x) => x.slice(0, 4));
-    $('ovk-shipping').innerHTML = `<div class="ov-bar" style="background:linear-gradient(90deg, ${grad})"></div><div class="ov-ticks" aria-hidden="true">${ticks}</div><p class="ov-unit">Relative traffic intensity, ${y0}–${y1}</p>`;
+    const root = $('ovk-shipping');
+    root.replaceChildren();
+    const bar = document.createElement('div');
+    bar.className = 'ov-bar';
+    bar.style.background = `linear-gradient(90deg, ${grad})`;
+    const ticksEl = document.createElement('div');
+    ticksEl.className = 'ov-ticks';
+    ticksEl.setAttribute('aria-hidden', 'true');
+    for (const s of lg.stops) {
+      if (!Number.isInteger(s.log10) || s.log10 < Math.ceil(lg.log10Min)) continue;
+      const sp = document.createElement('span');
+      sp.style.left = `${pos(s.log10)}%`;
+      sp.textContent = `10${sup(s.log10)}`;
+      ticksEl.appendChild(sp);
+    }
+    const unit = document.createElement('p');
+    unit.className = 'ov-unit';
+    unit.textContent = `Relative traffic intensity, ${y0}–${y1}`;
+    root.append(bar, ticksEl, unit);
     $('ovn-shipping').textContent = `Relative ship traffic from AIS position reports, ${y0}–${y1}. The source's values are weighted, not counts of ships or reports, so compare places with each other: busy lanes, ports and fishing grounds glow.`;
   }
 

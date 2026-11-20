@@ -234,7 +234,8 @@ export class Particles {
     const uv = this.uv, D2R = Math.PI / 180;
     for (let i = 0; i < this.n; i++) {
       const la = this.lat[i];
-      if (++this.age[i] > this.life[i] || !sampleUV(f, this.lon[i], la, uv)) { this.spawn(i, f, area); continue; }
+      this.age[i] += frames;
+      if (this.age[i] > this.life[i] || !sampleUV(f, this.lon[i], la, uv)) { this.spawn(i, f, area); continue; }
       const cl = Math.max(Math.cos(la * D2R), 0.08);
       let lo = this.lon[i] + (uv[0] * k * frames) / cl;
       const nla = la + uv[1] * k * frames;

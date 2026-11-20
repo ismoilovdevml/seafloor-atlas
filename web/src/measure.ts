@@ -15,18 +15,23 @@ export function pathKm(pts: LonLat[], closed = false): number {
   return d;
 }
 
-/** Area of a closed ring on the sphere (km²), by the spherical-excess sum of Chamberlain & Duquette (2007). */
+/** Exact area of a closed great-circle ring on the sphere (km²), via polar spherical excess (pole-safe). */
 export function ringAreaKm2(pts: LonLat[]): number {
   if (pts.length < 3) return 0;
-  const R = (Math.PI / 180);
-  let s = 0;
+  const R = Math.PI / 180;
+  let tot = 0;
   for (let i = 0; i < pts.length; i++) {
     const [l1, p1] = pts[i], [l2, p2] = pts[(i + 1) % pts.length];
-    let dl = l2 - l1;
-    if (dl > 180) dl -= 360; else if (dl < -180) dl += 360;
-    s += dl * R * (2 + Math.sin(p1 * R) + Math.sin(p2 * R));
+    const dl = (((((l2 - l1 + 180) % 360) + 360) % 360) - 180) * R;
+    const c1 = (Math.PI / 2 - p1 * R) / 2;
+    const c2 = (Math.PI / 2 - p2 * R) / 2;
+    const s1 = Math.sin(c1), k1 = Math.cos(c1);
+    const s2 = Math.sin(c2), k2 = Math.cos(c2);
+    tot += 2 * Math.atan2(s1 * s2 * Math.sin(dl), k1 * k2 + s1 * s2 * Math.cos(dl));
   }
-  return Math.abs((s * EARTH_RADIUS_KM * EARTH_RADIUS_KM) / 2);
+  const fourPi = 4 * Math.PI;
+  const omega = Math.abs(tot) % fourPi;
+  return Math.min(omega, fourPi - omega) * EARTH_RADIUS_KM * EARTH_RADIUS_KM;
 }
 
 const nf = (x: number, d: number) => x.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -72,7 +77,7 @@ export class MeasureTool {
   private markers: maplibregl.Marker[] = [];
   private label: maplibregl.Marker;
   private panel: HTMLElement;
-  private onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') this.stop(); };
+  private onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); this.stop(); } };
 
   constructor(private map: MlMap, private host: MeasureHost, parent: HTMLElement, private button: HTMLButtonElement) {
     this.panel = document.createElement('section');
@@ -103,12 +108,15 @@ export class MeasureTool {
     });
   }
 
+  get element(): HTMLElement { return this.panel; }
+
   start(first?: LonLat) {
     if (!this.active) {
       this.host.beforeStart();
       this.active = true;
       this.button.setAttribute('aria-pressed', 'true');
       this.panel.hidden = false;
+      this.panel.parentElement?.classList.add('measuring');
       this.map.getCanvas().style.cursor = 'crosshair';
       document.addEventListener('keydown', this.onKey);
       this.ensureLayers();
@@ -124,6 +132,7 @@ export class MeasureTool {
     this.active = false;
     this.button.setAttribute('aria-pressed', 'false');
     this.panel.hidden = true;
+    this.panel.parentElement?.classList.remove('measuring');
     this.map.getCanvas().style.cursor = '';
     document.removeEventListener('keydown', this.onKey);
     this.host.layout();
@@ -179,7 +188,15 @@ export class MeasureTool {
     const line = this.pts.length > 1 ? pathLine(this.pts, this.closed) : [];
     const feats: GeoJSON.Feature[] = [];
     if (line.length > 1) feats.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: line } });
-    if (this.closed) feats.push({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [line] } });
+    if (this.closed && line.length > 3) {
+      const last = line[line.length - 1];
+      const wrapsPole = Math.abs(last[0] - line[0][0]) > 1e-6;
+      const ring = wrapsPole
+        ? line.map(([lo, la]) => [((((lo + 180) % 360) + 360) % 360) - 180, la] as LonLat)
+        : line.slice();
+      ring[ring.length - 1] = ring[0];
+      feats.push({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring] } });
+    }
     src?.setData({ type: 'FeatureCollection', features: feats });
     this.markers.forEach((m, i) => m.getElement().classList.toggle('first', i === 0 && this.pts.length > 2 && !this.closed));
     const km = pathKm(this.pts, this.closed);

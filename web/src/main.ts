@@ -55,7 +55,10 @@ let tilesBase = TILESETS[params.get('tiles') ?? ''] ?? 'tiles';
 let meta = await getJSON<Meta>(`${tilesBase}/meta.json`);
 if (!meta && tilesBase === 'tiles') { tilesBase = 'tiles-synthetic'; meta = await getJSON<Meta>(`${tilesBase}/meta.json`); }
 if (!meta) {
-  document.body.insertAdjacentHTML('beforeend', '<p class="fatal" style="position:fixed;inset:auto 0 50%;text-align:center">No tiles found. Build them with the pipeline (web/public/tiles) or run <code>npm run synth</code>.</p>');
+  const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  document.body.insertAdjacentHTML('beforeend', dev
+    ? '<p class="fatal" style="position:fixed;inset:auto 0 50%;text-align:center">No tiles found. Build them with the pipeline (web/public/tiles) or run <code>npm run synth</code>.</p>'
+    : '<p class="fatal" role="alert" style="position:fixed;inset:auto 0 50%;text-align:center">The map data could not be loaded. Check your connection and reload the page.</p>');
   throw new Error('no tiles');
 }
 const synthetic = tilesBase === 'tiles-synthetic';
@@ -187,6 +190,7 @@ function placeNav3d() {
   if (el.hidden) return;
   el.style.bottom = `${Math.round(H - Math.min(...anchors.map((a) => a.top)) + 10)}px`;
   el.style.right = `${Math.round(W - rect('readout').right)}px`;
+  el.dataset.placed = '';
 }
 applyExaggeration(exagValue);
 
@@ -202,7 +206,16 @@ function rowState(row: string, legend: string | null, on: boolean) {
   if (legend) $(legend).hidden = !on;
 }
 function setVeil(on: boolean) { tVeil.checked = on; setVisible('veil', on); rowState('row-veil', 'lg-veil', on); if (on) $('story-veil').hidden = true; }
-function setPlates(on: boolean) { tPlates.checked = on; setVisible('plates', on); rowState('row-plates', 'lg-plates', on); }
+let platesP: Promise<unknown> | null = null;
+function setPlates(on: boolean) {
+  tPlates.checked = on; setVisible('plates', on); rowState('row-plates', 'lg-plates', on);
+  // plates.geojson (~4 MB) is fetched only the first time the layer is switched on
+  if (on && !platesP) {
+    platesP = getJSON<GeoJSON.FeatureCollection>(`${dataBase}/plates.geojson`).then((fc) => {
+      if (fc) (map.getSource('plates') as GeoJSONSource).setData(fc); else platesP = null;
+    });
+  }
+}
 function setFeatures(on: boolean) { tFeatures.checked = on; setVisible(FEATURE_LAYERS, on); rowState('row-features', null, on); }
 tVeil.addEventListener('change', () => setVeil(tVeil.checked));
 tPlates.addEventListener('change', () => setPlates(tPlates.checked));
@@ -286,8 +299,8 @@ async function setCertainty(id: CertaintyId, on: boolean) {
   if (lastPoint) renderExtra(lastPoint[0], lastPoint[1]);
 }
 for (const id of CERTAINTY_IDS) $<HTMLInputElement>(`t-${id}`).addEventListener('change', (e) => setCertainty(id, (e.target as HTMLInputElement).checked));
-map.on('mouseenter', 'seals', () => { if (!profiling) map.getCanvas().style.cursor = 'pointer'; });
-map.on('mouseleave', 'seals', () => { if (!profiling) map.getCanvas().style.cursor = ''; });
+map.on('mouseenter', 'seals', () => { if (!map.getCanvas().style.cursor) map.getCanvas().style.cursor = 'pointer'; });
+map.on('mouseleave', 'seals', () => { if (map.getCanvas().style.cursor === 'pointer') map.getCanvas().style.cursor = ''; });
 // legends and the short notes, from each layer's own legend.json
 const tickRow = (vals: number[], pos: (v: number) => number, label: (v: number) => string) => vals.map((v, i) =>
   `<span class="${i === 0 ? 'first' : i === vals.length - 1 ? 'last' : ''}" style="left:${(100 * pos(v)).toFixed(1)}%">${label(v)}</span>`).join('');
@@ -351,7 +364,7 @@ $('plate-key').innerHTML = (Object.keys(PLATE_STYLE) as (keyof typeof PLATE_STYL
 {
   const doi = meta.doi;
   $('credits-body').innerHTML = `
-    <p><strong>Bathymetry</strong>: ${meta.citation}, <a href="https://doi.org/${doi}" target="_blank" rel="noopener">doi:${doi}</a>. ${meta.licence ?? 'Open Government Licence v3'}: <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/" target="_blank" rel="noopener">OGL v3</a>. Shown at ${meta.sourceResolutionArcsec / 60} arc-minute resolution. “Measured” = GEBCO type identifier 10–17 (direct survey).</p>
+    <p><strong>Bathymetry</strong>: ${meta.citation}, <a href="https://doi.org/${doi}" target="_blank" rel="noopener">doi:${doi}</a>. ${meta.licence ?? 'Open Government Licence v3'}: <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/" target="_blank" rel="noopener">OGL v3</a>. Shown at ${meta.sourceResolutionArcsec / 60} arc-minute resolution up to zoom ${meta.maxzoom}${meta.hires ? `, the full ${meta.hires.sourceResolutionArcsec ?? 15}″ grid at zoom ${meta.maxzoom + 1}–${meta.hires.maxzoom}` : ''}. “Measured” = GEBCO type identifier 10–17 (direct survey).</p>
     <p><strong>Plate boundaries</strong>: Bird, P. (2003) An updated digital model of plate boundaries, <em>G³</em> 4(3), 1027, <a href="https://doi.org/10.1029/2001GC000252" target="_blank" rel="noopener">doi:10.1029/2001GC000252</a> (PB2002), ODC-By 1.0.</p>
     <p><strong>Undersea feature names</strong>: IHO-IOC GEBCO Gazetteer of Undersea Feature Names.</p>
     <p><strong>Ocean water</strong>: World Ocean Atlas 2023, 1991–2020 climate normal, objectively analysed means (NOAA NCEI). Temperature: Locarnini et al. (2024), NOAA Atlas NESDIS 89, <a href="https://doi.org/10.25923/54bh-1613" target="_blank" rel="noopener">doi:10.25923/54bh-1613</a>. Salinity: Reagan et al. (2024), NOAA Atlas NESDIS 90, <a href="https://doi.org/10.25923/70qt-9574" target="_blank" rel="noopener">doi:10.25923/70qt-9574</a>. Potential density computed here with TEOS-10 (gsw). Colour maps: cmocean (Thyng et al. 2016).</p>
@@ -446,7 +459,12 @@ function showPlate(p: Record<string, unknown>) {
 const stories = (await getJSON<Story[]>('data/stories.json')) ?? [];
 const storyList = $('story-list');
 function where([lon, lat]: [number, number]) { return `${formatLat(lat).replace('.000', '').replace(/(\.\d)\d+/, '$1')}, ${formatLon(lon).replace(/(\.\d)\d+/, '$1')}`; }
-storyList.innerHTML = stories.map((s) => `<li><button data-story="${s.id}" aria-current="false">${s.title}<span class="where">${where(s.center)}</span></button></li>`).join('');
+storyList.replaceChildren(...stories.map((s) => {
+  const li = document.createElement('li'), b = document.createElement('button'), w = document.createElement('span');
+  b.dataset.story = s.id; b.setAttribute('aria-current', 'false'); b.textContent = s.title;
+  w.className = 'where'; w.textContent = where(s.center);
+  b.appendChild(w); li.appendChild(b); return li;
+}));
 function markStory(id: string | null) {
   storyList.querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.setAttribute('aria-current', String(b.dataset.story === id)));
 }
@@ -455,6 +473,8 @@ function playStory(s: Story, instant = false) {
   timeUI?.close(false); // stories are told at today's sea level, with every layer at its full extent
   closeSea(false);
   water.close(false); // and over the plain relief
+  if (profiling) setProfiling(false);
+  measureTool.stop();
   currentStory = s;
   markStory(s.id);
   show('feature-card', false);
@@ -470,7 +490,9 @@ function playStory(s: Story, instant = false) {
   if (window.innerWidth < 760) setTab('none');
   updatePadding();
   if (instant || reduce) map.jumpTo(cam); else map.flyTo({ ...cam, duration: 5200, curve: 1.6, essential: true });
-  history.replaceState(null, '', hashWithLayers(`#story=${s.id}`, overlays.state));
+  // keep #lang= and the extra layer tokens (quakes, winds, ...) when a story rewrites the address
+  const lang = /(?:^#|[#&])lang=(en|uz)(?:&|$)/.exec(location.hash)?.[1];
+  history.replaceState(null, '', hashWithLayers(`#story=${s.id}${lang ? `&lang=${lang}` : ''}`, { ...overlays.state, extra: extraTokens() }));
 }
 storyList.addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-story]');
@@ -482,6 +504,8 @@ $('story-veil').addEventListener('click', () => { setVeil(true); $('story-veil')
 // ---------- features + search ----------
 const featureData = await featureDataP;
 const features = featureData?.features ?? [];
+// one download feeds both the map labels and the search index
+if (featureData) (map.getSource('features') as GeoJSONSource).setData(featureData);
 $('features-stat').innerHTML = features.length ? `<strong>${features.length.toLocaleString('en-US')}</strong> named undersea features.` : '';
 const esc = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const input = $<HTMLInputElement>('search-input'), results = $<HTMLUListElement>('search-results');
@@ -560,11 +584,12 @@ input.addEventListener('keydown', (e) => {
   if (results.hidden) { if (e.key === 'Escape') input.blur(); return; }
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault();
-    active = (active + (e.key === 'ArrowDown' ? 1 : -1) + hits.length) % Math.max(1, hits.length);
+    if (!hits.length) return; // only the disabled "nothing found" row: nothing to select
+    active = (active + (e.key === 'ArrowDown' ? 1 : -1) + hits.length) % hits.length;
     results.querySelectorAll('li').forEach((li, i) => li.setAttribute('aria-selected', String(i === active)));
     input.setAttribute('aria-activedescendant', `opt-${active}`);
   } else if (e.key === 'Enter') { e.preventDefault(); choose(active); }
-  else if (e.key === 'Escape') { results.hidden = true; input.setAttribute('aria-expanded', 'false'); }
+  else if (e.key === 'Escape') { e.preventDefault(); results.hidden = true; input.setAttribute('aria-expanded', 'false'); }
 });
 results.addEventListener('pointerdown', (e) => { const li = (e.target as HTMLElement).closest<HTMLLIElement>('li[data-i]'); if (li) { e.preventDefault(); choose(Number(li.dataset.i)); } });
 input.addEventListener('blur', () => setTimeout(() => { results.hidden = true; input.setAttribute('aria-expanded', 'false'); }, 120));
@@ -737,9 +762,10 @@ map.on('click', (e) => {
   }
   else overlays.cardFor(hit).then((c) => { if (c && c !== 'cluster') { showCard(c); updatePadding(); } });
 });
-for (const id of FEATURE_LAYERS) {
-  map.on('mouseenter', id, () => { if (!profiling) map.getCanvas().style.cursor = 'pointer'; });
-  map.on('mouseleave', id, () => { if (!profiling) map.getCanvas().style.cursor = ''; });
+// pointer only over an otherwise default cursor, so the profile / measure crosshair is never overwritten
+for (const id of [...FEATURE_LAYERS, 'plates']) {
+  map.on('mouseenter', id, () => { if (!map.getCanvas().style.cursor) map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', id, () => { if (map.getCanvas().style.cursor === 'pointer') map.getCanvas().style.cursor = ''; });
 }
 
 // ---------- sea level ----------
@@ -863,6 +889,7 @@ function setPlaying(on: boolean) {
 
 function openSea(level?: number) {
   if (profiling) setProfiling(false);
+  measureTool.stop();
   water.close();
   timeUI?.close();
   seaOpen = true;
@@ -1053,7 +1080,7 @@ function mapShare() {
 {
   let raf = 0;
   const ro = new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(updatePadding); });
-  for (const id of ['ui', 'topbar', 'readout', 'stories', 'layers', 'legend', 'toolbar', 'profile', 'sea', 'water', 'time', 'time-offer', 'story-card', 'feature-card']) ro.observe($(id));
+  for (const id of ['ui', 'topbar', 'readout', 'stories', 'layers', 'legend', 'toolbar', 'profile', 'sea', 'water', 'time', 'time-offer', 'story-card', 'feature-card', 'measure']) ro.observe($(id));
 }
 
 // ---------- panels: drawers, legend dock, popovers, info notes (open state remembered in localStorage) ----------
@@ -1377,7 +1404,7 @@ function loadTime(): Promise<TimeUI> {
         apply: async (mo) => { if (!water.headless) return; if (mo) await water.showLayer(mo); else water.hideLayer(); },
       } : null,
       chl: {
-        label: 'Phytoplankton', period: '2003–2026', available: true, attribution: CHL_ATT,
+        label: 'Phytoplankton', period: '2002–2026', available: true, attribution: CHL_ATT,
         isOn: () => !!oceanUI?.chlOn,
         setOn: async (on) => { const o = await loadOcean(); await o.setMonth(timeUI?.month ?? 0); await o.setChl(on); },
         apply: async (mo) => { if (oceanUI) await oceanUI.setMonth(mo); },
@@ -1447,7 +1474,15 @@ function loadStart() {
   meter.start();
   if (fresh) { clearTimeout(loadShowTimer); loadShowTimer = window.setTimeout(loadSchedule, meter.delay + 5); } else loadSchedule();
 }
-function loadFinish() { meter.finish(); if (!meter.done) loadSchedule(); }
+// MapLibre never fires 'idle' while a layer repaints every frame (winds / currents animate), so the bar would stay
+// at 99 %: when every counted tile has finished, end the burst after a short quiet period as well
+let loadQuietTimer = 0;
+function loadFinish() {
+  meter.finish();
+  if (!meter.done) loadSchedule();
+  clearTimeout(loadQuietTimer);
+  if (meter.started > 0 && meter.finished >= meter.started) loadQuietTimer = window.setTimeout(() => { if (meter.finished >= meter.started) loadEnd(); }, 600);
+}
 function loadEnd() {
   const shown = meter.shown;
   if (!meter.end()) return;

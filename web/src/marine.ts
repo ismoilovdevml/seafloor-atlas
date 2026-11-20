@@ -45,11 +45,13 @@ export function valueAt(g: LLGrid, lon: number, lat: number): number | null {
 }
 
 const B32 = '0123456789bcdefghjkmnpqrstuvwxyz';
-/** Standard geohash (lon bit first). */
+/** Standard geohash (lon bit first; longitude wrapped to [-180, 180), latitude clamped to [-90, 90]). */
 export function geohash(lon: number, lat: number, precision: number): string {
+  const wlon = ((((lon + 180) % 360) + 360) % 360) - 180;
+  const clat = Math.max(-90, Math.min(90, lat));
   let lo = [-180, 180], la = [-90, 90], even = true, bit = 0, ch = 0, out = '';
   while (out.length < precision) {
-    const r = even ? lo : la, v = even ? lon : lat, mid = (r[0] + r[1]) / 2;
+    const r = even ? lo : la, v = even ? wlon : clat, mid = (r[0] + r[1]) / 2;
     if (v >= mid) { ch = (ch << 1) | 1; r[0] = mid; } else { ch <<= 1; r[1] = mid; }
     even = !even;
     if (++bit === 5) { out += B32[ch]; bit = 0; ch = 0; }
@@ -131,7 +133,7 @@ export function renderLL(out: Uint8ClampedArray, size: number, mode: MarineMode 
 /** Group cells ([col, row, records, species] on gh3) -> a dense records grid. */
 export function groupGrid(def: GridDef, data: number[][]): LLGrid {
   const values = new Uint32Array(def.ncol * def.nrow);
-  for (const [c, r, rec] of data) if (r >= 0 && r < def.nrow && c >= 0 && c < def.ncol) values[r * def.ncol + c] = Math.max(1, rec);
+  for (const [c, r, rec] of data) if (r >= 0 && r < def.nrow && c >= 0 && c < def.ncol && rec > 0) values[r * def.ncol + c] = rec;
   return { values, def };
 }
 

@@ -63,7 +63,7 @@ export class MarineUI {
       this.man = await r.json();
     } catch { $('row-marine').hidden = true; return false; }
     const sel = $<HTMLSelectElement>('marine-group');
-    sel.insertAdjacentHTML('beforeend', this.man!.groups.map((g) => `<option value="${g.id}">${g.title}</option>`).join(''));
+    for (const g of this.man!.groups) sel.appendChild(new Option(g.title, g.id));
     sel.addEventListener('change', () => this.set({ group: sel.value }));
     $('marine-mode').addEventListener('change', (e) => {
       const t = e.target as HTMLInputElement;
@@ -78,26 +78,34 @@ export class MarineUI {
   get groupDef(): GroupDef | undefined { return this.man?.groups.find((g) => g.id === this.group); }
 
   private grid(layer: string): Promise<LLGrid | null> {
-    let p = this.grids.get(layer);
-    if (p) return p;
+    const hit = this.grids.get(layer);
+    if (hit) return hit;
     const L = this.man!.layers[layer];
-    p = (async () => {
+    const p: Promise<LLGrid | null> = (async () => {
       if (!L) return null;
       const r = await fetch(`${this.host.base}${L.file}`);
       if (!r.ok) return null;
       return { values: decodePlanes(await inflate(await r.arrayBuffer()), L.dtype), def: this.man!.grids[L.grid] };
-    })().catch(() => null).then((g) => { this.ready.set(layer, g); return g; });
+    })().catch(() => null).then((g) => {
+      if (g && this.grids.get(layer) === p) this.ready.set(layer, g);
+      else if (this.grids.get(layer) === p) { this.grids.delete(layer); this.ready.delete(layer); }
+      return g;
+    });
     this.grids.set(layer, p);
     return p;
   }
   private groupData(id: string) {
-    let p = this.groups.get(id);
-    if (!p) {
-      const g = this.man!.groups.find((x) => x.id === id);
-      p = g ? fetch(`${this.host.base}${g.file}`).then((r) => (r.ok ? r.json() : null)).catch(() => null) : Promise.resolve(null);
-      p.then((f) => this.groupReady.set(id, f ? { file: f, grid: groupGrid(this.man!.grids.gh3, f.cells.data) } : null));
-      this.groups.set(id, p);
-    }
+    const hit = this.groups.get(id);
+    if (hit) return hit;
+    const g = this.man!.groups.find((x) => x.id === id);
+    const p: Promise<GroupFile | null> = g
+      ? fetch(`${this.host.base}${g.file}`).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+      : Promise.resolve(null);
+    p.then((f) => {
+      if (f && this.groups.get(id) === p) this.groupReady.set(id, { file: f, grid: groupGrid(this.man!.grids.gh3, f.cells.data) });
+      else if (this.groups.get(id) === p) { this.groups.delete(id); this.groupReady.delete(id); }
+    });
+    this.groups.set(id, p);
     return p;
   }
 
@@ -149,6 +157,7 @@ export class MarineUI {
     this.added = true;
   }
 
+  private framesLeft = 0;
   private async draw() {
     const t = ++this.token;
     let g: LLGrid | null, ocean: LLGrid | null = null;
@@ -161,7 +170,7 @@ export class MarineUI {
       const v = VIEW[this.mode];
       [g, ocean] = await Promise.all([this.grid(v.layer), v.ocean ? this.grid(v.ocean) : Promise.resolve(null)]);
     }
-    if (t !== this.token || !g) return;
+    if (t !== this.token || !g || !this.on) return;
     const t0 = performance.now();
     renderLL(this.img.data, SIZE, mode, g, ocean);
     this.ctx.putImageData(this.img, 0, 0);
@@ -172,9 +181,16 @@ export class MarineUI {
       // terrain-draped texture cache
       src.play();
       this.host.map.setPaintProperty('marine', 'raster-opacity', this.stats.renders % 2 ? OPACITY - 0.001 : OPACITY);
-      let n = 3;
-      const onRender = () => { if (--n > 0) return; this.host.map.off('render', onRender); src.pause(); };
-      this.host.map.on('render', onRender);
+      const already = this.framesLeft > 0;
+      this.framesLeft = 3;
+      if (!already) {
+        const onRender = () => {
+          if (--this.framesLeft > 0) return;
+          this.host.map.off('render', onRender);
+          src.pause();
+        };
+        this.host.map.on('render', onRender);
+      }
       this.host.map.triggerRepaint();
     }
   }
@@ -212,9 +228,16 @@ export class MarineUI {
     if (!this.on || !this.man) return null;
     const gh3 = geohash(lon, lat, 3), gh2 = gh3.slice(0, 2);
     let p = this.cells.get(gh2);
-    if (!p) { p = fetch(`${this.host.base}cells/${gh2}.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null); this.cells.set(gh2, p); }
-    // English names and IUCN status come from the groups' top-species lists (loaded once, ~0.9 MB)
-    const [cells] = await Promise.all([p, ...this.man.groups.map((g) => this.groupData(g.id))]);
+    if (!p) {
+      const req = fetch(`${this.host.base}cells/${gh2}.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+        .then((res) => { if (!res && this.cells.get(gh2) === req) this.cells.delete(gh2); return res; });
+      p = req;
+      this.cells.set(gh2, p);
+      while (this.cells.size > 48) this.cells.delete(this.cells.keys().next().value!);
+    }
+    // Use already-loaded group metadata for common names/IUCN without downloading all 9 bulky cell grids (~827 KB).
+    // If a specific group is selected, ensure that group is loaded.
+    const [cells] = await Promise.all([p, ...(this.group ? [this.groupData(this.group)] : [])]);
     const info = cells?.[gh3];
     const names = new Map<number, { common?: string; iucn?: string | null }>();
     for (const g of this.man.groups) for (const s of this.groupReady.get(g.id)?.file.top ?? []) names.set(s.aphiaId, s);

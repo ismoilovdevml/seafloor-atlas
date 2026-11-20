@@ -152,7 +152,7 @@ export function recolourHistory(src: Uint8ClampedArray, out: Uint8ClampedArray, 
   for (let p = 0; p < src.length; p += 4) {
     if (src[p + 3] < 128) { out[p + 3] = 0; continue; }
     if (!(src[p + 1] & bit)) { out[p] = HISTORY_VEIL[0]; out[p + 1] = HISTORY_VEIL[1]; out[p + 2] = HISTORY_VEIL[2]; out[p + 3] = HISTORY_VEIL[3]; continue; }
-    const code = src[p], first = 2000 + (code >= 100 ? code - 100 : code), isNew = first >= year;
+    const code = src[p], first = 2000 + (code >= 100 ? code - 100 : code), isNew = year > 2019 && first >= year;
     // at coarse zooms one track lights a whole pixel: opacity follows the measured share of the pixel (2026),
     // with a floor so a single track (or a cell measured then but re-coded since) stays visible
     const share = Math.sqrt(src[p + 2] / 255);

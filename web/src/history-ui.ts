@@ -30,30 +30,45 @@ export class HistoryUI {
 
   private decode(z: string, x: string, y: string): Promise<Uint8ClampedArray | null> {
     const k = `${z}/${x}/${y}`;
-    let p = this.decoded.get(k);
-    if (!p) {
-      p = (async () => {
-        const [r, cov] = await Promise.all([fetch(`${this.base}tiles/${k}.webp`), fetchTile('coverage', +z, +x, +y).catch(() => null)]);
-        if (!r.ok) return null;
-        const px = async (blob: Blob) => {
-          // exact channel values: no premultiplication, no colour management (history alpha is 0 or 255)
-          const bmp = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+    const hit = this.decoded.get(k);
+    if (hit) {
+      this.decoded.delete(k);
+      this.decoded.set(k, hit);
+      return hit;
+    }
+    const p: Promise<Uint8ClampedArray | null> = (async () => {
+      const [r, cov] = await Promise.all([fetch(`${this.base}tiles/${k}.webp`), fetchTile('coverage', +z, +x, +y).catch(() => null)]);
+      if (!r.ok) return null;
+      const px = async (blob: Blob) => {
+        // exact channel values: no premultiplication, no colour management (history alpha is 0 or 255)
+        const bmp = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+        try {
           const c = new OffscreenCanvas(bmp.width, bmp.height), g = c.getContext('2d', { willReadFrequently: true })!;
           g.drawImage(bmp, 0, 0);
-          bmp.close();
           return g.getImageData(0, 0, c.width, c.height).data;
-        };
-        const d = await px(await r.blob());
-        const v = cov ? await px(new Blob([cov], { type: 'image/webp' })) : null;
-        if (v && v.length === d.length) {
-          // the veil's alpha survives canvas premultiplication exactly; share = 1 - alpha / veilMax
-          for (let i = 3; i < d.length; i += 4) d[i - 1] = Math.round(255 * Math.max(0, Math.min(1, 1 - v[i] / this.veilMax)));
-        } else for (let i = 3; i < d.length; i += 4) d[i - 1] = 0;
-        return d;
-      })().catch(() => null);
-      this.decoded.set(k, p);
-      if (this.decoded.size > CACHE) this.decoded.delete(this.decoded.keys().next().value!);
-    }
+        } finally {
+          bmp.close();
+        }
+      };
+      const d = await px(await r.blob());
+      const v = cov ? await px(new Blob([cov], { type: 'image/webp' })) : null;
+      if (v && v.length === d.length) {
+        // The veil's alpha survives canvas premultiplication; share = 1 - alpha / veilMax.
+        // Guard against land/ocean coastal mismatch where coverage writes alpha = 0 for land:
+        // if a pixel was NOT measured in 2026 (G bit 7 = 128 unset) and coverage alpha is 0, treat share as 0.
+        for (let i = 3; i < d.length; i += 4) {
+          d[i - 1] = v[i] === 0 && !(d[i - 2] & 128)
+            ? 0
+            : Math.round(255 * Math.max(0, Math.min(1, 1 - v[i] / this.veilMax)));
+        }
+      } else for (let i = 3; i < d.length; i += 4) d[i - 1] = 0;
+      return d;
+    })().catch(() => null).then((res) => {
+      if (!res && this.decoded.get(k) === p) this.decoded.delete(k);
+      return res;
+    });
+    this.decoded.set(k, p);
+    if (this.decoded.size > CACHE) this.decoded.delete(this.decoded.keys().next().value!);
     return p;
   }
 
@@ -64,7 +79,7 @@ export class HistoryUI {
       if (!m) throw new Error(`bad history tile url ${params.url}`);
       return trackTile((async () => {
         const src = await this.decode(m[2], m[3], m[4]);
-        if (!src) return { data: new ArrayBuffer(0) };
+        if (!src) throw new Error(`history tile not found ${params.url}`);
         const side = Math.round(Math.sqrt(src.length / 4));
         const out = new ImageData(side, side);
         recolourHistory(src, out.data, Number(m[1]));

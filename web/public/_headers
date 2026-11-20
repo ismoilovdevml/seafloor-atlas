@@ -1,0 +1,59 @@
+# Cloudflare Pages response headers. Only /assets/* is content-hashed (Vite), so only it is immutable. Tiles, archive
+# pieces and binaries keep the same path when a new GEBCO release replaces them: they get a day in the browser and
+# a week of stale-while-revalidate, never a year. Pages joins the values of every matching rule, so the manifests
+# detach the folder's Cache-Control ("! Cache-Control") before setting their own short one.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=()
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/tiles/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/hires/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/history/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/woa/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/chl/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/flow/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/data/*
+  Cache-Control: public, max-age=3600, stale-while-revalidate=86400
+
+/img/*
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+
+/tiles/meta.json
+  ! Cache-Control
+  Cache-Control: public, max-age=300, must-revalidate
+
+/hires/manifest.json
+  ! Cache-Control
+  Cache-Control: public, max-age=300, must-revalidate
+
+/history/manifest.json
+  ! Cache-Control
+  Cache-Control: public, max-age=300, must-revalidate
+
+/woa/manifest.json
+  ! Cache-Control
+  Cache-Control: public, max-age=300, must-revalidate
+
+/chl/manifest.json
+  ! Cache-Control
+  Cache-Control: public, max-age=300, must-revalidate
+
+/flow/*/manifest.json
+  ! Cache-Control
+  Cache-Control: public, max-age=300, must-revalidate

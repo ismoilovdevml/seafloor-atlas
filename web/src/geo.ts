@@ -10,11 +10,11 @@ export function decodeTerrarium(r: number, g: number, b: number): number {
 }
 
 /**
- * Veil alpha -> measured fraction (data contract): alpha 0 over land (DEM h > 0) means land (null);
+ * Veil alpha -> measured fraction (data contract): alpha 0 over land (DEM h >= 0) means land (null);
  * otherwise f = 1 - alpha / veilMax.
  */
 export function decodeVeil(alpha: number, veilMax: number, demHeight: number): number | null {
-  if (alpha === 0 && demHeight > 0) return null;
+  if (alpha === 0 && demHeight >= 0) return null;
   return Math.min(1, Math.max(0, 1 - alpha / veilMax));
 }
 
@@ -59,14 +59,36 @@ export function haversineKm(a: [number, number], b: [number, number]): number {
 export function greatCircle(a: [number, number], b: [number, number], n: number): [number, number][] {
   const [l1, p1] = [a[0] * RAD, a[1] * RAD], [l2, p2] = [b[0] * RAD, b[1] * RAD];
   const d = haversineKm(a, b) / EARTH_RADIUS_KM;
+  const x1 = Math.cos(p1) * Math.cos(l1), y1 = Math.cos(p1) * Math.sin(l1), z1 = Math.sin(p1);
+  const x2 = Math.cos(p2) * Math.cos(l2), y2 = Math.cos(p2) * Math.sin(l2), z2 = Math.sin(p2);
+  // Near-antipodal (d ≈ π): sin(d) -> 0 causes catastrophic cancellation; rotate via a deterministic orthogonal axis.
+  const antipodal = Math.sin(d) < 1e-6 && d > 1;
+  let ux = 0, uy = 0, uz = 0;
+  if (antipodal) {
+    // Cross v1 with north pole (0,0,1), or (1,0,0) if v1 is near a pole.
+    if (Math.abs(z1) < 0.9) { ux = y1; uy = -x1; uz = 0; }
+    else { ux = 0; uy = z1; uz = -y1; }
+    const m = Math.hypot(ux, uy, uz) || 1;
+    ux /= m; uy /= m; uz /= m;
+  }
   const out: [number, number][] = [];
   for (let i = 0; i < n; i++) {
+    if (i === 0) { out.push([a[0], a[1]]); continue; }
+    if (i === n - 1) { out.push([b[0], b[1]]); continue; }
     const t = i / (n - 1);
     if (d < 1e-12) { out.push([a[0], a[1]]); continue; }
-    const A = Math.sin((1 - t) * d) / Math.sin(d), B = Math.sin(t * d) / Math.sin(d);
-    const x = A * Math.cos(p1) * Math.cos(l1) + B * Math.cos(p2) * Math.cos(l2);
-    const y = A * Math.cos(p1) * Math.sin(l1) + B * Math.cos(p2) * Math.sin(l2);
-    const z = A * Math.sin(p1) + B * Math.sin(p2);
+    let x: number, y: number, z: number;
+    if (antipodal) {
+      const ca = Math.cos(t * d), sa = Math.sin(t * d);
+      x = ca * x1 + sa * ux;
+      y = ca * y1 + sa * uy;
+      z = ca * z1 + sa * uz;
+    } else {
+      const A = Math.sin((1 - t) * d) / Math.sin(d), B = Math.sin(t * d) / Math.sin(d);
+      x = A * x1 + B * x2;
+      y = A * y1 + B * y2;
+      z = A * z1 + B * z2;
+    }
     out.push([Math.atan2(y, x) / RAD, Math.atan2(z, Math.hypot(x, y)) / RAD]);
   }
   return out;
@@ -103,7 +125,7 @@ export function formatLat(lat: number): string {
   return `${Math.abs(lat).toFixed(3)}° ${lat >= 0 ? 'N' : 'S'}`;
 }
 export function formatLon(lon: number): string {
-  const l = ((lon + 540) % 360) - 180;
+  const l = ((((lon + 180) % 360) + 360) % 360) - 180;
   return `${Math.abs(l).toFixed(3)}° ${l >= 0 ? 'E' : 'W'}`;
 }
 /** "−10,934 m" with a true minus sign and thousands separators. */

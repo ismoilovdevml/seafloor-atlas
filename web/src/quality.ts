@@ -14,7 +14,7 @@ export interface QualityStart { pixelRatio: number; antialias: boolean }
 
 export function startQuality(dpr: number, touch: boolean, params: URLSearchParams): QualityStart {
   const forced = Number(params.get('pr'));
-  const pixelRatio = forced > 0 ? forced : Math.min(dpr || 1, touch ? 1.5 : 2);
+  const pixelRatio = forced > 0 && Number.isFinite(forced) ? Math.min(4, Math.max(0.5, forced)) : Math.min(dpr || 1, touch ? 1.5 : 2);
   const aa = params.get('aa');
   return { pixelRatio, antialias: aa === '1' ? true : aa === '0' ? false : (dpr || 1) < 1.5 };
 }

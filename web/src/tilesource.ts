@@ -11,6 +11,8 @@ export interface HiresMeta {
   maxzoom: number;
   dem?: string;      // absolute URL of a PMTiles archive (Terrarium WebP)
   coverage?: string; // absolute URL of a PMTiles archive (veil RGBA WebP)
+  /** resolution of the archived grid (15 arc-seconds for GEBCO) */
+  sourceResolutionArcsec?: number;
 }
 
 /** hires/manifest.json next to the page: the same archives cut into static pieces (chunked.ts); preferred when present. */
@@ -49,6 +51,8 @@ export function tileTemplate(layer: TileLayer): string {
   return `${PROTOCOL}://${layer}/{z}/{x}/{y}`;
 }
 
+const inflight = new Map<string, Promise<ArrayBuffer | null>>();
+
 export async function fetchTile(layer: TileLayer, z: number, x: number, y: number, signal?: AbortSignal): Promise<ArrayBuffer | null> {
   if (z > lowMax) {
     const pm = archives.get(layer);
@@ -57,27 +61,45 @@ export async function fetchTile(layer: TileLayer, z: number, x: number, y: numbe
     return r ? r.data : null;
   }
   const url = `${staticBase}${layer}/${z}/${x}/${y}.webp`;
-  // GitHub Pages occasionally answers 503 under load (seen in live QA); retry transient failures
-  // with backoff, but not 4xx (a real miss) and not an aborted request.
-  for (let attempt = 0; ; attempt++) {
-    try {
-      const res = await fetch(url, { signal });
-      if (res.ok) return res.arrayBuffer();
-      if (res.status < 500 || attempt >= RETRIES) return null;
-    } catch (e) {
-      if (signal?.aborted || attempt >= RETRIES) throw e;
-    }
-    await sleep(RETRY_BASE_MS * 2 ** attempt, signal);
+  // Deduplicate simultaneous static tile fetches (e.g. dem-terrain and dem-relief requesting the same 512 px tile).
+  let shared = inflight.get(url);
+  if (!shared) {
+    shared = (async () => {
+      // Retry transient 5xx / network failures with backoff, but not 4xx.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const res = await fetch(url, { signal: undefined });
+          if (res.ok) return res.arrayBuffer();
+          if (res.status < 500 || attempt >= RETRIES) return null;
+        } catch (e) {
+          if (attempt >= RETRIES) throw e;
+        }
+        await sleep(RETRY_BASE_MS * 2 ** attempt);
+      }
+    })().finally(() => { inflight.delete(url); });
+    inflight.set(url, shared);
   }
+  if (!signal) return shared.then((b) => (b ? b.slice(0) : null));
+  if (signal.aborted) throw new DOMException('aborted', 'AbortError');
+  return new Promise<ArrayBuffer | null>((resolve, reject) => {
+    const onAbort = () => reject(new DOMException('aborted', 'AbortError'));
+    signal.addEventListener('abort', onAbort, { once: true });
+    shared!.then(
+      (b) => { signal.removeEventListener('abort', onAbort); resolve(b ? b.slice(0) : null); },
+      (err) => { signal.removeEventListener('abort', onAbort); reject(err); },
+    );
+  });
 }
 
 export const RETRIES = 3;
 export const RETRY_BASE_MS = 250;
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(new DOMException('aborted', 'AbortError'));
   return new Promise((resolve, reject) => {
-    const t = setTimeout(resolve, ms);
-    signal?.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('aborted', 'AbortError')); }, { once: true });
+    const onAbort = () => { clearTimeout(t); reject(new DOMException('aborted', 'AbortError')); };
+    const t = setTimeout(() => { signal?.removeEventListener('abort', onAbort); resolve(); }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 

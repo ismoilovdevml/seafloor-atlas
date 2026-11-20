@@ -18,41 +18,63 @@ export interface SamplerMeta { tileSize: number; maxzoom: number; veilMax: numbe
 export class TileSampler {
   private cache = new Map<string, Promise<Grid | null>>();
   private ready = new Map<string, Grid | null>();
-  private order: string[] = [];
   // tiles come from tilesource.fetchTile (static or PMTiles); the first argument is kept for call-site compatibility
   constructor(_base: string, private meta: SamplerMeta, private capacity = 96) {}
 
   private key(kind: Kind, z: number, x: number, y: number) { return `${kind}/${z}/${x}/${y}`; }
 
-  private load(kind: Kind, z: number, x: number, y: number): Promise<Grid | null> {
+  private evict(minCapacity = this.capacity) {
+    const cap = Math.max(this.capacity, minCapacity);
+    while (this.cache.size > cap) {
+      const old = this.cache.keys().next().value!;
+      this.cache.delete(old);
+      this.ready.delete(old);
+    }
+  }
+
+  private load(kind: Kind, z: number, x: number, y: number, minCapacity = this.capacity): Promise<Grid | null> {
     const k = this.key(kind, z, x, y);
-    let p = this.cache.get(k);
-    if (p) return p;
-    p = (async () => {
+    const hit = this.cache.get(k);
+    if (hit) {
+      // True LRU refresh: move to end of Map iteration order.
+      this.cache.delete(k);
+      this.cache.set(k, hit);
+      return hit;
+    }
+    const p: Promise<Grid | null> = (async () => {
       const buf = await fetchTile(kind, z, x, y);
       if (!buf) return null;
       const bmp = await createImageBitmap(new Blob([buf], { type: 'image/webp' }), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
-      const S = this.meta.tileSize;
-      const cv = new OffscreenCanvas(S, S);
-      const ctx = cv.getContext('2d', { willReadFrequently: true })!;
-      ctx.drawImage(bmp, 0, 0);
-      bmp.close();
-      const px = ctx.getImageData(0, 0, S, S, { colorSpace: 'srgb' }).data;
-      if (kind === 'dem') {
-        const g = new Float32Array(S * S);
-        for (let i = 0; i < S * S; i++) g[i] = decodeTerrarium(px[i * 4], px[i * 4 + 1], px[i * 4 + 2]);
-        return g;
+      try {
+        const S = this.meta.tileSize;
+        const cv = new OffscreenCanvas(S, S);
+        const ctx = cv.getContext('2d', { willReadFrequently: true })!;
+        ctx.drawImage(bmp, 0, 0);
+        const px = ctx.getImageData(0, 0, S, S, { colorSpace: 'srgb' }).data;
+        if (kind === 'dem') {
+          const g = new Float32Array(S * S);
+          for (let i = 0; i < S * S; i++) g[i] = decodeTerrarium(px[i * 4], px[i * 4 + 1], px[i * 4 + 2]);
+          return g;
+        }
+        const a = new Uint8Array(S * S);
+        for (let i = 0; i < S * S; i++) a[i] = px[i * 4 + 3];
+        return a;
+      } finally {
+        bmp.close();
       }
-      const a = new Uint8Array(S * S);
-      for (let i = 0; i < S * S; i++) a[i] = px[i * 4 + 3];
-      return a;
-    })().catch(() => null).then((g) => { this.ready.set(k, g); return g; });
+    })().then((g) => {
+      // Only populate `ready` if this exact promise is still retained in `cache` (prevents leaked Float32Arrays on eviction).
+      if (this.cache.get(k) === p) {
+        if (g) this.ready.set(k, g);
+        else { this.cache.delete(k); this.ready.delete(k); }
+      }
+      return g;
+    }).catch(() => {
+      if (this.cache.get(k) === p) { this.cache.delete(k); this.ready.delete(k); }
+      return null;
+    });
     this.cache.set(k, p);
-    this.order.push(k);
-    while (this.order.length > this.capacity) {
-      const old = this.order.shift()!;
-      this.cache.delete(old); this.ready.delete(old);
-    }
+    this.evict(minCapacity);
     return p;
   }
 
@@ -70,13 +92,6 @@ export class TileSampler {
     return [...set].map((s) => s.split(',').map(Number) as [number, number]);
   }
 
-  private pixel(kind: Kind, z: number, ix: number, iy: number): number {
-    const S = this.meta.tileSize;
-    const g = this.ready.get(this.key(kind, z, Math.floor(ix / S), Math.floor(iy / S)));
-    if (!g) return NaN;
-    return g[(iy % S) * S + (ix % S)];
-  }
-
   /**
    * Sample depth (bilinear) and measured fraction (nearest) at many lon/lat points at zoom z.
    * NaN = tile missing (unknown); fraction null = land.
@@ -85,21 +100,26 @@ export class TileSampler {
     const S = this.meta.tileSize, n = S * 2 ** z;
     const world = lonlats.map(([lon, lat]) => lonLatToWorldPx(lon, lat, z, S));
     const tiles = this.tilesFor(world, z);
-    await Promise.all(tiles.flatMap(([x, y]) => [this.load('dem', z, x, y), this.load('coverage', z, x, y)]));
-    // re-pin: the LRU may have evicted something during a very long profile; reload synchronously-needed ones
-    for (const [x, y] of tiles) {
-      if (!this.ready.has(this.key('dem', z, x, y))) await this.load('dem', z, x, y);
-      if (!this.ready.has(this.key('coverage', z, x, y))) await this.load('coverage', z, x, y);
-    }
+    const needed = Math.max(this.capacity, tiles.length * 2);
+    const grids = new Map<string, Grid | null>();
+    await Promise.all(tiles.flatMap(([x, y]) => [
+      this.load('dem', z, x, y, needed).then((g) => grids.set(this.key('dem', z, x, y), g)),
+      this.load('coverage', z, x, y, needed).then((g) => grids.set(this.key('coverage', z, x, y), g)),
+    ]));
+    const pxAt = (kind: Kind, ix: number, iy: number): number => {
+      const g = grids.get(this.key(kind, z, Math.floor(ix / S), Math.floor(iy / S)));
+      return g ? g[(iy % S) * S + (ix % S)] : NaN;
+    };
     const h: number[] = [], f: (number | null)[] = [];
     for (const [x, y] of world) {
-      const d = bilinear((ix, iy) => this.pixel('dem', z, ix, iy), x, y, n);
+      const d = bilinear((ix, iy) => pxAt('dem', ix, iy), x, y, n);
       h.push(d);
       const ix = wrapPx(Math.floor(x), n), iy = Math.max(0, Math.min(n - 1, Math.floor(y)));
-      const a = this.pixel('coverage', z, ix, iy);
-      const hNear = this.pixel('dem', z, ix, iy);
+      const a = pxAt('coverage', ix, iy);
+      const hNear = pxAt('dem', ix, iy);
       f.push(Number.isNaN(a) ? NaN : decodeVeil(a, this.meta.veilMax, hNear));
     }
+    this.evict(this.capacity);
     return { h, f };
   }
 }

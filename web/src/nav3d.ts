@@ -35,14 +35,14 @@ export function mountNav3d(map: MlMap, host: HTMLElement): { el: HTMLElement; sy
       </button>
       <button type="button" class="nav3d-turn" id="nav-right" aria-label="Rotate the map clockwise" title="Rotate clockwise">${ARROW(true)}</button>
     </div>
-    <button type="button" class="nav3d-tilt" id="nav-tilt" aria-pressed="false" title="Tilt the view">3D</button>
+    <button type="button" class="nav3d-tilt" id="nav-tilt" aria-pressed="false" aria-label="3D tilted view" title="Tilt the view (3D)">3D</button>
     <button type="button" class="nav3d-tilt nav3d-measure" id="nav-measure" aria-pressed="false" aria-label="Measure distance" title="Measure distance">
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="2.5" y="7.5" width="19" height="9" rx="1.5" transform="rotate(-35 12 12)"/><path d="m8.2 9.6 1.4 2M10.9 7.7l1 1.4M13.6 5.8l1.4 2M6.4 12.2l1 1.4" stroke-linecap="round" transform="translate(1.6 2.2)"/></svg>
     </button>`;
   host.appendChild(el);
   const needle = el.querySelector<SVGGElement>('.needle')!;
   const tilt = el.querySelector<HTMLButtonElement>('#nav-tilt')!;
-  const ease = { duration: 450, essential: true };
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   const sync = () => {
     needle.style.transform = `rotate(${-map.getBearing()}deg)`;
@@ -53,7 +53,11 @@ export function mountNav3d(map: MlMap, host: HTMLElement): { el: HTMLElement; sy
   };
   // a new ease stops the running one, so clicks in quick succession keep each other's targets (north + 3D both land)
   let goal: { bearing?: number; pitch?: number } = {};
-  const go = (g: { bearing?: number; pitch?: number }) => { goal = { ...goal, ...g }; map.easeTo({ ...goal, ...ease }); };
+  const go = (g: { bearing?: number; pitch?: number }) => {
+    goal = { ...goal, ...g };
+    if (reduceMotion.matches) map.jumpTo(goal);
+    else map.easeTo({ ...goal, duration: 450 });
+  };
   map.on('moveend', () => { goal = {}; });
   el.querySelector('#nav-north')!.addEventListener('click', () => go({ bearing: 0 }));
   el.querySelector('#nav-left')!.addEventListener('click', () => go({ bearing: turned(goal.bearing ?? map.getBearing(), TURN_DEG) }));

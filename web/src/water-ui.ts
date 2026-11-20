@@ -56,6 +56,7 @@ export class WaterUI {
   private drawToken = 0;
   private monthPos = 0; // 0..12 while playing (fractional = blend)
   private lastT = 0;
+  private rafId: number | null = null;
   private chart: WaterChart;
   private colPoint: [number, number] | null = null;
   readonly stats = { renders: 0, renderMs: [] as number[] };
@@ -102,6 +103,17 @@ export class WaterUI {
     $('month-strip').addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-month]');
       if (b && !b.disabled) { this.setPlaying(false); this.set({ month: Number(b.dataset.month) }); }
+    });
+    $('month-strip').addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      const btns = [...$('month-strip').querySelectorAll<HTMLButtonElement>('button[data-month]:not(:disabled)')];
+      if (btns.length < 2) return;
+      const cur = btns.findIndex((b) => b.getAttribute('aria-checked') === 'true');
+      const next = btns[(cur + (e.key === 'ArrowRight' ? 1 : btns.length - 1)) % btns.length];
+      this.setPlaying(false);
+      this.set({ month: Number(next.dataset.month) });
+      next.focus();
+      e.preventDefault();
     });
     $('water-play').addEventListener('click', () => this.setPlaying(!this.playing));
     $('water-btn').addEventListener('click', () => (this.open ? this.close() : this.show()));
@@ -187,18 +199,36 @@ export class WaterUI {
   }
 
   private grid(key: string): Promise<Grid | null> {
-    let p = this.grids.get(key);
-    if (p) return p;
+    const hit = this.grids.get(key);
+    if (hit) {
+      this.grids.delete(key);
+      this.grids.set(key, hit);
+      return hit;
+    }
     const L = this.man.map.layers[key];
-    p = (async () => {
+    const p: Promise<Grid | null> = (async () => {
       if (!L) return null;
       const r = await fetch(`${this.host.base}map/${key}.bin`);
       if (!r.ok) return null;
       const q = await inflate(await r.arrayBuffer());
       const m = this.man.map;
       return { values: decodeMapLayer(q, L.lo, L.step), width: m.width, height: m.height, north: m.north, west: m.west, res: m.res_deg };
-    })().catch(() => null).then((g) => { this.ready.set(key, g); return g; });
+    })().catch(() => null).then((g) => {
+      if (g) {
+        if (this.grids.get(key) === p) this.ready.set(key, g);
+      } else if (this.grids.get(key) === p) {
+        this.grids.delete(key);
+        this.ready.delete(key);
+      }
+      return g;
+    });
     this.grids.set(key, p);
+    // Keep at most 20 decoded ~4 MB grids (~80 MB ceiling; fits all 12 monthly layers + 8 depths).
+    while (this.grids.size > 20) {
+      const old = this.grids.keys().next().value!;
+      this.grids.delete(old);
+      this.ready.delete(old);
+    }
     return p;
   }
 
@@ -217,7 +247,11 @@ export class WaterUI {
 
   private renderControls() {
     const meta = this.man.variables[this.v];
-    $('water-var').querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.var === this.v)));
+    $('water-var').querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
+      const on = b.dataset.var === this.v;
+      b.setAttribute('aria-checked', String(on));
+      b.tabIndex = on ? 0 : -1;
+    });
     const di = $<HTMLInputElement>('water-depth');
     di.value = String(this.depthIdx);
     const dtext = this.atFloor ? 'the seafloor' : this.depth === 0 ? 'surface' : `${this.depth.toLocaleString('en-US')} m`;
@@ -233,7 +267,9 @@ export class WaterUI {
     const shown = this.playing ? Math.round(this.monthPos) % 12 + 1 : this.month;
     $('month-strip').querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
       b.disabled = !mOn && b.dataset.month !== '0';
-      b.setAttribute('aria-checked', String(Number(b.dataset.month) === (mOn ? shown : 0)));
+      const on = Number(b.dataset.month) === (mOn ? shown : 0);
+      b.setAttribute('aria-checked', String(on));
+      b.tabIndex = on ? 0 : -1;
     });
     // legend
     const [lo, hi] = scaleRange(this.man, this.v, this.key, this.stretch);
@@ -318,13 +354,14 @@ export class WaterUI {
     if (on === this.playing || (on && !this.monthly)) return;
     this.playing = on;
     $('water-play').setAttribute('aria-pressed', String(on));
-    $('water-play').setAttribute('aria-label', on ? 'Pause the year' : 'Play the year, month by month');
+    $('water-play').setAttribute('aria-label', 'Play the year, month by month');
+    if (this.rafId !== null) { cancelAnimationFrame(this.rafId); this.rafId = null; }
     if (on) {
       this.monthPos = Math.max(0, this.month - 1);
       this.lastT = 0;
       // fetch all twelve months up front so the loop never waits on the network
       for (let i = 1; i <= 12; i++) this.grid(layerKey('t', 0, i));
-      requestAnimationFrame((ts) => this.tick(ts));
+      this.rafId = requestAnimationFrame((ts) => this.tick(ts));
     } else {
       this.month = Math.round(this.monthPos) % 12 + 1;
       if (this.open || this.headless) { this.renderControls(); this.draw(); }
@@ -337,6 +374,7 @@ export class WaterUI {
   }
   private busy = false;
   private tick(ts: number) {
+    this.rafId = null;
     if (!this.playing) return;
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (this.lastT) {
@@ -351,7 +389,7 @@ export class WaterUI {
       this.busy = true;
       this.draw().finally(() => { this.busy = false; this.host.onChange(); });
     }
-    requestAnimationFrame((t) => this.tick(t));
+    if (this.playing) this.rafId = requestAnimationFrame((t) => this.tick(t));
   }
 
   // ---------- hover ----------
@@ -363,27 +401,44 @@ export class WaterUI {
     const label = `${this.atFloor && this.v === 't' ? 'Potential temperature' : TITLES[this.v]}, ${where}`;
     let v = NaN;
     let L = this.man.map.layers[this.key];
+    let loaded = false;
     if (this.playing) {
       const m0 = Math.floor(this.monthPos) % 12, m1 = (m0 + 1) % 12, f = this.monthPos - Math.floor(this.monthPos);
-      const a = this.ready.get(layerKey('t', 0, m0 + 1)), b = this.ready.get(layerKey('t', 0, m1 + 1));
-      if (a && b) v = sampleGrid(a, lon, lat) * (1 - f) + sampleGrid(b, lon, lat) * f;
-      L = this.man.map.layers[layerKey('t', 0, m0 + 1)];
+      const k0 = layerKey('t', 0, m0 + 1), k1 = layerKey('t', 0, m1 + 1);
+      const a = this.ready.get(k0), b = this.ready.get(k1);
+      loaded = this.ready.has(k0) && this.ready.has(k1);
+      if (a && b) {
+        const va = sampleGrid(a, lon, lat), vb = sampleGrid(b, lon, lat);
+        v = Number.isFinite(va) && Number.isFinite(vb) ? va * (1 - f) + vb * f : f < 0.5 ? va : vb;
+      }
+      L = this.man.map.layers[k0];
     } else {
+      loaded = this.ready.has(this.key);
       const g = this.ready.get(this.key);
       if (g) v = sampleGrid(g, lon, lat);
     }
-    if (!Number.isFinite(v)) return { label, value: this.ready.has(this.key) ? 'no water' : '…' };
+    if (!Number.isFinite(v)) return { label, value: loaded ? 'no water' : '…' };
     return { label, value: formatWater(v, Math.min(2, decimalsFor(layerStep(L))), meta.units) };
   }
 
   // ---------- water column ----------
   private chunk(c: CellRef): Promise<Uint8Array | null> {
     const k = `${c.i}_${c.j}`;
-    let p = this.chunks.get(k);
-    if (!p) {
-      p = fetch(`${this.host.base}col/${k}.bin`).then(async (r) => (r.ok ? inflate(await r.arrayBuffer()) : null)).catch(() => null);
-      this.chunks.set(k, p);
+    const hit = this.chunks.get(k);
+    if (hit) {
+      this.chunks.delete(k);
+      this.chunks.set(k, hit);
+      return hit;
     }
+    const p = fetch(`${this.host.base}col/${k}.bin`)
+      .then(async (r) => (r.ok ? inflate(await r.arrayBuffer()) : null))
+      .catch(() => null)
+      .then((buf) => {
+        if (!buf && this.chunks.get(k) === p) this.chunks.delete(k);
+        return buf;
+      });
+    this.chunks.set(k, p);
+    while (this.chunks.size > 16) this.chunks.delete(this.chunks.keys().next().value!);
     return p;
   }
 
@@ -429,7 +484,7 @@ export class WaterUI {
       scale: this.man.variables[v].range,
     }));
     this.chart.set(col, panels, this.atFloor ? null : this.depth);
-    if (window.innerWidth < 760) $('wc-chart').scrollIntoView({ block: 'nearest' });
+    if (window.innerWidth <= 760) $('wc-chart').scrollIntoView({ block: 'nearest' });
     this.host.layout();
     pt?.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [lon, lat] } }] });
     return { lon: col.lon, lat: col.lat, moved, bottom, levels: col.depth.length, surface: { t: col.t[0], s: col.s[0], d: col.d[0] }, series: this.chart.seriesCount() };

@@ -68,14 +68,15 @@ export class EventsUI {
   private loadHistory(): Promise<QuakeFC | null> {
     let p = this.loads.get('quakes') as Promise<QuakeFC | null> | undefined;
     if (!p) {
-      p = this.timed('quakes', fetch(`${this.host.dataBase}/quakes.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((d: QuakeColumns | null) => {
-        if (!d) return null;
+      const req = this.timed('quakes', fetch(`${this.host.dataBase}/quakes.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((d: QuakeColumns | null) => {
+        if (!d) { if (this.loads.get('quakes') === req) this.loads.delete('quakes'); return null; }
         this.hist = quakesToGeoJSON(d);
         this.stats = yearStats(this.hist, 1900, Math.max(new Date().getUTCFullYear(), new Date(d.metadata.newest).getUTCFullYear()));
         const big = this.hist.features.filter((f) => f.properties.mag >= 7).length;
         $('quakes-stat').innerHTML = `<strong>${fmt(d.n)}</strong> earthquakes of magnitude 5.5 or more since 1900, ${fmt(big)} of them 7 or more. Almost all sit on plate boundaries.`;
         return this.hist;
       }));
+      p = req;
       this.loads.set('quakes', p);
     }
     return p;
@@ -95,14 +96,15 @@ export class EventsUI {
   private loadSeamounts() {
     let p = this.loads.get('seamounts') as Promise<unknown> | undefined;
     if (!p) {
-      p = this.timed('seamounts', fetch(`${this.host.dataBase}/seamounts.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((d: SeamountColumns | null) => {
-        if (!d) return null;
+      const req = this.timed('seamounts', fetch(`${this.host.dataBase}/seamounts.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((d: SeamountColumns | null) => {
+        if (!d) { if (this.loads.get('seamounts') === req) this.loads.delete('seamounts'); return null; }
         this.seamountData = seamountsToGeoJSON(d);
         (this.host.map.getSource('seamounts') as GeoJSONSource).setData(this.seamountData);
         const s = seamountShares(d);
         $('seamounts-stat').innerHTML = `Only <strong>${pct(s.measured, s.n)}</strong> of ${fmt(s.n)} seamount summits hold a sonar sounding; ${pct(s.named, s.n)} have a name.`;
         return this.seamountData;
       }));
+      p = req;
       this.loads.set('seamounts', p);
     }
     return p;
@@ -123,10 +125,11 @@ export class EventsUI {
       $('row-quakes').setAttribute('aria-busy', 'true');
       await this.applyQuakeData();
       $('row-quakes').removeAttribute('aria-busy');
-      if (this.quakeMode === 'history') this.host.offerTime('quakes');
+      if (this.quakesOn && this.quakeMode === 'history') this.host.offerTime('quakes');
     }
-    this.host.map.setLayoutProperty('quakes', 'visibility', on ? 'visible' : 'none');
-    this.host.map.setLayoutProperty('quakes-pulse', 'visibility', on && this.year !== null ? 'visible' : 'none');
+    const vis = this.quakesOn;
+    this.host.map.setLayoutProperty('quakes', 'visibility', vis ? 'visible' : 'none');
+    this.host.map.setLayoutProperty('quakes-pulse', 'visibility', vis && this.year !== null ? 'visible' : 'none');
     this.host.onChange();
   }
   async setQuakeMode(m: 'history' | 'live') {
@@ -170,7 +173,7 @@ export class EventsUI {
       await this.loadSeamounts();
       $('row-seamounts').removeAttribute('aria-busy');
     }
-    this.host.map.setLayoutProperty('seamounts', 'visibility', on ? 'visible' : 'none');
+    this.host.map.setLayoutProperty('seamounts', 'visibility', this.seamountsOn ? 'visible' : 'none');
     this.host.onChange();
   }
 

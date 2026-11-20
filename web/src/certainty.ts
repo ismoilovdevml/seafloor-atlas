@@ -74,15 +74,16 @@ export function classFromAlpha(a: number, lg: Pick<UncertaintyLegend, 'classes'>
   return lg.classes.reduce((b, c) => (Math.abs(c.alpha - a) < Math.abs(b.alpha - a) ? c : b));
 }
 
-/** Pixel of a z-level tile under lon/lat (Web Mercator). */
+/** Pixel of a z-level tile under lon/lat (Web Mercator, longitude wrapped to [-180, 180)). */
 export function tilePixel(lon: number, lat: number, z: number, size: number): { x: number; y: number; px: number; py: number } {
   const n = 2 ** z, la = Math.max(-85.0511, Math.min(85.0511, lat)) * Math.PI / 180;
-  const fx = ((lon + 180) / 360) * n, fy = ((1 - Math.log(Math.tan(la) + 1 / Math.cos(la)) / Math.PI) / 2) * n;
-  const x = Math.min(n - 1, Math.floor(fx)), y = Math.min(n - 1, Math.floor(fy));
-  return { x, y, px: Math.min(size - 1, Math.floor((fx - x) * size)), py: Math.min(size - 1, Math.floor((fy - y) * size)) };
+  const wrappedLon = ((((lon + 180) % 360) + 360) % 360) - 180;
+  const fx = ((wrappedLon + 180) / 360) * n, fy = ((1 - Math.log(Math.tan(la) + 1 / Math.cos(la)) / Math.PI) / 2) * n;
+  const x = Math.min(n - 1, Math.max(0, Math.floor(fx))), y = Math.min(n - 1, Math.max(0, Math.floor(fy)));
+  return { x, y, px: Math.min(size - 1, Math.max(0, Math.floor((fx - x) * size))), py: Math.min(size - 1, Math.max(0, Math.floor((fy - y) * size))) };
 }
 
-/** Reads RGBA from our raster tiles at their top zoom (decoded once, a small cache). */
+/** Reads RGBA from our raster tiles at their top zoom (decoded once, a small LRU cache). */
 export class RasterProbe {
   private cache = new Map<string, Promise<ImageData | null>>();
   constructor(private base: string, private z = 5, private size = 512) {}
@@ -90,14 +91,27 @@ export class RasterProbe {
     const t = tilePixel(lon, lat, this.z, this.size);
     const key = `${this.z}/${t.x}/${t.y}`;
     let p = this.cache.get(key);
-    if (!p) {
-      p = fetch(`${this.base}${key}.webp`).then(async (r) => {
-        if (!r.ok) return null;
+    if (p) {
+      // Refresh LRU position.
+      this.cache.delete(key);
+      this.cache.set(key, p);
+    } else {
+      const req = fetch(`${this.base}${key}.webp`).then(async (r) => {
+        if (r.status === 404) return null;
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const bmp = await createImageBitmap(await r.blob(), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
-        const c = new OffscreenCanvas(bmp.width, bmp.height), g = c.getContext('2d', { willReadFrequently: true })!;
-        g.drawImage(bmp, 0, 0);
-        return g.getImageData(0, 0, bmp.width, bmp.height);
-      }).catch(() => null);
+        try {
+          const c = new OffscreenCanvas(bmp.width, bmp.height), g = c.getContext('2d', { willReadFrequently: true })!;
+          g.drawImage(bmp, 0, 0);
+          return g.getImageData(0, 0, bmp.width, bmp.height);
+        } finally {
+          bmp.close();
+        }
+      }).catch(() => {
+        if (this.cache.get(key) === req) this.cache.delete(key);
+        return null;
+      });
+      p = req;
       this.cache.set(key, p);
       if (this.cache.size > 24) this.cache.delete(this.cache.keys().next().value!);
     }
@@ -113,13 +127,16 @@ const fmtM = (m: number) => `${Math.round(m).toLocaleString('en-US')} m`;
 export function sealCard(p: SealProps, lon: number, lat: number, attribution: string): CardModel {
   const share = p.n ? (100 * p.d) / p.n : 0;
   const ns = (v: number, pos: string, neg: string) => `${Math.abs(v).toFixed(1)}° ${v >= 0 ? pos : neg}`;
+  const chartDepth = p.cd < 0
+    ? `${fmtM(-p.cd)} above sea level (chart says land/ice, mean)`
+    : `${fmtM(p.cd)} (mean)`;
   return {
     kind: 'Seal dives deeper than the chart',
     name: `${ns(lat, 'N', 'S')}, ${ns(lon, 'E', 'W')}`,
     lead: `${p.d.toLocaleString('en-US')} of ${p.n.toLocaleString('en-US')} dives (${share < 1 ? share.toFixed(1) : Math.round(share)}%) went more than 20 m deeper than GEBCO 2026 allows here`,
     facts: [
       ['Deepest dive', fmtM(p.md)],
-      ['Chart depth at the dives', `${fmtM(Math.abs(p.cd))} (mean)`],
+      ['Chart depth at the dives', chartDepth],
       ['Largest excess', fmtM(p.x)],
       ['Deeper at the exact point', p.dp.toLocaleString('en-US')],
     ],

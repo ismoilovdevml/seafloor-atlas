@@ -757,7 +757,9 @@ input[role='switch']:checked::after { transform: translateX(12px); background: v
 }
 
 /* ================= compass + 3D (nav3d.ts), above the readout ================= */
-.nav3d { position: fixed; z-index: 4; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.nav3d { position: fixed; z-index: 4; display: flex; flex-direction: column; align-items: center; gap: 8px; right: 16px; bottom: 96px; }
+/* invisible until main.ts has placed it above the readout (start-up runs several awaits before the first layout) */
+.nav3d:not([data-placed]) { visibility: hidden; }
 .nav3d[hidden] { display: none; }
 .nav3d-ring { display: flex; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 3px; box-shadow: var(--shadow); }
 .nav3d-compass { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; background: var(--panel-solid); border: 1px solid var(--line-strong); padding: 0; }

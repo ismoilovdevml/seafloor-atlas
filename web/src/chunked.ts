@@ -52,7 +52,7 @@ export class ChunkedSource implements Source {
     if (p) { this.cache.delete(i); this.cache.set(i, p); return p; } // most recently used last
     // shared between readers, so it is not tied to one request's abort signal
     p = this.get(`${this.a.base}${pieceName(i)}`);
-    p.catch(() => this.cache.delete(i));
+    p.catch(() => { if (this.cache.get(i) === p) this.cache.delete(i); });
     this.cache.set(i, p);
     while (this.cache.size > this.capacity) this.cache.delete(this.cache.keys().next().value as number);
     return p;

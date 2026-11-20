@@ -251,7 +251,10 @@ export function fmtMW(mw: number): string {
 /** '1912-04-15' -> '15 April 1912'; falls back to the year. */
 export function fmtDate(date?: string, year?: number): string {
   const m = date ? /^(-?\d{1,4})-(\d{2})-(\d{2})$/.exec(date) : null;
-  if (m) return `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${Number(m[1])}`;
+  if (m) {
+    const mo = Number(m[2]), d = Number(m[3]);
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return `${d} ${MONTHS[mo - 1]} ${Number(m[1])}`;
+  }
   return year != null ? String(year) : '';
 }
 /** OSM-style free-text start dates: '2018-01' -> 'January 2018', '2021-12-20' -> '20 December 2021', else as written. */

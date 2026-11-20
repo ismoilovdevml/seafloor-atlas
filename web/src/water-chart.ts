@@ -51,6 +51,8 @@ export class WaterChart {
     this.svg = el('svg', { role: 'img', tabindex: 0 });
     this.tip = document.createElement('div');
     this.tip.className = 'tip'; this.tip.hidden = true;
+    this.tip.setAttribute('role', 'status');
+    this.tip.setAttribute('aria-live', 'polite');
     root.append(this.svg, this.tip);
     new ResizeObserver(() => this.render()).observe(root);
     this.svg.addEventListener('pointermove', (e) => this.pointer(e));
