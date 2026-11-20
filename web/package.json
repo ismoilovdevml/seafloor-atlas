@@ -10,7 +10,6 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "synth": "node scripts/make_synthetic_tiles.mjs",
-    "verify:stories": "node scripts/verify_stories.mjs",
     "capture": "node scripts/capture_views.mjs"
   },
   "dependencies": {

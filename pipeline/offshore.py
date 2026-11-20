@@ -168,11 +168,15 @@ def year_of(s: str | None) -> int | None:
 
 
 def capacity_mw(s: str | None) -> float | None:
-    m = re.match(r"\s*([\d.,]+)\s*(GW|MW|kW)?", s or "", re.I)
+    """OSM plant:output:electricity -> MW. A comma or space followed by exactly three digits is a thousands
+    separator ("1,200 MW", "1 200 MW"); any other comma is a decimal comma ("7,5 MW")."""
+    m = re.match(r"\s*(\d{1,3}(?:[ ,]\d{3})+(?![\d,])|[\d.,]+)\s*(GW|MW|kW)?", s or "", re.I)
     if not m:
         return None
+    num = m.group(1)
+    num = re.sub(r"[ ,](?=\d{3}(?:[ ,]|$))", "", num) if re.fullmatch(r"\d{1,3}(?:[ ,]\d{3})+", num) else num.replace(",", ".")
     try:
-        v = float(m.group(1).replace(",", "."))
+        v = float(num)
     except ValueError:
         return None
     unit = (m.group(2) or "MW").upper()

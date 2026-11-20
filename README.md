@@ -220,4 +220,4 @@ Drawing the globe is limited by fill rate: the pixels drawn per frame grow with 
 
 ## Cite
 
-Ismoilov, O. (2026). *Seafloor Atlas: an interactive globe of the whole ocean floor and how much of it has been measured* (v1.0.0). Zenodo. [doi:10.5281/zenodo.24228191](https://doi.org/10.5281/zenodo.24228191). All versions: [doi:10.5281/zenodo.24228190](https://doi.org/10.5281/zenodo.24228190). Please also cite the data sources above.
+Ismoilov, O. (2026). *Seafloor Atlas: an interactive globe of the whole ocean floor and how much of it has been measured* (v1.3.0). Zenodo. [doi:10.5281/zenodo.24287662](https://doi.org/10.5281/zenodo.24287662). All versions: [doi:10.5281/zenodo.24228190](https://doi.org/10.5281/zenodo.24228190). Please also cite the data sources above.

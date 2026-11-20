@@ -116,15 +116,16 @@ def read_aust(nc: Path, lat_g: np.ndarray, lon_g: np.ndarray) -> np.ndarray:
 
 
 def wquantiles(values: np.ndarray, weights: np.ndarray, qs, lo: float, hi: float, step: float) -> list[float]:
-    """Weighted quantiles via a fine histogram (exact to `step`)."""
+    """Weighted quantiles via a fine histogram. The inputs are whole metres (differences of integer grids), so a
+    bin [k, k + step) holds the value k: return the bin's lower edge, not its middle (which added step / 2)."""
     edges = np.arange(lo, hi + step, step)
     h, _ = np.histogram(np.clip(values, lo, hi - step / 2), bins=edges, weights=weights)
     c = np.cumsum(h)
     if c[-1] <= 0:
         return [float("nan")] * len(qs)
     c /= c[-1]
-    mids = (edges[:-1] + edges[1:]) / 2
-    return [float(mids[min(np.searchsorted(c, q), mids.size - 1)]) for q in qs]
+    lower = edges[:-1]
+    return [float(lower[min(np.searchsorted(c, q), lower.size - 1)]) for q in qs]
 
 
 def summary(d: np.ndarray, w: np.ndarray, area_km2_per_w: float) -> dict:
