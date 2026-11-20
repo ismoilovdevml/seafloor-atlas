@@ -422,8 +422,17 @@ export class OverlayUI {
   }
 
   // ---------- search ----------
-  /** Cable names and notable wreck names (loads the two files once). */
+  /** Cable names and notable wreck names: from the small data/search-index.json written at build time
+   *  (scripts/search_index.mjs); without it (dev server) from the two full files, as before. */
   async searchEntries(): Promise<SearchEntry[]> {
+    type Index = { cables: [string, number, number][]; wrecks: [string, number | null, number][] };
+    const idx: Index | null = await fetch(`${this.host.dataBase}/search-index.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    if (idx?.cables && idx?.wrecks) {
+      return [
+        ...idx.cables.map(([name, planned, i]) => ({ name, label: planned ? 'Cable, planned' : 'Undersea cable', kind: 'cable' as const, key: String(i), n: normName(name) })),
+        ...idx.wrecks.map(([name, year, i]) => ({ name, label: year ? `Shipwreck, ${year}` : 'Shipwreck', kind: 'wreck' as const, key: String(i), n: normName(name) })),
+      ];
+    }
     const [c, w] = await Promise.all([this.load('cables'), this.load('wrecks')]);
     const out: SearchEntry[] = [];
     for (const f of c?.features ?? []) out.push({ name: f.properties.name, label: f.properties.planned ? 'Cable, planned' : 'Undersea cable', kind: 'cable', key: String(f.properties._i), n: normName(f.properties.name) });

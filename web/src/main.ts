@@ -1171,7 +1171,26 @@ document.addEventListener('keydown', (e) => {
   const typing = t.matches?.('input:not([type="checkbox"]):not([type="range"]), textarea, select') || t.isContentEditable;
   if ((e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey)) { e.preventDefault(); focusSearch(); return; }
   if (e.key === '/' && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); focusSearch(); return; }
-  if (e.key === 'Escape' && openPop) { e.preventDefault(); setPopover(null, true); }
+  if (e.key === 'Escape' && openPop) { e.preventDefault(); setPopover(null, true); return; }
+  // Esc closes one thing per press, the most recent kind first: a card, then a bottom tool, then a drawer.
+  // The tour and the measure tool handle their own Esc; a text field keeps it (it leaves the field first).
+  if (e.key !== 'Escape' || e.defaultPrevented || typing || touring || measureTool.active) return;
+  const card = ['feature-card', 'story-card'].find((id) => !$(id).hidden);
+  if (card) {
+    e.preventDefault(); show(card, false);
+    if (card === 'story-card') markStory(null); else overlays.clearHighlight();
+    updatePadding(); return;
+  }
+  if (profiling) { e.preventDefault(); setProfiling(false); return; }
+  if (seaOpen) { e.preventDefault(); closeSea(); return; }
+  if (water.open) { e.preventDefault(); water.close(); return; }
+  if (timeUI?.open) { e.preventDefault(); timeUI.close(); return; }
+  if (phone()) {
+    if ($('ui').dataset.tab && $('ui').dataset.tab !== 'none') { e.preventDefault(); setTab('none'); }
+  } else {
+    const drawer = (['layers', 'explore'] as const).find((d) => $('ui').classList.contains(`${d}-open`));
+    if (drawer) { e.preventDefault(); setDrawer(drawer, false); }
+  }
 });
 
 // ---------- phone: tabs for the bottom sheet (Explore / Layers / Tools) ----------

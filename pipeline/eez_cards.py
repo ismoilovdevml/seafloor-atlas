@@ -17,6 +17,7 @@ from __future__ import annotations
 import gzip
 import json
 import math
+import unicodedata
 from collections import defaultdict
 from pathlib import Path
 
@@ -31,7 +32,10 @@ MIN_RANK_KM2 = 10_000  # small EEZs carry rasterisation errors of a few percent 
 
 
 def slug(name: str, mrgid: int) -> str:
-    s = "".join(c.lower() if c.isalnum() else "-" for c in name)
+    """ASCII URL slug: accents dropped (Réunion -> reunion), so URLs need no escaping and cannot differ between
+    Unicode normal forms (macOS writes NFD file names, Linux keeps NFC)."""
+    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    s = "".join(c.lower() if c.isalnum() else "-" for c in ascii_name)
     while "--" in s:
         s = s.replace("--", "-")
     return f"{s.strip('-')}-{mrgid}"

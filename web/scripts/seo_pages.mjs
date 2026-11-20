@@ -64,6 +64,7 @@ function page({ path, title, description, image, imageAlt, body, jsonld = [] }) 
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}">
 <link rel="canonical" href="${url}">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23374f8a'/%3E%3Cpath d='M1 18c5-2 8 3 15 1s9-6 15-3v4a15 15 0 0 1-30 0z' fill='%23140a22'/%3E%3C/svg%3E">
 <meta property="og:type" content="website"><meta property="og:site_name" content="Seafloor Atlas">
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}">
 <meta property="og:url" content="${url}"><meta property="og:image" content="${img}">
@@ -312,13 +313,18 @@ ${r.sovereign ? `<tr><td>Sovereign</td><td>${esc(r.sovereign)}</td></tr>` : ''}
 const urls = ['/', '/about/', ...stories.map((s) => `/views/${s.id}/`), '/eez/', ...eezRows.map((r) => `/eez/${r.slug}/`)];
 writeFileSync(join(PUB, 'sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls.map((u) => `  <url><loc>${SITE}${u}</loc><lastmod>${UPDATED}</lastmod></url>`).join('\n')}
+${urls.map((u) => `  <url><loc>${SITE}${encodeURI(u)}</loc><lastmod>${UPDATED}</lastmod></url>`).join('\n')}
 </urlset>
 `);
 writeFileSync(join(PUB, 'robots.txt'), `User-agent: *
 Allow: /
 Disallow: /tiles/
 Disallow: /history/
+Disallow: /hires/
+Disallow: /woa/
+Disallow: /chl/
+Disallow: /flow/
+Disallow: /data/obis/cells/
 
 Sitemap: ${SITE}/sitemap.xml
 `);

@@ -793,3 +793,13 @@ input[role='switch']:checked::after { transform: translateX(12px); background: v
 .ctx-menu[hidden] { display: none; }
 .ctx-menu button { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 8px 10px; border-radius: 6px; font-size: 14px; color: var(--ink); }
 .ctx-menu button:hover, .ctx-menu button:focus-visible { background: var(--hover); }
+
+/* touch targets (audit): the visible marks stay small, the area a finger can hit reaches 44 px */
+.measure-pt { position: relative; }
+.measure-pt::after { content: ''; position: absolute; inset: -15px; border-radius: 50%; }
+@media (pointer: coarse) {
+  .nav3d-turn { width: 36px; height: 44px; }
+  .nav3d-compass { width: 44px; height: 44px; }
+  .nav3d-tilt { min-height: 44px; }
+  .month-strip button { min-height: 40px; }
+}

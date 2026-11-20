@@ -13,7 +13,8 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  # queue, never cancel: a cancelled run could stop a Cloudflare Pages upload half way
+  cancel-in-progress: false
 
 jobs:
   build:
