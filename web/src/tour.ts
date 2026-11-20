@@ -99,6 +99,7 @@ export class Tour {
     if (speech && !voiced) { try { voiced = speechSynthesis.getVoices().some((v) => v.lang.toLowerCase().startsWith(t.lang)); } catch { /* none */ } }
     this.canSpeak = speech && voiced;
     this.root = document.createElement('section');
+    this.root.lang = t.lang; // screen readers and hyphenation follow the tour's language
     this.build(this.root);
     this.spot = document.createElement('div');
     this.spot.className = 'tour-spot';
@@ -375,7 +376,7 @@ export class Tour {
     this.$('tour-count').textContent = u.count(i + 1, n);
     this.$('tour-title').textContent = tx.title;
     // a number stays on the line of its unit ("10,935 m", "361.7 million km²") and of its thousands ("10 927")
-    this.$('tour-text').textContent = tx.text.replace(/(\d) (?=(m|km|cm|mg|million|years|yil)\b|\d{3}\b)/g, '$1\u00a0');
+    this.$('tour-text').textContent = tx.text.replace(/(\d) (?=(m|km|cm|sm|mg|million|years|yil|foiz|foizi|ta)\b|\d{3}\b)/g, '$1\u00a0');
     this.$('tour-src').textContent = `${u.sourcePrefix}${tx.source}`;
     this.root.dataset.chapter = ch.id;
     this.$('tour-dots').querySelectorAll<HTMLButtonElement>('button').forEach((b, k) => {

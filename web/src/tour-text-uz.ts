@@ -29,12 +29,12 @@ export const TEXT_UZ: TourText = {
   chapters: {
     globe: {
       title: 'Butun okean tubi',
-      text: 'Salom, men Ping, sizning sonar buyingizman. Bu globus GEBCO 2026 gridi: 361,7 million km² okean, Yer yuzasining 70,9%. Rang chuqurlikni bildiradi: qirgʻoq yonida och yashil, keyin moviy va koʻk, 11 000 m da esa binafsha-qora; sirtga yaqin joyda rang qadamlari zichroq. Butun Yer koʻrinishida tizmalar va choʻkmalar bilinib tursin deb relyef tik yoʻnalishda choʻzilgan.',
+      text: 'Salom, men Ping, sizning sonar buyingizman. Bu globus GEBCO 2026 gridi: 361,7 million km² okean, Yer yuzasining 70,9 foizi. Rang chuqurlikni bildiradi: qirgʻoq yonida och yashil, keyin moviy va koʻk, 11 000 m da esa binafsha-qora; sirtga yaqin joyda rang qadamlari zichroq. Butun Yer koʻrinishida tizmalar va botiqlar bilinib tursin deb relyef tik yoʻnalishda choʻzilgan.',
       source: src('globe'),
     },
     measured: {
       title: 'Aslida nima oʻlchangan',
-      text: 'Okean tubining faqat 30,8% toʻgʻridan-toʻgʻri oʻlchangan, asosan kema sonari bilan; Seabed 2030 qatʼiyroq qoida bilan GEBCO 2026 uchun 28,7% hisoblaydi. “What’s actually measured” qolgan hamma joyni xiralashtiradi: u yerda chuqurlik sunʼiy yoʻldosh gravitatsiyasidan baholangan. Bu yerda MH370 reysini qidirish 2014–2017 yillarda 120 000 km² li yoʻlakni xaritaga tushirgan; u baholangan atrofi fonida yorqin koʻrinadi.',
+      text: 'Okean tubining faqat 30,8 foizi toʻgʻridan-toʻgʻri oʻlchangan, asosan kema sonari bilan; Seabed 2030 qatʼiyroq qoida bilan GEBCO 2026 uchun 28,7 foiz deb hisoblaydi. “What’s actually measured” qolgan hamma joyni xiralashtiradi: u yerda chuqurlik sunʼiy yoʻldosh gravitatsiyasidan baholangan. Bu yerda MH370 reysini qidirish 2014–2017-yillarda 120 000 km² li yoʻlakni xaritaga tushirgan; u baholangan atrofi fonida yorqin koʻrinadi.',
       source: src('measured'),
     },
     detail: {
@@ -44,22 +44,22 @@ export const TEXT_UZ: TourText = {
     },
     profile: {
       title: 'Challenger Deep orqali kesim',
-      text: '“Depth profile” asbobi siz chizgan chiziq boʻylab okean tubini oʻqiydi. Bu chiziq Mariana choʻkmasini Challenger Deep nuqtasida kesib oʻtadi, bu okeanning maʼlum eng chuqur joyi. Toʻliq aniqlikda gridning u yerdagi eng chuqur katagi 10 927 m, eʼlon qilingan 10 935 m dan 8 m farq qiladi. Panel chiziqning qancha qismini kemalar oʻlchaganini ham koʻrsatadi.',
+      text: '“Depth profile” asbobi siz chizgan chiziq boʻylab okean tubini oʻqiydi. Bu chiziq Mariana botigʻini Challenger Deep nuqtasida kesib oʻtadi, bu okeanning maʼlum eng chuqur joyi. Toʻliq aniqlikda gridning u yerdagi eng chuqur katagi 10 927 m, eʼlon qilingan 10 935 m dan 8 m farq qiladi. Panel chiziqning qancha qismini kemalar oʻlchaganini ham koʻrsatadi.',
       source: src('profile'),
     },
     plates: {
       title: 'Plitalar va tizmalar',
-      text: '“Plate boundaries” tektonik plitalar tutashgan joylarni harakat turiga qarab ranglaydi: ajralish, subduksiya, transform va toʻqnashuv. Atlantika boʻylab Shimoliy Amerika va Yevrosiyo yiliga taxminan 2 cm uzoqlashadi; Islandiyada tizma ostidagi mantiya issiq nuqtasi uni dengiz sathidan yuqoriga koʻtargan. Chegarani bossangiz, uning ikki plitasi va ularning tezligi chiqadi.',
+      text: '“Plate boundaries” tektonik plitalar tutashgan joylarni harakat turiga qarab ranglaydi: ajralish, subduksiya, transform va toʻqnashuv. Atlantika boʻylab Shimoliy Amerika va Yevrosiyo yiliga taxminan 2 sm uzoqlashadi; Islandiyada tizma ostidagi mantiya issiq nuqtasi uni dengiz sathidan yuqoriga koʻtargan. Chegarani bossangiz, uning ikki plitasi va ularning tezligi chiqadi.',
       source: src('plates'),
     },
     'sea-level': {
       title: 'Muzlik davridagi dengiz',
-      text: '“Sea level” asbobi bugungi relyefni suv bilan bosadi yoki quritadi. −120 m da, taxminan 20 000 yil oldingi soʻnggi muzlik maksimumida, Beringiya Osiyoni Amerikaga ulaydi: dengiz sathidan yuqorida 170,0 million km² quruqlik turadi, bugungidan 21,8 million km² koʻp. Butun oraliqni, −6 000 m dan +100 m gacha, koʻrish uchun play tugmasini bosing.',
+      text: '“Sea level” asbobi bugungi relyefni suv ostida qoldiradi yoki quruqlikka chiqaradi. −120 m da, taxminan 20 000 yil oldingi soʻnggi muzlik maksimumida, Beringiya Osiyoni Amerikaga ulaydi: dengiz sathidan yuqorida 170,0 million km² quruqlik turadi, bugungidan 21,8 million km² koʻp. Butun oraliqni, −6 000 m dan +100 m gacha, koʻrish uchun play tugmasini bosing.',
       source: src('sea-level'),
     },
     water: {
       title: 'Suv ichida',
-      text: '“Ocean water” harorat, shoʻrlik va zichlikni sirtdan 5 000 m gacha 11 ta chuqurlikda, 1991–2020 yillar oʻrtachasi sifatida koʻrsatadi. Suv ustunini koʻrish uchun okeanni bosing: bu nuqta Tinch okeanining gʻarbida, yuqorisi iliq, termoklin ostida esa sovuq.',
+      text: '“Ocean water” harorat, shoʻrlik va zichlikni sirtdan 5 000 m gacha 11 ta chuqurlikda, 1991–2020-yillar oʻrtachasi sifatida koʻrsatadi. Suv ustunini koʻrish uchun okeanni bosing: bu nuqta Tinch okeanining gʻarbida, yuqorisi iliq, termoklin ostida esa sovuq.',
       source: src('water'),
     },
     monsoon: {
@@ -69,17 +69,17 @@ export const TEXT_UZ: TourText = {
     },
     quakes: {
       title: 'Zilzilalar va suv osti togʻlari',
-      text: '1900 yildan beri magnitudasi 5,5 va undan katta boʻlgan har bir zilzila: kattaligi magnitudaga, rangi chuqurlikka qarab; deyarli hammasi plitalar chegarasida. Halqalar suv osti togʻlari: balandligi kamida 100 m boʻlgan 69 770 ta togʻ; toʻldirilgan halqa choʻqqisida sonar oʻlchovi borligini bildiradi. Tonga choʻkmasida plitalar yiliga 24 cm gacha yaqinlashadi, bu Yerdagi eng yuqori tezlik.',
+      text: '1900-yildan beri magnitudasi 5,5 va undan katta boʻlgan har bir zilzila: kattaligi magnitudaga, rangi chuqurlikka qarab; deyarli hammasi plitalar chegarasida. Halqalar suv osti togʻlari: balandligi kamida 100 m boʻlgan 69 770 ta togʻ; toʻldirilgan halqa choʻqqisida sonar oʻlchovi borligini bildiradi. Tonga botigʻida plitalar yiliga 24 sm gacha yaqinlashadi, bu Yerdagi eng yuqori tezlik.',
       source: src('quakes'),
     },
     human: {
       title: 'Dengizdagi odamlar',
-      text: 'Inson faoliyati alohida qatlamlar guruhida. Bu yerda: 2022 yil 14 noyabr holatiga 527 ta internet kabeli va 1 436 ta qirgʻoqqa chiqish nuqtasi, 2015–2021 yillardagi kema joylashuv xabarlaridan olingan kema harakati va Wikidata’dagi choʻkkan kemalar. Neft-gaz platformalari, dengiz osti quvurlari va dengizdagi shamol elektr stansiyalari OpenStreetMap’dan olingan.',
+      text: 'Inson faoliyati alohida qatlamlar guruhida. Bu yerda: 2022-yil 14-noyabr holatiga 527 ta internet kabeli va 1 436 ta qirgʻoqqa chiqish nuqtasi, 2015–2021-yillardagi kema joylashuv xabarlaridan olingan kema harakati va Wikidata’dagi choʻkkan kemalar. Neft-gaz platformalari, dengiz osti quvurlari va dengizdagi shamol elektr stansiyalari OpenStreetMap’dan olingan.',
       source: src('human'),
     },
     mapping: {
       title: 'Okean tubini xaritalash, 2019–2026',
-      text: '“Time” panelidagi “Years” rejimi GEBCO relizlarini birma-bir koʻrsatadi. Bu atlas hisobiga koʻra GEBCO_2019 da okean tubining 12,4% toʻgʻridan-toʻgʻri oʻlchangan edi, GEBCO_2026 da esa 30,8%. Sariq rang har bir reliz qoʻshgan joyni belgilaydi. Seabed 2030 15% va 28,7% deb eʼlon qilgan: u chuqurlikka bogʻliq gridning kataklarini sanaydi, shuning uchun ikki raqam farq qiladi.',
+      text: '“Time” panelidagi “Years” rejimi GEBCO relizlarini birma-bir koʻrsatadi. Bu atlas hisobiga koʻra GEBCO_2019 da okean tubining 12,4 foizi toʻgʻridan-toʻgʻri oʻlchangan edi, GEBCO_2026 da esa 30,8 foizi. Sariq rang har bir reliz qoʻshgan joyni belgilaydi. Seabed 2030 15% va 28,7% deb eʼlon qilgan: u chuqurlikka bogʻliq gridning kataklarini sanaydi, shuning uchun ikki raqam farq qiladi.',
       source: src('mapping'),
     },
     'your-turn': {

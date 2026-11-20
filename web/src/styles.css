@@ -742,7 +742,7 @@ input[role='switch']:checked::after { transform: translateX(12px); background: v
   .sea-presets { gap: 5px; margin-top: 6px; }
   .sea-presets button { min-height: 36px; padding: 4px 8px; font-size: 13px; }
   .sea-note { font-size: 13px; }
-  .water-body { grid-template-columns: minmax(0, 1fr); }
+  .water-body, .water[data-col='empty'] .water-body, .water[data-col='empty'] .water-controls { grid-template-columns: minmax(0, 1fr); }
   .water-sub { flex-basis: 100%; font-size: 12px; }
   .wc-chart { height: 230px; }
   .info-btn { width: 44px; height: 44px; }

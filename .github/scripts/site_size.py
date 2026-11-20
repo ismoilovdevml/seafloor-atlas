@@ -29,8 +29,9 @@ def main() -> None:
             s = (Path(root) / n).stat().st_size
             total += s
             files += 1
-            for depth in (1, 2):                      # e.g. "tiles" and "tiles/dem"
-                folders["/".join(rel[:depth]) or "(top level)"] += s
+            # e.g. "tiles" and "tiles/dem"; a file directly in "chl" counts once, not for depth 1 and depth 2
+            for key in {"/".join(rel[:depth]) or "(top level)" for depth in (1, 2)}:
+                folders[key] += s
     mb = total / 1e6
     print(f"site: {mb:,.1f} MB in {files:,} files (warn at {a.warn_mb:g} MB, fail at {a.fail_mb:g} MB, Pages limit 1 GB)")
     print("largest folders:")
