@@ -37,6 +37,9 @@ import { mountNav3d } from './nav3d';
 import { amocCard, type AmocData } from './amoc';
 import { PolarLayer, type PolarMeta } from './polar-layer';
 import { MeasureTool } from './measure';
+import { STATUS, STATUS_ORDER, type StatusKey } from './palette';
+import { SEARCH_KM, classify, formatNearest, pixelKm, pct, verdict } from './inspect';
+import { ESRI, baseFromHash, esriAttribution, esriSource, hashWithBase, type BaseId } from './basemap';
 
 maplibregl.setWorkerUrl(workerUrl);
 
@@ -155,6 +158,8 @@ await new Promise<void>((res) => (map.isStyleLoaded() ? res() : map.once('style.
 mountNav3d(map, document.body);
 // the real relief of both polar caps beyond the Mercator tiles' 85.05 degrees (polar-layer.ts, pipeline/polar.py)
 let polarLayer: PolarLayer | null = null;
+// the basemap: our relief ('atlas', default) or an Esri picture (basemap.ts); set from #base= further down
+let base: BaseId = 'atlas';
 if (!synthetic) {
   void getJSON<PolarMeta>(`${tilesBase}/polar/polar.json`).then((pm) => {
     if (!pm) return;
@@ -162,6 +167,7 @@ if (!synthetic) {
     // right above the shaded relief: overlays (veil, coverage, age, ...) still draw over the disc between 83 and 85 degrees
     const ids = map.getStyle().layers.map((l) => l.id);
     map.addLayer(polarLayer, ids[ids.indexOf('hillshade') + 1]);
+    if (base !== 'atlas') map.setLayoutProperty('polar-caps', 'visibility', 'none');
   });
 }
 // "Measure distance" (measure.ts): the ruler under the compass, or right-click on the map
@@ -200,13 +206,23 @@ function placeNav3d() {
   const rect = (id: string) => document.getElementById(id)!.getBoundingClientRect();
   const shown = (id: string) => { const e = document.getElementById(id); return !!e && !e.hidden && getComputedStyle(e).display !== 'none'; };
   const ui = document.getElementById('ui')!;
-  const busy = ui.classList.contains('touring') || (phone() ? !!ui.dataset.tab && ui.dataset.tab !== 'none' : shown('layers'));
-  const anchors = (phone() ? ['readout', 'legend'] : ['readout']).filter(shown).map(rect);
+  // (no phone() here: setBase calls this before that helper is defined further down)
+  const small = W <= 760;
+  const busy = ui.classList.contains('touring') || shown('inspector') || (small ? !!ui.dataset.tab && ui.dataset.tab !== 'none' : shown('layers'));
+  // phone: above an open card too, so the controls never sit on its text
+  const anchors = (small ? ['readout', 'legend', 'feature-card', 'story-card'] : ['readout']).filter(shown).map(rect);
+  const mc = document.getElementById('mapctrl');
   el.hidden = busy || !anchors.length;
+  if (mc) mc.hidden = el.hidden;
   if (el.hidden) return;
   el.style.bottom = `${Math.round(H - Math.min(...anchors.map((a) => a.top)) + 10)}px`;
   el.style.right = `${Math.round(W - rect('readout').right)}px`;
   el.dataset.placed = '';
+  if (mc) {
+    mc.style.bottom = `${Math.round(H - el.getBoundingClientRect().top + 8)}px`;
+    mc.style.right = el.style.right;
+    mc.dataset.placed = '';
+  }
 }
 applyExaggeration(exagValue);
 
@@ -216,6 +232,45 @@ applyExaggeration(exagValue);
 function setVisible(layer: string | string[], on: boolean) {
   for (const id of ([] as string[]).concat(layer)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
 }
+// ---------- basemap: our relief by default, an Esri picture on request (basemap.ts) ----------
+const BASE_NOTE: Record<Exclude<BaseId, 'atlas'>, string> = {
+  sat: 'Satellite and aerial photos. Under water they show the sea surface, not depths.',
+  ocean: 'Esri’s shaded ocean relief is itself modelled from GEBCO and other grids; it does not show what ships measured. Switch on Measured for that.',
+  topo: 'A topographic map of land and places; the colours at sea are not depths.',
+};
+function setBase(id: BaseId, writeHash = true) {
+  base = id;
+  for (const b of ESRI) {
+    const lid = `base-${b.id}`;
+    if (b.id === id && !map.getSource(lid)) {
+      map.addSource(lid, esriSource(b));
+      map.addLayer({ id: lid, type: 'raster', source: lid, paint: { 'raster-fade-duration': 0 } }, 'relief');
+    }
+    if (map.getLayer(lid)) setVisible(lid, b.id === id);
+  }
+  setVisible(['relief', 'hillshade'], id === 'atlas');
+  if (map.getLayer('polar-caps')) setVisible('polar-caps', id === 'atlas');
+  document.querySelectorAll<HTMLButtonElement>('#mapctrl [data-base]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.base === id)));
+  const e = ESRI.find((b) => b.id === id);
+  $('mapctrl-att').hidden = !e; $('lg-base').hidden = !e;
+  $('depth-legend').hidden = !!e; // the depth colours are not on the map under an Esri picture
+  if (e) {
+    $('mapctrl-att').textContent = $('lg-base-att').textContent = esriAttribution(e);
+    $('mapctrl-att').title = esriAttribution(e);
+    $('lg-base-t').textContent = `Basemap: Esri ${e.label}`;
+    $('lg-base-note').textContent = `${BASE_NOTE[e.id]} Depths, the readout and point details still come from GEBCO 2026.`;
+  }
+  if (writeHash) {
+    const h = hashWithBase(location.hash, id);
+    if (h !== location.hash) history.replaceState(null, '', h || location.pathname + location.search);
+  }
+  placeNav3d();
+}
+for (const b of ESRI) $('mapctrl').querySelector(`[data-base="${b.id}"]`)?.setAttribute('title', b.title);
+document.querySelectorAll<HTMLButtonElement>('#mapctrl [data-base]').forEach((b) => b.addEventListener('click', () => setBase(b.dataset.base as BaseId)));
+$('mapctrl-att').addEventListener('click', () => $('mapctrl').classList.toggle('att-open'));
+setBase(baseFromHash(location.hash), false);
+
 const tVeil = $<HTMLInputElement>('t-veil'), tPlates = $<HTMLInputElement>('t-plates'), tFeatures = $<HTMLInputElement>('t-features');
 function rowState(row: string, legend: string | null, on: boolean) {
   $(row).classList.toggle('on', on);
@@ -316,6 +371,31 @@ async function setCertainty(id: CertaintyId, on: boolean) {
   if (lastPoint) renderExtra(lastPoint[0], lastPoint[1]);
 }
 for (const id of CERTAINTY_IDS) $<HTMLInputElement>(`t-${id}`).addEventListener('change', (e) => setCertainty(id, (e.target as HTMLInputElement).checked));
+
+// ---------- quick views (pills under the search): one analysis layer at a time, the same switches as Layers ----------
+type Preset = 'relief' | 'veil' | 'new2026' | 'disagree';
+const presetOk: Record<Preset, boolean> = { relief: true, veil: true, new2026: !$('new-layer').hidden, disagree: certaintyOk.disagree };
+function presetOn(p: Preset) { return p === 'veil' ? tVeil.checked : p === 'new2026' ? tNew.checked : p === 'disagree' ? certaintyOn.has('disagree') : false; }
+function syncPresets() {
+  const any = (['veil', 'new2026', 'disagree'] as Preset[]).some(presetOn);
+  document.querySelectorAll<HTMLButtonElement>('#presets [data-preset]').forEach((b) => {
+    const p = b.dataset.preset as Preset;
+    b.setAttribute('aria-pressed', String(p === 'relief' ? !any : presetOn(p)));
+  });
+}
+async function applyPreset(p: Preset) {
+  const want = p !== 'relief' && presetOn(p) ? 'relief' : p; // pressing the pressed pill goes back to the relief
+  if (tVeil.checked !== (want === 'veil')) setVeil(want === 'veil');
+  if (presetOk.new2026 && tNew.checked !== (want === 'new2026')) setNew(want === 'new2026');
+  if (presetOk.disagree && certaintyOn.has('disagree') !== (want === 'disagree')) await setCertainty('disagree', want === 'disagree');
+  layersChanged();
+  syncPresets();
+}
+document.querySelectorAll<HTMLButtonElement>('#presets [data-preset]').forEach((b) => {
+  const p = b.dataset.preset as Preset;
+  if (!presetOk[p]) b.hidden = true;
+  b.addEventListener('click', () => applyPreset(p));
+});
 map.on('mouseenter', 'seals', () => { if (!map.getCanvas().style.cursor) map.getCanvas().style.cursor = 'pointer'; });
 map.on('mouseleave', 'seals', () => { if (map.getCanvas().style.cursor === 'pointer') map.getCanvas().style.cursor = ''; });
 // legends and the short notes, from each layer's own legend.json
@@ -354,6 +434,7 @@ if (!marineReady) $('row-marine').hidden = true;
 // measured statistic (meta.stats.measured_fraction_area, area-weighted, TID 10-17)
 const mfRaw = meta.stats?.measured_fraction_area;
 const mf = typeof mfRaw === 'number' ? mfRaw : NaN;
+$('pill-measured').textContent = Number.isFinite(mf) ? ` · ${pct1(mf)}` : '';
 $('measured-stat').innerHTML = Number.isFinite(mf)
   ? `<strong>${pct1(mf)}</strong> of the seafloor is directly measured by ships (Seabed 2030 counts 28.7% for GEBCO 2026, with a slightly different method).`
   : 'Coverage statistics are not available for these tiles.';
@@ -399,7 +480,8 @@ $('plate-key').innerHTML = (Object.keys(PLATE_STYLE) as (keyof typeof PLATE_STYL
     <p><strong>Earthquakes and seamounts</strong>: Earthquakes: USGS ANSS ComCat (public domain), doi:10.5066/F7MS3QZH; the last 30 days from the USGS real-time feed. Seamounts: SDUST2026SM (Gao et al. 2026) and SIO 2023 / Kim &amp; Wessel 2011 (Gevorgian et al. 2023), CC BY 4.0; summits from GEBCO_2026.</p>
     <p><strong>Phytoplankton, winds and currents</strong>: Chlorophyll-a: NASA OBPG, MODIS-Aqua R2022.0 climatology (doi:10.5067/AQUA/MODIS/L3M/CHL/2022.0); lakes masked with the World Ocean Atlas 2023 surface grid. Winds: NCEP/NCAR Reanalysis 1, 1991-2020 monthly means (NOAA PSL), Kalnay et al. (1996). Currents: OSCAR v2.0 (ESR, NASA PO.DAAC), 2015-2024 monthly means, doi:10.5067/OSCAR-25F20.</p>
     <p><strong>Time</strong>: Mapping history from the GEBCO_2019-GEBCO_2026 Type Identifier grids (GEBCO Compilation Group); official percentages from Seabed 2030 / GEBCO announcements. Sea level: Lambeck et al. (2014) PNAS, doi:10.1073/pnas.1411762111 (ice-volume equivalent, SI Table S3).</p>
-    <p>Rendered with <a href="https://maplibre.org" target="_blank" rel="noopener">MapLibre GL JS</a>. No basemap, tile or font servers, no analytics.${synthetic ? ' <strong>These are synthetic development tiles, not real data.</strong>' : ''}</p>`;
+    <p><strong>Optional basemaps</strong> (off by default; loaded from Esri only when picked): ${ESRI.map((b) => `Esri ${b.label}: ${esriAttribution(b)}`).join('. ')}.</p>
+    <p>Rendered with <a href="https://maplibre.org" target="_blank" rel="noopener">MapLibre GL JS</a>. No third-party tile or font servers by default, no analytics.${synthetic ? ' <strong>These are synthetic development tiles, not real data.</strong>' : ''}</p>`;
   const stats: [string, string][] = [];
   if (Number.isFinite(mf)) stats.push([pct1(mf), 'of the seafloor has been measured directly by ships. The rest is estimated from satellite gravity.']);
   if (change) stats.push([`${mkm1(change.newly_measured_km2)}M km²`, `newly counted as measured in the 2026 grid, about ${Math.round(change.newly_measured_km2 / 357e3)} times the area of Germany.`]);
@@ -409,7 +491,12 @@ $('plate-key').innerHTML = (Object.keys(PLATE_STYLE) as (keyof typeof PLATE_STYL
 }
 
 // ---------- cards ----------
-function show(id: string, on: boolean) { $(id).hidden = !on; }
+function show(id: string, on: boolean) {
+  const card = id === 'feature-card' || id === 'story-card';
+  if (on && card) closeInspector();
+  $(id).hidden = !on;
+  if (card) requestAnimationFrame(placeNav3d); // the phone's map controls sit above an open card
+}
 document.querySelectorAll<HTMLButtonElement>('[data-close]').forEach((b) => b.addEventListener('click', () => {
   show(b.dataset.close!, false);
   if (b.dataset.close === 'story-card') markStory(null);
@@ -511,7 +598,7 @@ function playStory(s: Story, instant = false) {
   if (instant || reduce) map.jumpTo(cam); else map.flyTo({ ...cam, duration: 5200, curve: 1.6, essential: true });
   // keep #lang= and the extra layer tokens (quakes, winds, ...) when a story rewrites the address
   const lang = /(?:^#|[#&])lang=(en|uz)(?:&|$)/.exec(location.hash)?.[1];
-  history.replaceState(null, '', hashWithLayers(`#story=${s.id}${lang ? `&lang=${lang}` : ''}`, { ...overlays.state, extra: extraTokens() }));
+  history.replaceState(null, '', hashWithBase(hashWithLayers(`#story=${s.id}${lang ? `&lang=${lang}` : ''}`, { ...overlays.state, extra: extraTokens() }), base));
 }
 storyList.addEventListener('click', (e) => {
   const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-story]');
@@ -770,6 +857,7 @@ map.on('click', (e) => {
   const hit: MapGeoJSONFeature | undefined = map.queryRenderedFeatures(box, { layers })[0];
   if (!hit) {
     if (marine.on) marine.card(e.lngLat.lng, e.lngLat.lat).then((c) => { if (c) { showCard(c); updatePadding(); } });
+    else if (canInspect()) inspect(e.lngLat.lng, e.lngLat.lat);
     return;
   }
   if (hit.layer.id === 'plates') showPlate(hit.properties);
@@ -785,6 +873,97 @@ map.on('click', (e) => {
 for (const id of [...FEATURE_LAYERS, 'plates']) {
   map.on('mouseenter', id, () => { if (!map.getCanvas().style.cursor) map.getCanvas().style.cursor = 'pointer'; });
   map.on('mouseleave', id, () => { if (map.getCanvas().style.cursor === 'pointer') map.getCanvas().style.cursor = ''; });
+}
+
+// ---------- point inspector: click the seafloor for how its depth is known (inspect.ts) ----------
+// Reads only our tiles: depth and measured fraction like the readout (fine zoom when the map is zoomed in), the
+// nearest measured cell within SEARCH_KM on the 1' coverage tiles, and the two depth-certainty rasters.
+for (const k of Object.keys(STATUS) as StatusKey[]) document.documentElement.style.setProperty(`--st-${k}`, STATUS[k].color);
+$('status-key').innerHTML = STATUS_ORDER.map((k) => `<li data-st="${k}"><span class="sdot" style="background:var(--st-${k})" aria-hidden="true"></span><span>${STATUS[k].label}</span></li>`).join('');
+const NO_POINT: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+map.addSource('inspect-pt', { type: 'geojson', data: NO_POINT });
+map.addLayer({ id: 'inspect-pt', type: 'circle', source: 'inspect-pt',
+  paint: { 'circle-radius': 7, 'circle-color': ['get', 'c'], 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2, 'circle-pitch-alignment': 'map' } });
+let inspToken = 0;
+function canInspect() { return !touring && !water.open && !(phone() && (seaOpen || !!timeUI?.open)); }
+function inspMarker(lon: number, lat: number, color: string) {
+  (map.getSource('inspect-pt') as GeoJSONSource).setData({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: { c: color }, geometry: { type: 'Point', coordinates: [lon, lat] } }] });
+}
+function closeInspector() {
+  if ($('inspector').hidden) return;
+  inspToken++;
+  $('inspector').hidden = true; $('lg-status').hidden = true;
+  $('ui').classList.remove('inspecting');
+  (map.getSource('inspect-pt') as GeoJSONSource).setData(NO_POINT);
+  updatePadding();
+}
+$('insp-close').addEventListener('click', closeInspector);
+async function inspect(lon: number, lat: number) {
+  const t = ++inspToken;
+  show('feature-card', false); show('story-card', false); markStory(null); overlays.clearHighlight();
+  if (phone()) setTab('none'); else if ($('ui').classList.contains('layers-open')) setDrawer('layers', false, false);
+  const ins = $('inspector');
+  ins.style.removeProperty('--st'); delete ins.dataset.st;
+  $('insp-title').textContent = 'Seafloor here';
+  $('insp-meta').textContent = `${formatLat(lat)}, ${formatLon(lon)}`;
+  $('insp-badge-t').textContent = 'Reading…';
+  for (const id of ['it-depth', 'it-meas', 'it-near']) $(id).textContent = '…';
+  $('insp-verdict').textContent = ''; $('insp-rows').replaceChildren();
+  ins.hidden = false; $('ui').classList.add('inspecting');
+  inspMarker(lon, lat, '#ffffff');
+  updatePadding();
+  const zFine = demMaxZoom > staticMaxZoom && map.getZoom() >= staticMaxZoom ? demMaxZoom : staticMaxZoom;
+  const [pt, nearZ5] = await Promise.all([sampler.sample([[lon, lat]], zFine), sampler.nearestMeasured(lon, lat, SEARCH_KM, staticMaxZoom)]);
+  if (t !== inspToken) return;
+  const h = pt.h[0], f = pt.f[0];
+  // the fine cell decides "this cell": a 1' cell with a sounding somewhere else in it is half a cell away
+  const cellKm = pixelKm(lat, zFine, meta!.tileSize);
+  let near = nearZ5;
+  if (f !== null && f > 0) near = 0;
+  else if (near === 0) near = Math.max(0.5, pixelKm(lat, staticMaxZoom, meta!.tileSize) / 2);
+  const s = classify(f, near);
+  const land = f === null;
+  $('insp-title').textContent = land ? 'Land here' : 'Seafloor here';
+  $('insp-meta').textContent = `${formatLat(lat)}, ${formatLon(lon)} · cell about ${cellKm < 1 ? cellKm.toFixed(1) : Math.round(cellKm)} km`;
+  if (s) { ins.style.setProperty('--st', STATUS[s].color); ins.dataset.st = s; }
+  $('insp-badge-t').textContent = s ? STATUS[s].label : 'No data here';
+  $('it-depth-l').textContent = land ? 'Height' : 'Depth';
+  $('it-depth').textContent = Number.isFinite(h) ? formatDepth(h) : 'n/a';
+  $('it-meas').textContent = land ? 'land' : Number.isFinite(f) ? pct(f as number) : 'n/a';
+  $('it-meas-s').textContent = land ? '' : 'of the cell, by ship';
+  $('it-near').textContent = land ? '–' : formatNearest(near, true);
+  $('insp-verdict').textContent = s ? verdict(s, f, near) : 'No tile covers this point.';
+  inspMarker(lon, lat, s ? STATUS[s].color : '#ffffff');
+  $('lg-status').hidden = land || !s;
+  $('status-key').querySelectorAll('li').forEach((li) => li.toggleAttribute('aria-current', li.dataset.st === s));
+  // the table: every value at this point, the depth-certainty ones only where those layers exist
+  const rows: [string, string][] = [
+    [land ? 'Height' : 'Depth', Number.isFinite(h) ? formatDepth(h) : 'n/a'],
+    ['Cell size at this zoom', `about ${cellKm < 1 ? cellKm.toFixed(2) : cellKm.toFixed(1)} km`],
+    ['Measured by ship', land ? 'land' : Number.isFinite(f) ? pct(f as number) : 'n/a'],
+    ['Nearest measured seafloor', land ? '–' : formatNearest(near)],
+  ];
+  if (!land && disagreeLg) {
+    const px = await probes.disagree.at(lon, lat);
+    const m = px ? disagreeFromAlpha(px[3], disagreeLg) : null;
+    rows.push(['Second model (AUST_2026) differs by', m === null ? 'under 50 m, or not compared here' : formatDisagree(m, disagreeLg.vmax)]);
+  }
+  if (!land && uncertaintyLg) {
+    const px = await probes.uncertainty.at(lon, lat);
+    const c = px ? classFromAlpha(px[3], uncertaintyLg) : null;
+    rows.push(['SWOT model confidence', c ? c.label.replace(' confidence', '') : 'not rated (sounding here)']);
+  }
+  rows.push(['Latitude', formatLat(lat)], ['Longitude', formatLon(lon)]);
+  if (t !== inspToken) return;
+  $('insp-rows').replaceChildren(...rows.map(([k, v]) => {
+    const tr = document.createElement('tr'), th = document.createElement('th'), td = document.createElement('td');
+    th.scope = 'row'; th.textContent = k; td.textContent = v; tr.append(th, td); return tr;
+  }));
+  // phone: the sheet covers the lower half; bring the point into the free band above it
+  if (phone()) {
+    const p = map.project([lon, lat]), top = ins.getBoundingClientRect().top;
+    if (p.y > top - 24) map.easeTo({ center: [lon, lat], duration: 500, essential: true });
+  }
 }
 
 // ---------- sea level ----------
@@ -908,6 +1087,7 @@ function setPlaying(on: boolean) {
 }
 
 function openSea(level?: number) {
+  if (base !== 'atlas') setBase('atlas'); // the sea-level tool recolours our relief
   if (profiling) setProfiling(false);
   measureTool.stop();
   water.close();
@@ -989,7 +1169,7 @@ function updatePadding() {
   if (phone()) {
     const top = $('topbar').getBoundingClientRect().bottom;
     // the free band is between the top bar and whatever is highest of legend / readout / card / sheet / tabs
-    const tops = ['legend', 'readout', 'story-card', 'feature-card', 'stories', 'layers', 'toolbar', 'time-offer', ...BOTTOM_PANELS].filter(visible).map((id) => r(id).top);
+    const tops = ['legend', 'readout', 'story-card', 'feature-card', 'inspector', 'stories', 'layers', 'toolbar', 'time-offer', ...BOTTOM_PANELS].filter(visible).map((id) => r(id).top);
     const tabs = document.querySelector('.tabs')!.getBoundingClientRect();
     if (tabs.height) tops.push(tabs.top);
     const tour = tourEl();
@@ -1111,6 +1291,7 @@ function uiStore(): Partial<Record<UiKey, boolean>> { try { return JSON.parse(lo
 function saveUi(k: UiKey, v: boolean) { try { localStorage.setItem(UI_KEY, JSON.stringify({ ...uiStore(), [k]: v })); } catch { /* storage blocked: state lasts until reload */ } }
 
 function setDrawer(name: 'explore' | 'layers', open: boolean, save = true) {
+  if (open && name === 'layers') closeInspector();
   $('ui').classList.toggle(`${name}-open`, open);
   $(`${name}-btn`).setAttribute('aria-expanded', String(open));
   if (save) saveUi(name, open);
@@ -1154,6 +1335,7 @@ function updateLayersBadge() {
   b.hidden = ids.length === 0;
   b.textContent = String(ids.length);
   $('layers-btn').setAttribute('aria-label', ids.length ? `Layers, ${ids.length} on` : 'Layers');
+  syncPresets();
 }
 
 // (i) notes in the layer rows
@@ -1196,6 +1378,7 @@ document.addEventListener('keydown', (e) => {
   // Esc closes one thing per press, the most recent kind first: a card, then a bottom tool, then a drawer.
   // The tour and the measure tool handle their own Esc; a text field keeps it (it leaves the field first).
   if (e.key !== 'Escape' || e.defaultPrevented || typing || touring || measureTool.active) return;
+  if (!$('inspector').hidden) { e.preventDefault(); closeInspector(); return; }
   const card = ['feature-card', 'story-card'].find((id) => !$(id).hidden);
   if (card) {
     e.preventDefault(); show(card, false);
@@ -1659,7 +1842,7 @@ const tourHost: TourHost = {
     touring = on;
     $('ui').classList.toggle('touring', on);
     $('tour-btn').setAttribute('aria-pressed', String(on));
-    if (on) { setPopover(null); hideOffer(); setTab('none'); show('story-card', false); show('feature-card', false); markStory(null); currentStory = null; }
+    if (on) { setPopover(null); hideOffer(); setTab('none'); show('story-card', false); show('feature-card', false); closeInspector(); if (base !== 'atlas') setBase('atlas'); markStory(null); currentStory = null; }
     updatePadding();
   },
   onUserMove: (cb) => {
@@ -1720,6 +1903,8 @@ window.addEventListener('hashchange', () => {
   if (ts && (!timeUI?.open || hashWithTime('', ts) !== hashWithTime('', timeUI.state))) openTime(ts);
   const tn = tourFromHash(location.hash);
   if (tn && (!tour?.active || tour.index !== tn - 1)) startTour(tn);
+  const b = baseFromHash(location.hash);
+  if (b !== base) setBase(b, false);
   const at = s ? null : atFromHash(location.hash);
   if (at) map.flyTo({ center: [at.lon, at.lat], zoom: at.zoom, pitch: 0, bearing: 0, essential: true });
 });
@@ -1731,6 +1916,9 @@ Object.assign(window, {
     map, meta, synthetic, idle, rasterTileSize, terrainTileSize,
     playStory: (id: string, instant = true) => { const s = stories.find((x) => x.id === id); if (s) playStory(s, instant); return !!s; },
     setVeil, setPlates, setNew, setFeatures,
+    inspect: (lon: number, lat: number) => inspect(lon, lat),
+    inspector: () => ({ open: !$('inspector').hidden, status: $('inspector').dataset.st ?? null, badge: $('insp-badge-t').textContent }),
+    setBase: (id: BaseId) => setBase(id),
     profile: async (a: [number, number], b: [number, number]) => { setProfiling(true); profileA = a; return runProfile(a, b); },
     hoverChart: (frac: number) => { const svg = $('profile-chart').querySelector('svg')!; const r = svg.getBoundingClientRect(); svg.dispatchEvent(new PointerEvent('pointermove', { clientX: r.left + 60 + frac * (r.width - 72), clientY: r.top + 40 })); },
     readout,

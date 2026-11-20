@@ -30,6 +30,18 @@ try {
     measuring = await page.evaluate(() => !document.getElementById('measure')?.hidden);
   }
   await page.keyboard.press('Escape');
+  // the quick-view pill drives the Layers switch; a click on open ocean opens the point inspector
+  await page.evaluate(() => document.querySelector('#presets [data-preset="veil"]')?.click());
+  await page.waitForTimeout(500);
+  const pill = await page.evaluate(() => [document.getElementById('t-veil')?.checked, document.querySelector('#presets [data-preset="veil"]')?.getAttribute('aria-pressed')]);
+  await page.evaluate(() => document.querySelector('#presets [data-preset="relief"]')?.click());
+  let insp = null;
+  for (let t0 = Date.now(); Date.now() - t0 < 30000 && !insp?.status;) {
+    insp = await page.evaluate(async () => { await window.__seafloor?.inspect(-30, -20); return window.__seafloor?.inspector(); });
+    if (!insp?.status) await page.waitForTimeout(1000);
+  }
+  await page.keyboard.press('Escape');
+  const inspClosed = await page.evaluate(() => document.getElementById('inspector')?.hidden);
   // on a CI runner without a GPU start-up is slower: retry until the late-wired Tour button answers (60 s at most)
   let touring = null;
   for (let t0 = Date.now(); Date.now() - t0 < 60000 && touring !== 'true';) {
@@ -41,6 +53,9 @@ try {
   if (errors.length) fail(`page errors:\n  ${errors.join('\n  ')}`);
   if (!measuring) fail('the measure button did not open its panel');
   if (touring !== 'true') fail('the Tour button did not start the tour');
-  console.log('smoke: no page errors; measure and tour respond');
+  if (pill[0] !== true || pill[1] !== 'true') fail(`the Measured pill did not switch the layer on (${pill})`);
+  if (!insp?.status) fail(`the point inspector did not classify a point (${JSON.stringify(insp)})`);
+  if (!inspClosed) fail('Esc did not close the point inspector');
+  console.log(`smoke: no page errors; measure, tour, quick views and point inspector (${insp.status}) respond`);
 } catch (e) { fail(String(e)); }
 server.kill();

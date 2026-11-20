@@ -18,6 +18,8 @@ const SHOTS = [
   { name: 'shipping', hash: '#layers=shipping', cam: { center: [60, 15], zoom: 2.3, pitch: 0, bearing: 0 } },
   { name: 'time-quakes', hash: '#layers=quakes&time=quakes-2004', cam: { center: [120, 0], zoom: 1.6, pitch: 0, bearing: 0 } },
   { name: 'tour', hash: '#tour=2' },
+  { name: 'inspector', hash: '', cam: { center: [-28, -22], zoom: 3.2, pitch: 0, bearing: 0 }, inspect: [-27.2, -21.6] },
+  { name: 'basemap-ocean', hash: '#base=ocean&layers=veil', cam: { center: [-35, 25], zoom: 1.95, pitch: 0, bearing: 0 }, veil: true },
   { name: 'monsoon', hash: '#layers=chl,winds&time=month-7', cam: { center: [68, 8], zoom: 1.9, pitch: 0, bearing: 0 } },
 ];
 
@@ -33,6 +35,7 @@ for (const s of SHOTS.filter((x) => !only || only.split(',').includes(x.name))) 
   if (s.cam) await page.evaluate((cam) => window.__seafloor.map.jumpTo(cam), s.cam);
   if (s.veil) await page.evaluate(() => window.__seafloor.setVeil(true));
   if (s.profile) { await settle(1500); await page.evaluate((p) => window.__seafloor.profile(p[0], p[1]), s.profile); }
+  if (s.inspect) { await settle(1500); await page.evaluate((c) => window.__seafloor.inspect(c[0], c[1]), s.inspect); await page.click('.insp-more summary'); }
   if (s.column) { await settle(1500); await page.evaluate((c) => window.__seafloor.water.column(c[0], c[1]), s.column); }
   await settle();
   await page.screenshot({ path: `${outdir}/${s.name}.png` });

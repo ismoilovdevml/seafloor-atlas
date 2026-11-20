@@ -9,6 +9,7 @@ import { fetchTile } from './tilesource';
 // round-trips exactly. DEM tiles have alpha 255 everywhere (RGB exact), and from the veil only alpha is
 // read, so both decodes are lossless.
 import { bilinear, decodeTerrarium, decodeVeil, lonLatToWorldPx, wrapPx } from './geo';
+import { nearestFlagged, searchRadiusPx } from './inspect';
 
 type Kind = 'dem' | 'coverage';
 type Grid = Float32Array | Uint8Array;
@@ -121,5 +122,35 @@ export class TileSampler {
     }
     this.evict(this.capacity);
     return { h, f };
+  }
+
+  /**
+   * Distance (km) from lon/lat to the nearest ocean cell with any direct measurement at zoom z (inspect.ts
+   * nearestFlagged over the coverage + DEM tiles of a window maxKm wide); 0 = this cell; null = none within maxKm
+   * or tiles missing.
+   */
+  async nearestMeasured(lon: number, lat: number, maxKm: number, z = this.meta.maxzoom): Promise<number | null> {
+    const S = this.meta.tileSize, T = 2 ** z;
+    const [cx, cy] = lonLatToWorldPx(lon, lat, z, S);
+    const R = searchRadiusPx(lat, z, S, maxKm);
+    const tx0 = Math.floor((cx - R) / S), tx1 = Math.floor((cx + R) / S);
+    const ty0 = Math.max(0, Math.floor((cy - R) / S)), ty1 = Math.min(T - 1, Math.floor((cy + R) / S));
+    const set = new Set<string>();
+    for (let tx = tx0; tx <= tx1; tx++) for (let ty = ty0; ty <= ty1; ty++) set.add(`${wrapPx(tx, T)},${ty}`);
+    const tiles = [...set].map((s) => s.split(',').map(Number) as [number, number]);
+    const needed = Math.max(this.capacity, tiles.length * 2);
+    const grids = new Map<string, Grid | null>();
+    await Promise.all(tiles.flatMap(([x, y]) => (['dem', 'coverage'] as Kind[]).map((k) =>
+      this.load(k, z, x, y, needed).then((g) => grids.set(this.key(k, z, x, y), g)))));
+    const flag = (ix: number, iy: number): boolean => {
+      const tx = Math.floor(ix / S), ty = Math.floor(iy / S), i = (iy % S) * S + (ix % S);
+      const a = grids.get(this.key('coverage', z, tx, ty)), d = grids.get(this.key('dem', z, tx, ty));
+      if (!a || !d) return false;
+      const f = decodeVeil(a[i], this.meta.veilMax, d[i]);
+      return f !== null && f > 0;
+    };
+    const km = nearestFlagged(flag, lon, lat, z, S, maxKm);
+    this.evict(this.capacity);
+    return km;
   }
 }

@@ -14,13 +14,13 @@
 .tour-head { display: flex; align-items: center; gap: 10px; }
 .tour-avatar { flex: none; display: grid; place-items: center; }
 .tour-avatar svg { display: block; overflow: visible; }
-.tav-bg { fill: rgba(168, 224, 194, 0.1); stroke: rgba(168, 224, 194, 0.45); stroke-width: 1; }
-.tav-mast { stroke: var(--shelf); stroke-width: 2; stroke-linecap: round; }
+.tav-bg { fill: rgba(255, 179, 92, 0.1); stroke: rgba(255, 179, 92, 0.45); stroke-width: 1; }
+.tav-mast { stroke: var(--acc); stroke-width: 2; stroke-linecap: round; }
 .tav-light { fill: #ffc95c; }
-.tav-hull { fill: var(--shelf); }
-.tav-eye { fill: var(--on-shelf); }
+.tav-hull { fill: var(--acc); }
+.tav-eye { fill: var(--on-acc); }
 .tav-wave { fill: none; stroke: #62b8b1; stroke-width: 1.8; stroke-linecap: round; }
-.tav-arc { fill: none; stroke: var(--shelf); stroke-width: 1.7; stroke-linecap: round; opacity: 0.75; }
+.tav-arc { fill: none; stroke: var(--acc); stroke-width: 1.7; stroke-linecap: round; opacity: 0.75; }
 /* while the tour plays, Ping pings: the arcs fade outwards in turn */
 .tour.playing .tav-arc { animation: tour-ping 2.4s ease-out infinite; }
 .tour.playing .tav-arc.a2 { animation-delay: 0.35s; }
@@ -36,27 +36,27 @@
 /* the speech bubble: its tail points up at Ping */
 .tour-bubble {
   position: relative; padding: 10px 12px 9px; border-radius: 10px;
-  background: rgba(168, 224, 194, 0.06); border: 1px solid rgba(168, 224, 194, 0.22);
+  background: rgba(255, 179, 92, 0.06); border: 1px solid rgba(255, 179, 92, 0.22);
 }
 .tour-bubble::before {
   content: ''; position: absolute; left: 15px; top: -7px; width: 12px; height: 12px; transform: rotate(45deg);
-  background: #0f2130; border-left: 1px solid rgba(168, 224, 194, 0.22); border-top: 1px solid rgba(168, 224, 194, 0.22);
+  background: #0f2130; border-left: 1px solid rgba(255, 179, 92, 0.22); border-top: 1px solid rgba(255, 179, 92, 0.22);
 }
 .tour-title { font: 500 19px/1.2 var(--serif); font-variation-settings: 'opsz' 36; margin: 0 0 5px; color: var(--ink); position: relative; }
 .tour-text { margin: 0; font-size: 14.5px; line-height: 1.5; color: var(--ink); }
 .tour-src { margin: 7px 0 0; font-size: 12px; line-height: 1.4; color: var(--ink-3); }
 
 .tour-timer { height: 2px; border-radius: 1px; background: var(--line); overflow: hidden; }
-.tour-timer span { display: block; height: 100%; background: var(--shelf); transform: scaleX(0); transform-origin: left; }
+.tour-timer span { display: block; height: 100%; background: var(--acc); transform: scaleX(0); transform-origin: left; }
 .tour:not(.playing) .tour-timer span { background: var(--ink-3); }
 
 .tour-dots { display: flex; flex-wrap: wrap; gap: 0; margin: -4px -4px 0; }
 .tour-dot { width: 24px; height: 24px; border: 0; padding: 0; background: none; border-radius: 12px; display: grid; place-items: center; }
 .tour-dot::before { content: ''; width: 7px; height: 7px; border-radius: 4px; background: var(--line-strong); transition: width 0.18s var(--ease), background-color 0.18s; }
 .tour-dot.seen::before { background: var(--ink-3); }
-.tour-dot[aria-current='step']::before { width: 18px; background: var(--shelf); }
+.tour-dot[aria-current='step']::before { width: 18px; background: var(--acc); }
 .tour-dot:hover::before { background: var(--ink-2); }
-.tour-dot[aria-current='step']:hover::before { background: var(--shelf); }
+.tour-dot[aria-current='step']:hover::before { background: var(--acc); }
 
 .tour-ctrl { display: flex; gap: 6px; align-items: center; }
 .tour-btn {
@@ -64,12 +64,12 @@
   border-radius: var(--r-ctl); border: 1px solid var(--line-strong); background: transparent; color: var(--ink);
   font-weight: 600; font-size: 13.5px; transition: border-color 0.15s, background-color 0.15s;
 }
-.tour-btn:hover:not(:disabled) { border-color: var(--shelf); }
+.tour-btn:hover:not(:disabled) { border-color: var(--acc); }
 .tour-btn:disabled { opacity: 0.4; cursor: default; }
-.tour-btn.primary { background: var(--shelf); border-color: var(--shelf); color: var(--on-shelf); margin-left: auto; }
+.tour-btn.primary { background: var(--acc); border-color: var(--acc); color: var(--on-acc); margin-left: auto; }
 .tour-btn.primary:hover { background: #c2ecd5; }
 .tour-btn.icon { width: 36px; padding: 0; }
-.tour-btn.icon[aria-pressed='true'] { color: var(--shelf); border-color: var(--shelf); background: rgba(168, 224, 194, 0.12); }
+.tour-btn.icon[aria-pressed='true'] { color: var(--acc); border-color: var(--acc); background: rgba(255, 179, 92, 0.12); }
 .tour-play .i-pause { display: block; }
 .tour-play .i-play, .tour-play.paused .i-pause { display: none; }
 .tour-play.paused .i-play { display: block; }
@@ -78,12 +78,12 @@
 /* the spotlight: a ring around the control a chapter talks about; never takes the pointer */
 .tour-spot {
   position: fixed; left: 0; top: 0; z-index: 40; pointer-events: none; border-radius: 10px;
-  box-shadow: 0 0 0 2px var(--shelf), 0 0 0 6px rgba(168, 224, 194, 0.22), 0 0 20px 6px rgba(168, 224, 194, 0.28);
+  box-shadow: 0 0 0 2px var(--acc), 0 0 0 6px rgba(255, 179, 92, 0.22), 0 0 20px 6px rgba(255, 179, 92, 0.28);
   transition: transform 0.28s var(--ease), width 0.28s var(--ease), height 0.28s var(--ease);
   animation: tour-glow 1.8s ease-in-out infinite;
 }
 @keyframes tour-glow {
-  50% { box-shadow: 0 0 0 2px var(--shelf), 0 0 0 10px rgba(168, 224, 194, 0.1), 0 0 28px 10px rgba(168, 224, 194, 0.2); }
+  50% { box-shadow: 0 0 0 2px var(--acc), 0 0 0 10px rgba(255, 179, 92, 0.1), 0 0 28px 10px rgba(255, 179, 92, 0.2); }
 }
 
 /* while touring: no Time offer popping up, no guided-view drawer under the bubble */
@@ -98,7 +98,7 @@
 @media (max-width: 760px) {
   .tour {
     grid-area: tabs; width: auto; max-width: none; justify-self: stretch; align-self: end;
-    max-height: none; overflow: visible; gap: 6px; padding: 8px 10px 10px; background: rgba(8, 16, 30, 0.95);
+    max-height: none; overflow: visible; gap: 6px; padding: 8px 10px 10px; background: var(--glass-solid);
   }
   .tour-head { gap: 8px; }
   .tour-avatar svg { width: 30px; height: 30px; }

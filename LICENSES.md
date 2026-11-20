@@ -35,6 +35,7 @@ None of the depths here are for navigation. The data is provided as is, without 
 | `data/cables.geojson`, `data/landing-points.geojson` | TeleGeography Submarine Cable Map, snapshot 2022-11-14 | **CC BY-NC-SA 3.0** (non-commercial, ShareAlike) | TeleGeography, submarinecablemap.com |
 | `data/cables-osm.geojson`, `data/platforms.geojson`, `data/pipelines.geojson`, `data/windfarms.geojson` | OpenStreetMap | **ODbL 1.0** (ShareAlike for the database) | © OpenStreetMap contributors |
 | `data/sea-level-history.json` | Lambeck et al. 2014, PNAS, SI Table S3 | factual values reproduced with citation; no separate data licence | Lambeck, Rouby, Purcell, Sun & Sambridge (2014), doi:10.1073/pnas.1411762111 |
+| none stored: optional Esri basemap tiles (`web/src/basemap.ts`) | Esri World Imagery, World Ocean Base, World Topographic Map, streamed from server.arcgisonline.com only when a viewer picks one | Esri terms of use; not redistributed | "Powered by Esri" plus each service's own copyrightText, shown on the map while that basemap is on |
 | Marine Regions-derived tables in `docs/regions.md` | Flanders Marine Institute | **CC BY 4.0** | doi:10.14284/542, 10.14284/632, 10.14284/696 |
 
 ## Figures (`figures/`, `docs/img/`)

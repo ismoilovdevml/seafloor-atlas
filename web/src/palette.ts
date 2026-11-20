@@ -138,3 +138,19 @@ export function plateColorExpression(): unknown[] {
 
 /** Profile / measuring line: white so it never collides with a plate class colour. */
 export const SURVEY_LINE = '#ffffff';
+
+/**
+ * One status scale for the point inspector: how the depth at a clicked point is known. The badge, the metric
+ * tiles, the dot on the map and the legend all take their colour from here (main.ts copies them to --st-* CSS
+ * variables), so a colour means the same thing everywhere.
+ */
+export const STATUS = {
+  measured: { color: '#10b981', label: 'Measured by ship' },
+  partly: { color: '#facc15', label: 'Partly measured' },
+  near: { color: '#f97316', label: 'Estimated, survey nearby' },
+  far: { color: '#ef4444', label: 'Estimated, no survey nearby' },
+  land: { color: '#94a3b8', label: 'Land' },
+} as const;
+export type StatusKey = keyof typeof STATUS;
+/** The ocean classes in order, best known first (legend order). */
+export const STATUS_ORDER: StatusKey[] = ['measured', 'partly', 'near', 'far'];

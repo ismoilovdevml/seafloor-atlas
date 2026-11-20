@@ -54,6 +54,7 @@
     <header class="topbar" id="topbar">
       <div class="top-left">
         <h1 class="brand"><span class="brand-mark" aria-hidden="true"></span>Seafloor Atlas</h1>
+        <div class="search-col">
         <div class="search" role="search">
           <label class="sr-only" for="search-input">Search undersea features, cables, shipwrecks and guided views</label>
           <svg class="search-ico" width="17" height="17" aria-hidden="true"><use href="#i-search"/></svg>
@@ -61,6 +62,14 @@
                  role="combobox" aria-expanded="false" aria-controls="search-results" aria-autocomplete="list" aria-keyshortcuts="Meta+K Control+K /" />
           <kbd class="search-key" id="search-key" aria-hidden="true">⌘K</kbd>
           <ul id="search-results" class="search-results" role="listbox" aria-label="Search results" hidden></ul>
+        </div>
+        <!-- quick views: one analysis layer at a time (they drive the same switches as the Layers drawer) -->
+        <div class="presets" id="presets" role="group" aria-label="Quick views">
+          <button class="pill" type="button" data-preset="relief" aria-pressed="true" title="Only the relief, no analysis layer">Relief</button>
+          <button class="pill" type="button" data-preset="veil" aria-pressed="false" title="Dim everything ships have not measured directly">Measured<span class="pill-n" id="pill-measured"></span></button>
+          <button class="pill" type="button" data-preset="new2026" aria-pressed="false" title="Seafloor newly counted as measured since GEBCO 2025">New in 2026</button>
+          <button class="pill" type="button" data-preset="disagree" aria-pressed="false" title="Where two global depth models disagree">Uncertain depths</button>
+        </div>
         </div>
         <button class="chip" id="explore-btn" type="button" aria-expanded="false" aria-controls="stories">
           <svg width="18" height="18" aria-hidden="true"><use href="#i-compass"/></svg><span>Explore</span>
@@ -109,6 +118,7 @@
         <summary>Privacy</summary>
         <div class="credits-body">
           <p>No cookies, no analytics, no account. Panel and layer preferences stay in your browser’s local storage.</p>
+          <p>The Satellite, Ocean and Topo basemaps load their tiles from Esri (server.arcgisonline.com) only after you pick one; the default Atlas background is served with the site.</p>
           <p>The site, including the zoom 6–7 depth tiles, is served by Cloudflare Pages, which logs IP addresses (a mirror on GitHub Pages reads those tiles from Hugging Face). Other hosts are contacted only when you use what needs them: Wikimedia Commons for a wreck photo when its card opens, and USGS for live earthquakes when you switch them on.</p>
         </div>
       </details>
@@ -400,6 +410,29 @@
       <p class="f-source" id="f-source"></p>
     </article>
 
+    <!-- ================= point inspector (right; a bottom sheet on a phone): click the seafloor ================= -->
+    <aside class="inspector" id="inspector" hidden aria-labelledby="insp-title" aria-live="polite">
+      <header class="insp-head">
+        <div>
+          <h2 id="insp-title">Seafloor here</h2>
+          <p class="insp-meta" id="insp-meta"></p>
+        </div>
+        <button class="close" type="button" id="insp-close" aria-label="Close point details"><svg width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
+      </header>
+      <p class="sbadge" id="insp-badge"><span class="sdot" aria-hidden="true"></span><span id="insp-badge-t">Reading…</span></p>
+      <div class="itiles">
+        <div class="itile"><p class="tl" id="it-depth-l">Depth</p><p class="tv" id="it-depth">…</p><p class="ts" id="it-depth-s">GEBCO 2026</p></div>
+        <div class="itile st"><p class="tl">Measured in cell</p><p class="tv" id="it-meas">…</p><p class="ts" id="it-meas-s"></p></div>
+        <div class="itile st"><p class="tl">Nearest sounding</p><p class="tv" id="it-near">…</p><p class="ts">searched to 200 km</p></div>
+      </div>
+      <p class="verdict" id="insp-verdict"></p>
+      <details class="insp-more">
+        <summary>All values at this point</summary>
+        <table class="itbl"><tbody id="insp-rows"></tbody></table>
+        <p class="insp-foot">Colours: green, at least half of the cell measured by ship; yellow, part of it; orange, none, but measured seafloor within 10 km; red, none within 10 km. From the GEBCO 2026 type identifier grid (codes 10–17 = direct survey).</p>
+      </details>
+    </aside>
+
     <!-- ================= legend dock (bottom left): only what is on the map ================= -->
     <aside class="legend" id="legend" aria-labelledby="legend-title">
       <button class="legend-head" id="legend-toggle" type="button" aria-expanded="true" aria-controls="legend-body">
@@ -410,6 +443,15 @@
         <section class="lg" id="depth-legend" aria-labelledby="depth-legend-cap">
           <h3 id="depth-legend-cap">Depth below sea level</h3>
           <div class="ramp" id="ramp"></div>
+        </section>
+        <section class="lg" id="lg-status" hidden aria-labelledby="lg-status-t">
+          <h3 id="lg-status-t">Point details</h3>
+          <ul class="key status-key" id="status-key"></ul>
+        </section>
+        <section class="lg" id="lg-base" hidden aria-labelledby="lg-base-t">
+          <h3 id="lg-base-t">Basemap</h3>
+          <p class="ov-unit" id="lg-base-note"></p>
+          <p class="lg-att" id="lg-base-att"></p>
         </section>
         <section class="lg" id="lg-veil" hidden aria-labelledby="lg-veil-t">
           <h3 id="lg-veil-t">What’s actually measured</h3>
@@ -662,6 +704,17 @@
       <button role="tab" id="tab-layers" aria-controls="layers" aria-selected="false" data-tab="layers"><svg width="18" height="18" aria-hidden="true"><use href="#i-layers"/></svg>Layers</button>
       <button role="tab" id="tab-tools" aria-controls="toolbar" aria-selected="false" data-tab="tools"><svg width="18" height="18" aria-hidden="true"><use href="#i-profile"/></svg>Tools</button>
     </div>
+  </div>
+
+  <!-- basemap switch (bottom right, above the compass): our relief by default, Esri pictures on request -->
+  <div class="mapctrl" id="mapctrl" role="group" aria-label="Basemap">
+    <div class="mapctrl-seg">
+      <button type="button" data-base="atlas" aria-pressed="true" title="Our GEBCO 2026 relief (default)">Atlas</button>
+      <button type="button" data-base="sat" aria-pressed="false">Satellite</button>
+      <button type="button" data-base="ocean" aria-pressed="false">Ocean</button>
+      <button type="button" data-base="topo" aria-pressed="false">Topo</button>
+    </div>
+    <p class="mapctrl-att" id="mapctrl-att" hidden></p>
   </div>
 
   <script type="module" src="/src/main.ts"></script>
