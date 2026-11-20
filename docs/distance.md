@@ -32,16 +32,20 @@ did that change from release to release? Produced by `pipeline/distance.py`; num
 
 ## Numbers per release (world ocean, area-weighted)
 
+Quantiles are read from an area histogram (bin 0 = measured cells alone, then log bins from 50 m to 20,040 km,
+1.5 % wide), so they carry about ±1 % of rounding; the shares beyond 10/50/100/200 km are exact sums. Recomputed
+2026-11-20 after the zero-distance bin was separated (medians moved by at most 0.2 km).
+
 | Release | Mean (km) | Median (km) | P90 (km) | P99 (km) | Median, unmeasured only (km) | > 10 km | > 50 km | > 100 km | > 200 km |
 |---|---|---|---|---|---|---|---|---|---|
-| 2019 | 79.6 | 31.5 | 219.1 | 591 | 44.7 | 68.2 % | 40.3 % | 24.7 % | 11.3 % |
-| 2020 | 61.2 | 17.1 | 163.1 | 647 | 31.6 | 58.2 % | 30.3 % | 17.4 % | 7.6 % |
-| 2021 | 34.2 | 9.3 | 99.6 | 299 | 20.9 | 49.1 % | 21.0 % | 10.0 % | 2.9 % |
-| 2022 | 21.7 | 4.9 | 61.7 | 230 | 12.3 | 37.7 % | 12.5 % | 5.4 % | 1.5 % |
-| 2023 | 19.4 | 4.2 | 53.0 | 212 | 11.3 | 35.9 % | 10.7 % | 4.4 % | 1.2 % |
-| 2024 | 17.5 | 3.7 | 48.1 | 196 | 10.7 | 33.4 % | 9.6 % | 3.9 % | 0.9 % |
-| 2025 | 16.6 | 3.7 | 45.4 | 185 | 10.5 | 32.7 % | 9.0 % | 3.6 % | 0.8 % |
-| 2026 | 15.1 | 3.5 | 41.9 | 163 | 10.0 | 31.5 % | 8.1 % | 3.0 % | 0.5 % |
+| 2019 | 79.6 | 31.4 | 219.0 | 591 | 44.9 | 68.2 % | 40.3 % | 24.7 % | 11.3 % |
+| 2020 | 61.2 | 17.1 | 163.0 | 647 | 31.5 | 58.2 % | 30.3 % | 17.4 % | 7.6 % |
+| 2021 | 34.2 | 9.3 | 99.6 | 299 | 21.0 | 49.1 % | 21.0 % | 10.0 % | 2.9 % |
+| 2022 | 21.7 | 4.9 | 61.6 | 230 | 12.3 | 37.7 % | 12.5 % | 5.4 % | 1.5 % |
+| 2023 | 19.4 | 4.2 | 53.0 | 212 | 11.2 | 35.9 % | 10.7 % | 4.4 % | 1.2 % |
+| 2024 | 17.5 | 3.7 | 47.9 | 196 | 10.7 | 33.4 % | 9.6 % | 3.9 % | 0.9 % |
+| 2025 | 16.6 | 3.7 | 45.5 | 185 | 10.5 | 32.7 % | 9.0 % | 3.6 % | 0.8 % |
+| 2026 | 15.1 | 3.5 | 41.8 | 163 | 10.0 | 31.5 % | 8.1 % | 3.0 % | 0.5 % |
 
 In plain terms: in GEBCO_2019 two points in five of the world ocean (40 %) lay more than 50 km from any direct
 depth measurement; in GEBCO_2026 it is one in twelve (8.1 %, 29 M km²). Half of the ocean is within 3.5 km of a

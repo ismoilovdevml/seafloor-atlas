@@ -21,11 +21,11 @@
   }
  },
  "change2025to2026": {
-  "measured_2025_frac": 0.2968447797512128,
-  "measured_2026_frac": 0.3080473992222625,
-  "newly_measured_km2": 6565379.254623686,
-  "no_longer_measured_km2": 2512740.9855485847,
-  "net_km2": 4052638.269075066
+  "measured_2025_frac": 0.29687793706085747,
+  "measured_2026_frac": 0.30810193736514335,
+  "newly_measured_km2": 6565379.254623697,
+  "no_longer_measured_km2": 2505725.0361120133,
+  "net_km2": 4059654.218511671
  },
  "polarCaps": {
   "dem": [

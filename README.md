@@ -112,7 +112,7 @@ Where ships never went, GEBCO and an independent gravity + deep-learning model (
 |---|---|
 | ![distance](figures/fig_distance_to_measurement.png) | ![blind test](figures/fig_blindtest.png) |
 
-Half of the ocean floor is within 3.5 km of a measured cell in GEBCO_2026 (31.5 km in GEBCO_2019), but one cell in twelve (8.1 %) is more than 50 km away; the farthest deep point, in the central Indian Ocean, is 525 km from any measurement. Where a satellite-gravity prediction in GEBCO_2024 was replaced by a measurement in GEBCO_2025 (18.3 million cells), the prediction was off by a median 31 m and by more than 100 m in 22 % of the cells, and the error stops growing beyond about 5 km from earlier data. Details: [docs/distance.md](docs/distance.md), [docs/blindtest.md](docs/blindtest.md).
+Half of the ocean floor is within 3.5 km of a measured cell in GEBCO_2026 (31.4 km in GEBCO_2019), but one cell in twelve (8.1 %) is more than 50 km away; the farthest deep point, in the central Indian Ocean, is 525 km from any measurement. Where a satellite-gravity prediction in GEBCO_2024 was replaced by a measurement in GEBCO_2025 (18.3 million cells), the prediction was off by a median 31 m and by more than 100 m in 22 % of the cells, and the error stops growing beyond about 5 km from earlier data. Details: [docs/distance.md](docs/distance.md), [docs/blindtest.md](docs/blindtest.md).
 
 ### The official figure and the shipping lanes
 
