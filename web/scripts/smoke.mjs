@@ -13,7 +13,13 @@ try {
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.stack?.split('\n').slice(0, 3).join(' | ') ?? String(e)));
-  await page.goto(`http://localhost:${port}/`, { waitUntil: 'load', timeout: 60000 });
+  await page.goto(`http://localhost:${port}/`, { waitUntil: 'commit', timeout: 60000 });
+  // a visitor may press the ruler while start-up is still running: click it as soon as it exists, twice (on, off)
+  for (let i = 0, n = 0; i < 400 && n < 2; i++) {
+    await page.waitForTimeout(25);
+    if (await page.evaluate(() => { const b = document.getElementById('nav-measure'); b?.click(); return !!b; }).catch(() => false)) n++;
+  }
+  await page.waitForLoadState('load');
   await page.waitForTimeout(4000);
   // the measure tool and the tour are wired late in main.ts: both must react
   let measuring = false;

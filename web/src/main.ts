@@ -152,9 +152,12 @@ const hypsoP = getJSON<Hypsometry>('data/hypsometry.json');
 await new Promise<void>((res) => (map.isStyleLoaded() ? res() : map.once('style.load', () => res())));
 mountNav3d(map, document.body);
 // "Measure distance" (measure.ts): the ruler under the compass, or right-click on the map
+// the ruler works from the first frame, but the panels it closes and the layout code are created further down:
+// until the end of this module has run (appReady) there is nothing to close and nothing to lay out yet
+let appReady = false;
 const measureTool = new MeasureTool(map, {
-  beforeStart: () => { if (profiling) setProfiling(false); if (seaOpen) closeSea(); water.close(); timeUI?.close(); },
-  layout: () => updatePadding(),
+  beforeStart: () => { if (!appReady) return; if (profiling) setProfiling(false); if (seaOpen) closeSea(); water.close(); timeUI?.close(); },
+  layout: () => { if (appReady) updatePadding(); },
 }, document.getElementById('ui')!, document.getElementById('nav-measure') as HTMLButtonElement);
 {
   const menu = document.createElement('div');
@@ -1866,3 +1869,7 @@ Object.assign(window, {
     },
   },
 });
+
+// every control above is wired; hooks that ran earlier (the ruler) may now reach the other panels
+appReady = true;
+updatePadding();
