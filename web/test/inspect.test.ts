@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { classify, formatNearest, nearestFlagged, NEAR_KM, pixelKm, searchRadiusPx, verdict, worldPxToLonLat } from '../src/inspect';
 import { haversineKm, lonLatToWorldPx } from '../src/geo';
-import { STATUS, STATUS_ORDER } from '../src/palette';
-import { baseFromHash, ESRI, esriAttribution, esriSource, hashWithBase } from '../src/basemap';
+import { STATUS, STATUS_ORDER, seaLevelStops } from '../src/palette';
+import { CLEAR, SAT_ATTRIBUTION, clearLand, hashWithLand, iceLand, satLandFromHash, satSource } from '../src/basemap';
 
 describe('classify', () => {
   it('maps fraction and distance to one status', () => {
@@ -73,19 +73,28 @@ describe('nearestFlagged', () => {
   });
 });
 
-describe('basemaps', () => {
-  it('reads and writes base= in the hash without touching other parts', () => {
-    expect(baseFromHash('')).toBe('atlas');
-    expect(baseFromHash('#at=1,2,3&base=sat')).toBe('sat');
-    expect(baseFromHash('#base=evil')).toBe('atlas');
-    expect(hashWithBase('#at=1,2,3&layers=veil', 'ocean')).toBe('#at=1,2,3&layers=veil&base=ocean');
-    expect(hashWithBase('#at=1,2,3&base=ocean', 'atlas')).toBe('#at=1,2,3');
-    expect(hashWithBase('#base=topo', 'atlas')).toBe('');
+describe('satellite land', () => {
+  it('reads and writes land=grey in the hash without touching other parts', () => {
+    expect(satLandFromHash('')).toBe(true);
+    expect(satLandFromHash('#at=1,2,3&land=grey')).toBe(false);
+    expect(hashWithLand('#at=1,2,3&layers=veil', false)).toBe('#at=1,2,3&layers=veil&land=grey');
+    expect(hashWithLand('#at=1,2,3&land=grey', true)).toBe('#at=1,2,3');
+    expect(hashWithLand('#land=grey', true)).toBe('');
   });
-  it('gives every Esri source its own attribution, with Powered by Esri', () => {
-    const atts = ESRI.map((b) => esriSource(b).attribution);
-    expect(new Set(atts).size).toBe(ESRI.length);
-    for (const b of ESRI) expect(esriAttribution(b)).toMatch(/^Powered by Esri · .*\S/);
-    expect(esriSource(ESRI[0]).tiles?.[0]).toBe('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
+  it('clears only dry land, at any sea level', () => {
+    for (const L of [0, -120, 40]) {
+      const s = seaLevelStops(L), from = Math.max(0, L);
+      const c = clearLand(s, from);
+      for (const [h, col] of c) expect(col === CLEAR).toBe(h >= from);
+      expect(c.some(([, col]) => col === CLEAR)).toBe(true);
+      expect(c.filter(([h]) => h < from)).toEqual(s.filter(([h]) => h < from));
+      const ice = iceLand(s, from);
+      expect(ice.every(([, col]) => /^#[0-9a-f]{6}$/.test(col))).toBe(true);
+      expect(ice.map(([h]) => h)).toEqual([...ice.map(([h]) => h)].sort((a, b) => a - b));
+    }
+  });
+  it('attributes Esri with the service copyright', () => {
+    expect(SAT_ATTRIBUTION).toMatch(/^Powered by Esri · Source: Esri, Vantor/);
+    expect(satSource().tiles?.[0]).toBe('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
   });
 });

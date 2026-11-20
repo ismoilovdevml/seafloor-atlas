@@ -19,7 +19,7 @@ const SHOTS = [
   { name: 'time-quakes', hash: '#layers=quakes&time=quakes-2004', cam: { center: [120, 0], zoom: 1.6, pitch: 0, bearing: 0 } },
   { name: 'tour', hash: '#tour=2' },
   { name: 'inspector', hash: '', cam: { center: [-28, -22], zoom: 3.2, pitch: 0, bearing: 0 }, inspect: [-27.2, -21.6] },
-  { name: 'basemap-ocean', hash: '#base=ocean&layers=veil', cam: { center: [-35, 25], zoom: 1.95, pitch: 0, bearing: 0 }, veil: true },
+  { name: 'satellite-land', hash: '', cam: { center: [-155.9, 19.9], zoom: 6.2, pitch: 55, bearing: -25 } },
   { name: 'monsoon', hash: '#layers=chl,winds&time=month-7', cam: { center: [68, 8], zoom: 1.9, pitch: 0, bearing: 0 } },
 ];
 

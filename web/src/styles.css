@@ -66,25 +66,11 @@ kbd { font: 600 11.5px/1 var(--sans); color: var(--ink-3); border: 1px solid var
 
 .topbar { grid-area: top; display: flex; justify-content: space-between; align-items: center; gap: 12px; min-width: 0; }
 .top-left, .top-right { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.top-left { flex: 1 1 auto; align-items: flex-start; }
-.topbar { align-items: flex-start; }
-.brand { height: 40px; }
-/* search with the quick-view pills under it */
-.search-col { display: flex; flex-direction: column; gap: 7px; flex: 0 1 360px; min-width: 180px; }
-.search-col .search { flex: none; min-width: 0; }
-/* one row, allowed to run wider than the search box (the row above is the only thing beside it) */
-.presets { display: flex; flex-wrap: nowrap; gap: 6px; width: max-content; }
-.pill {
-  height: 28px; padding: 0 11px; border-radius: 999px; font-size: 12.5px; font-weight: 600; color: var(--ink-2); white-space: nowrap;
-  transition: border-color 0.15s, color 0.15s, background-color 0.15s;
-}
-.pill:hover { border-color: var(--line-strong); color: var(--ink); }
-.pill[aria-pressed='true'] { border-color: var(--acc); color: var(--acc); background: rgba(15, 23, 42, 0.92); }
-.pill-n { font-weight: 500; color: inherit; opacity: 0.85; }
-.ui.touring .presets { display: none; }
+
 /* the side columns span the rows below the top bar: drawers hang from the top, legend and readout sit at the
    bottom, and a drawer never runs under them (their heights come from main.ts as --legend-h / --readout-h) */
 .stories { grid-column: 1; grid-row: 2 / 5; align-self: start; max-height: calc(100% - var(--legend-h, 0px)); }
+.top-left { flex: 1 1 auto; }
 .layers { grid-column: 3; grid-row: 2 / 5; align-self: start; max-height: calc(100% - var(--readout-h, 0px)); }
 .inspector { grid-column: 3; grid-row: 2 / 5; align-self: start; max-height: calc(100% - var(--readout-h, 0px)); }
 .card { grid-area: card; align-self: start; justify-self: center; }
@@ -98,10 +84,10 @@ kbd { font: 600 11.5px/1 var(--sans); color: var(--ink-3); border: 1px solid var
 .ui:not(.explore-open) .stories, .ui:not(.layers-open) .layers { display: none; }
 
 /* shared surface: glass for the small controls, near-solid for panels that hold reading text */
-.drawer, .legend, .readout, .card, .tool-panel, .toolbar, .popover, .chip, .icon-btn, .search input, .inspector, .pill, .mapctrl {
+.drawer, .legend, .readout, .card, .tool-panel, .toolbar, .popover, .chip, .icon-btn, .search input, .inspector {
   background: var(--glass-solid); border: 1px solid var(--line); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
 }
-.chip, .icon-btn, .search input, .legend, .readout, .toolbar, .pill, .mapctrl { background: var(--glass); box-shadow: var(--shadow); }
+.chip, .icon-btn, .search input, .legend, .readout, .toolbar { background: var(--glass); box-shadow: var(--shadow); }
 .inspector, .card, .drawer, .tool-panel { box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6); }
 
 /* ================= top bar ================= */
@@ -779,24 +765,28 @@ input[role='switch']:checked::after { transform: translateX(12px); background: v
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 
-/* ================= compass + 3D (nav3d.ts), above the readout ================= */
-.nav3d { position: fixed; z-index: 4; display: flex; flex-direction: column; align-items: center; gap: 8px; right: 16px; bottom: 96px; }
+/* ================= control rail (nav3d.ts): compass, 3D, ruler in one glass column above the readout ================= */
+.nav3d {
+  position: fixed; z-index: 4; right: 16px; bottom: 96px; display: flex; flex-direction: column;
+  background: var(--glass); border: 1px solid var(--line); border-radius: var(--r-ctl); box-shadow: var(--shadow);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); overflow: hidden;
+}
 /* invisible until main.ts has placed it above the readout (start-up runs several awaits before the first layout) */
 .nav3d:not([data-placed]) { visibility: hidden; }
 .nav3d[hidden] { display: none; }
-.nav3d-ring { display: flex; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 3px; box-shadow: var(--shadow); }
-.nav3d-compass { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; background: var(--panel-solid); border: 1px solid var(--line-strong); padding: 0; }
-.nav3d-compass .needle { transform-box: view-box; transform-origin: 12px 12px; transition: transform 0.12s linear; }
-.nav3d-turn { width: 30px; height: 42px; display: grid; place-items: center; background: none; border: 0; color: var(--ink-3); padding: 0; border-radius: 999px; }
-.nav3d-turn:hover, .nav3d-compass:hover { color: var(--ink); background-color: var(--hover); }
-.nav3d-tilt { min-width: 46px; height: 36px; padding: 0 10px; border-radius: var(--r-ctl); background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); font: 700 13px/1 var(--sans); color: var(--ink); letter-spacing: 0.02em; }
-.nav3d-tilt[aria-pressed='true'] { color: var(--acc); border-color: var(--line-strong); }
-@media (max-width: 760px) {
-  .nav3d { flex-direction: row-reverse; gap: 6px; }
-  .nav3d-compass { width: 40px; height: 40px; }
-  .nav3d-turn { width: 26px; height: 40px; }
-  .nav3d-tilt { height: 40px; }
+.nav3d-btn {
+  width: 40px; height: 40px; display: grid; place-items: center; padding: 0; border: 0; background: none;
+  color: var(--ink-2); font: 700 12.5px/1 var(--sans); letter-spacing: 0.02em;
 }
+.nav3d-btn + .nav3d-btn { border-top: 1px solid var(--line); }
+.nav3d-btn:hover { color: var(--ink); background: var(--hover); }
+.nav3d-btn[aria-pressed='true'] { color: var(--acc); background: var(--selected); }
+.nav3d-compass .needle { transform-box: view-box; transform-origin: 12px 12px; transition: transform 0.12s linear; }
+@media (max-width: 760px) {
+  .nav3d { flex-direction: row; }
+  .nav3d-btn + .nav3d-btn { border-top: 0; border-left: 1px solid var(--line); }
+}
+@media (pointer: coarse) { .nav3d-btn { width: 44px; height: 44px; } }
 @media (prefers-reduced-motion: reduce) { .nav3d-compass .needle { transition: none; } }
 
 /* ================= measure distance (measure.ts) ================= */
@@ -810,8 +800,6 @@ input[role='switch']:checked::after { transform: translateX(12px); background: v
 .measure-pt.first { width: 16px; height: 16px; border-color: #e5484d; }
 .measure-pt:hover { transform: scale(1.2); }
 .measure-label { background: #fff; color: #111; font: 700 12px/1 var(--sans); padding: 4px 7px; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.4); white-space: nowrap; pointer-events: none; }
-.nav3d-measure { display: grid; place-items: center; }
-.nav3d-measure[aria-pressed='true'] { background: var(--selected); }
 .ctx-menu { position: fixed; z-index: 30; background: var(--panel-solid); border: 1px solid var(--line-strong); border-radius: var(--r-ctl); box-shadow: var(--shadow); padding: 4px; min-width: 170px; }
 .ctx-menu[hidden] { display: none; }
 .ctx-menu button { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 8px 10px; border-radius: 6px; font-size: 14px; color: var(--ink); }
@@ -821,9 +809,6 @@ input[role='switch']:checked::after { transform: translateX(12px); background: v
 .measure-pt { position: relative; }
 .measure-pt::after { content: ''; position: absolute; inset: -15px; border-radius: 50%; }
 @media (pointer: coarse) {
-  .nav3d-turn { width: 36px; height: 44px; }
-  .nav3d-compass { width: 44px; height: 44px; }
-  .nav3d-tilt { min-height: 44px; }
   .month-strip button { min-height: 40px; }
 }
 
@@ -875,33 +860,17 @@ input[role='switch']:checked::after { transform: translateX(12px); background: v
 .status-key li { opacity: 0.6; }
 .status-key li[aria-current] { opacity: 1; font-weight: 700; color: var(--ink); }
 
-/* ================= basemap switch (basemap.ts), stacked above the compass by placeNav3d ================= */
-.mapctrl { position: fixed; z-index: 4; right: 16px; bottom: 200px; border-radius: var(--r-ctl); padding: 3px; max-width: min(300px, calc(100vw - 24px)); }
-.mapctrl:not([data-placed]) { visibility: hidden; }
-.mapctrl-seg { display: flex; gap: 2px; }
-.mapctrl-seg button {
-  flex: 1; height: 30px; padding: 0 9px; border: 0; border-radius: 7px; background: none;
-  font-size: 12.5px; font-weight: 600; color: var(--ink-3); white-space: nowrap;
-}
-.mapctrl-seg button:hover { color: var(--ink); background: var(--hover); }
-.mapctrl-seg button[aria-pressed='true'] { color: var(--acc); background: rgba(255, 179, 92, 0.14); box-shadow: inset 0 0 0 1px var(--acc); }
-.mapctrl-att {
-  margin: 3px 4px 1px; font-size: 10.5px; line-height: 1.35; color: var(--ink-3); cursor: pointer;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 290px;
-}
-.mapctrl.att-open .mapctrl-att { white-space: normal; }
 
 @media (max-width: 760px) {
-  .search-col { display: contents; }
-  .presets { grid-row: 3; grid-column: 1 / -1; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -12px; padding: 0 12px; }
-  .presets::-webkit-scrollbar { display: none; }
-  .pill { height: 32px; flex: none; }
-  .brand { height: auto; }
   /* the inspector is the bottom sheet; tabs, drawers, legend and cards step aside while it is open */
   .ui .inspector { grid-area: panel; align-self: end; max-height: 48vh; padding: 10px 12px; }
   .ui.inspecting :is(.stories, .layers, .tabs, .toolbar, .legend, .card) { display: none !important; }
   .itiles { gap: 5px; }
   .itile { padding: 6px; }
   .itile .tv { font-size: 14px; }
-  .mapctrl-seg button { height: 34px; padding: 0 8px; }
 }
+
+/* ================= satellite land attribution (basemap.ts): one line under the readout, tap to read it all ================= */
+.readout { flex-wrap: wrap; }
+.map-att { flex-basis: 100%; min-width: 0; margin: 6px 0 0; padding-top: 5px; border-top: 1px solid var(--line); font-size: 10.5px; line-height: 1.35; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.map-att.open { white-space: normal; }

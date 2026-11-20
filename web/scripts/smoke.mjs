@@ -30,11 +30,12 @@ try {
     measuring = await page.evaluate(() => !document.getElementById('measure')?.hidden);
   }
   await page.keyboard.press('Escape');
-  // the quick-view pill drives the Layers switch; a click on open ocean opens the point inspector
-  await page.evaluate(() => document.querySelector('#presets [data-preset="veil"]')?.click());
-  await page.waitForTimeout(500);
-  const pill = await page.evaluate(() => [document.getElementById('t-veil')?.checked, document.querySelector('#presets [data-preset="veil"]')?.getAttribute('aria-pressed')]);
-  await page.evaluate(() => document.querySelector('#presets [data-preset="relief"]')?.click());
+  // satellite land is on by default with its attribution; the Layers switch turns it off (#land=grey)
+  const satOn = await page.evaluate(() => [document.getElementById('t-satland')?.checked, document.getElementById('map-att')?.hidden === false]);
+  await page.evaluate(() => document.getElementById('t-satland')?.click());
+  await page.waitForTimeout(300);
+  const satOff = await page.evaluate(() => [location.hash.includes('land=grey'), document.getElementById('map-att')?.hidden === true]);
+  await page.evaluate(() => document.getElementById('t-satland')?.click());
   let insp = null;
   for (let t0 = Date.now(); Date.now() - t0 < 30000 && !insp?.status;) {
     insp = await page.evaluate(async () => { await window.__seafloor?.inspect(-30, -20); return window.__seafloor?.inspector(); });
@@ -53,9 +54,10 @@ try {
   if (errors.length) fail(`page errors:\n  ${errors.join('\n  ')}`);
   if (!measuring) fail('the measure button did not open its panel');
   if (touring !== 'true') fail('the Tour button did not start the tour');
-  if (pill[0] !== true || pill[1] !== 'true') fail(`the Measured pill did not switch the layer on (${pill})`);
+  if (!satOn[0] || !satOn[1]) fail(`satellite land is not on by default with its attribution (${satOn})`);
+  if (!satOff[0] || !satOff[1]) fail(`the Satellite land switch did not turn it off (${satOff})`);
   if (!insp?.status) fail(`the point inspector did not classify a point (${JSON.stringify(insp)})`);
   if (!inspClosed) fail('Esc did not close the point inspector');
-  console.log(`smoke: no page errors; measure, tour, quick views and point inspector (${insp.status}) respond`);
+  console.log(`smoke: no page errors; measure, tour, satellite land and point inspector (${insp.status}) respond`);
 } catch (e) { fail(String(e)); }
 server.kill();
