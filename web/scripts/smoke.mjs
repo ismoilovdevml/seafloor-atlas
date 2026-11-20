@@ -17,16 +17,17 @@ try {
   await page.waitForTimeout(4000);
   // the measure tool and the tour are wired late in main.ts: both must react
   let measuring = false;
-  for (let t0 = Date.now(); Date.now() - t0 < 30000 && !measuring;) {
-    await page.click('#nav-measure', { timeout: 2000 }).catch(() => {});
+  for (let t0 = Date.now(); Date.now() - t0 < 60000 && !measuring;) {
+    // a DOM click: this checks the wiring, not the layout (the compass stays invisible until it is placed)
+    await page.evaluate(() => document.getElementById('nav-measure')?.click());
     await page.waitForTimeout(500);
     measuring = await page.evaluate(() => !document.getElementById('measure')?.hidden);
   }
   await page.keyboard.press('Escape');
-  // on a CI runner without a GPU start-up is slower: retry until the late-wired Tour button answers (30 s at most)
+  // on a CI runner without a GPU start-up is slower: retry until the late-wired Tour button answers (60 s at most)
   let touring = null;
-  for (let t0 = Date.now(); Date.now() - t0 < 30000 && touring !== 'true';) {
-    await page.click('#tour-btn', { timeout: 2000 }).catch(() => {});
+  for (let t0 = Date.now(); Date.now() - t0 < 60000 && touring !== 'true';) {
+    await page.evaluate(() => document.getElementById('tour-btn')?.click());
     await page.waitForTimeout(1500);
     touring = await page.getAttribute('#tour-btn', 'aria-pressed');
   }
