@@ -1,7 +1,7 @@
 """Blind test of predicted bathymetry: depths GEBCO estimated in one release against depths measured in the next.
 
 Between two releases a < b, some 15" cells change from an indirect code (TID 40 = predicted from satellite gravity,
-41 = interpolated, 44 = flight-derived gravity, 70 = pre-generated grid, ...) to a direct measurement (TID 10-17).
+41 = interpolated, 44 = multiple sources in a gridded data set guided by satellite gravity, 70 = pre-generated grid, ...) to a direct measurement (TID 10-17).
 For those cells the depth published in release a was an estimate made without the measurement, and the depth in
 release b is the measurement. Their difference is an out-of-sample error of the estimate.
 
@@ -154,8 +154,9 @@ def strip_update(acc: dict, key: str, r0: int, ta, tb, za, zb, ocean, dist_a_km,
         r, c, dd, ww = rr[s], cc[s], d[s], w[s]
         pre = f"{key}/{g}/"
         hist_add(acc[pre + "depth"], depth_stratum(zb[r, c]), dd, ww, acc[pre + "depth_n"])
-        hist_add(acc[pre + "to"], np.clip(tb[r, c].astype(np.int64) - 10, 0, len(TO_CODES) - 1), dd, ww,
-                 acc[pre + "to_n"])
+        if g != "c40":  # the 40 -> 40 control receives no measured code; clipping 40 - 10 filed it under TID 17
+            hist_add(acc[pre + "to"], np.clip(tb[r, c].astype(np.int64) - 10, 0, len(TO_CODES) - 1), dd, ww,
+                     acc[pre + "to_n"])
         hist_add(acc[pre + "lat"], lat_stratum(r0 + r, h), dd, ww, acc[pre + "lat_n"])
         if dist_a_km is not None:
             hist_add(acc[pre + "dist"], dist_stratum(dist_a_km[r // 4, c // 4]), dd, ww, acc[pre + "dist_n"])

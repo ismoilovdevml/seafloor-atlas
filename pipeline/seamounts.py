@@ -117,7 +117,7 @@ def load_sdust() -> dict:
     import netCDF4  # only needed once
     d = netCDF4.Dataset(RAW / "sdust2026/SDUST2026SM.nc")
     d.set_auto_mask(False)
-    lat, lon = d["lat"][:], d["lon"][:]
+    lat, lon = d["lat"][:], wrap_lon(np.asarray(d["lon"][:], dtype=float))
     out = {k: [] for k in ("lon", "lat", "flag", "height", "base", "id", "major", "minor")}
     for r0 in range(0, len(lat), 1200):
         f = d["visual_pass_flag"][r0:r0 + 1200, :]
@@ -148,7 +148,7 @@ def load_sio() -> tuple[list[dict], int]:
         if name in bad:
             dropped += 1
             continue
-        rows.append({"lon": float(lo), "lat": float(la), "h": float(h), "radius_km": float(rad), "base": float(base),
+        rows.append({"lon": wrap_lon(float(lo)), "lat": float(la), "h": float(h), "radius_km": float(rad), "base": float(base),
                      "id": name, "charted": int(charted), "cls": cls[name]})
     return rows, dropped
 
@@ -197,6 +197,11 @@ def km_to_chord(km: float) -> float:
     return 2 * math.sin(km / R_KM / 2)
 
 
+def wrap_lon(lon):
+    """longitude to [-180, 180): the catalogues hold a few points just west of -180 (SIO-05055 at -180.025)"""
+    return (np.asarray(lon, dtype=float) + 180.0) % 360.0 - 180.0 if np.ndim(lon) else (float(lon) + 180.0) % 360.0 - 180.0
+
+
 def summits(lon: np.ndarray, lat: np.ndarray, radius_km: np.ndarray, block: int = 512, margin: int = 80):
     """Shallowest GEBCO_2026 15" cell within radius_km of each point: (elevation m, TID, lon, lat, n_measured_in_disc).
 
@@ -209,7 +214,7 @@ def summits(lon: np.ndarray, lat: np.ndarray, radius_km: np.ndarray, block: int 
     with rasterio.open(ELEV15) as se, rasterio.open(TID) as st:
         H, W = se.height, se.width
         rows = np.clip(((90 - lat) * 240).astype(int), 0, H - 1)
-        cols = np.clip(((lon + 180) * 240).astype(int), 0, W - 1)
+        cols = np.clip(((wrap_lon(lon) + 180) * 240).astype(int), 0, W - 1)
         key = (rows // block) * (W // block + 1) + cols // block
         for k in np.unique(key):
             idx = np.nonzero(key == k)[0]

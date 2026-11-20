@@ -199,6 +199,32 @@ def decode_i16(q: np.ndarray, offset: float) -> np.ndarray:
     return out
 
 
+SPIKE_C = 10.0  # a surface cell this far from the median of its wet 5 x 5 neighbourhood is an extrapolation artefact
+
+
+def despike(a: np.ndarray, limit: float = SPIKE_C) -> tuple[np.ndarray, int]:
+    """Blank cells that differ from the median of their wet 5 x 5 neighbourhood by more than `limit`.
+
+    WOA23's monthly objective analysis leaves a few coastal cells far outside the physical range (44.0 degC in the
+    Red Sea in February, a patch of 12-43 degC in 3-5 degC water in the Sea of Okhotsk in October). A 5 x 5 window
+    (not 3 x 3) keeps a patch of several bad cells from hiding behind itself, and 10 degC keeps real fronts such as
+    the cold upwelling in the Gulf of California's Canal de Ballenas (21 vs 30 degC in August). Neighbourhoods with
+    fewer than 6 wet cells are left alone. Returns the cleaned copy and the number of cells blanked."""
+    out = a.copy()
+    H, W = a.shape
+    pad = np.pad(a, 2, constant_values=np.nan)
+    nb = np.stack([pad[2 + dy:H + 2 + dy, 2 + dx:W + 2 + dx] for dy in range(-2, 3) for dx in range(-2, 3) if dy or dx])
+    with np.errstate(all="ignore"):
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            med = np.nanmedian(nb, axis=0)
+    wet = np.sum(np.isfinite(nb), axis=0)
+    bad = np.isfinite(a) & (wet >= 6) & (np.abs(a - med) > limit)
+    out[bad] = np.nan
+    return out, int(bad.sum())
+
+
 def north_up(a: np.ndarray) -> np.ndarray:
     """WOA rows run south -> north; the web files run north -> south (row 0 = northernmost)."""
     return a[..., ::-1, :]
@@ -248,7 +274,10 @@ def build() -> None:
         print(f"map {d:>5} m: T {np.nanmin(t):.2f}..{np.nanmax(t):.2f}  S {np.nanmin(s):.2f}..{np.nanmax(s):.2f}  "
               f"sigma0 {np.nanmin(dens):.2f}..{np.nanmax(dens):.2f}", flush=True)
     for m in range(1, 13):
-        put_map(f"t_m{m:02d}", load(f"t_an_025_m{m:02d}_0000m.npy"))
+        sst, nbad = despike(load(f"t_an_025_m{m:02d}_0000m.npy"))
+        if nbad:
+            print(f"month {m:02d}: {nbad} surface cell(s) blanked as spikes (> {SPIKE_C} degC from their neighbours)")
+        put_map(f"t_m{m:02d}", sst)
 
     # 1 deg water columns, 30 x 30 deg regions
     T = load("t_an_1deg_annual_all.npy")  # (102, 180, 360), south -> north

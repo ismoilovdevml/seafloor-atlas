@@ -195,7 +195,7 @@ Drawing the globe is limited by fill rate: the pixels drawn per frame grow with 
 * Beyond 85.05° N/S (outside Web Mercator) the globe shows a flat cap at the mean polar depth.
 * "Measured" cells are 460 m averages; one ship track through a cell counts it as measured.
 * Cable routes are a 2022 snapshot (the open data is no longer updated; status as of 2022-11-14). The weekly OSM cable supplement adds mostly coastal chart cables: OSM rarely maps long-haul routes ([docs/cables-osm.md](docs/cables-osm.md)). Shipwrecks in Wikidata are mostly UK/Irish records; species records reflect sampling effort.
-* The ocean mask includes the Caspian Sea and lake beds below sea level (~0.15 % of the area); regional tables exclude the Caspian.
+* The ocean mask includes the Caspian Sea and lake beds below sea level (0.93 million km², 0.26 % of the area); regional tables exclude the Caspian.
 
 ## Data and licences
 

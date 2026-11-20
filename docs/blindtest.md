@@ -1,7 +1,7 @@
 # Blind test: GEBCO's estimated depths against the measurements that replaced them
 
 When a 15″ cell changes from an indirect source code (TID 40 = predicted from satellite gravity, 41 =
-interpolated, 44 = flight-derived gravity, 70 = pre-generated grid, …) in one GEBCO release to a direct
+interpolated, 44 = multiple sources in a gridded data set guided by satellite gravity, 70 = pre-generated grid, …) in one GEBCO release to a direct
 measurement (TID 10–17) in the next, the earlier depth was an estimate made without that measurement and the
 later depth is the measurement. Their difference is an out-of-sample error of the estimate, measured on the
 grid users actually download. Produced by `pipeline/blindtest.py`; numbers in `data/derived/blindtest_stats.json`;
@@ -30,7 +30,8 @@ figure `figures/fig_blindtest.png`; tests `tests/test_blindtest.py`.
   `ctrl_meas_meas` (direct in both: how much measured depths moved).
 * **Strata** for TID 40 → measured, for all estimated → measured pooled, and for the 40 → 40 control: measured depth
   −z_b; distance from the cell's 1′ cell to the nearest measured 1′ cell **in release a** (`docs/distance.md`;
-  "same 1′ cell" = another 15″ cell of the same 1′ cell was already measured); TID received in b; 5° latitude band.
+  "same 1′ cell" = another 15″ cell of the same 1′ cell was already measured); TID received in b (not for the
+  40 → 40 control, which receives none); 5° latitude band.
 * **Statistics.** Area-weighted (exact spherical 15″ areas) histograms with 1 m bins over ±3000 m (overflow in the
   end bins, reported). Median, NMAD = 1.4826 × median |diff − median| (robust σ), IQR/1.349, quantiles of |diff|,
   shares of |diff| > 50/100/200/500 m, share of exactly 0 m, and number of 15″ cells n.

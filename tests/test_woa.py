@@ -150,3 +150,14 @@ def test_seafloor_layers_when_built():
     # Antarctic Bottom Water: the Weddell Sea floor is colder than the Canary Basin floor and denser in sigma4
     assert woa.map_value("t_bottom", -30.0, -65.0) < 0.0 < woa.map_value("t_bottom", -25.0, 30.0)
     assert woa.map_value("d_bottom", -30.0, -65.0) > woa.map_value("d_bottom", -25.0, 30.0)
+
+
+def test_despike_removes_isolated_and_patchy_artefacts_but_keeps_fronts():
+    a = np.full((16, 24), 4.0)
+    a[:, 12:] = 15.0                                 # a sharp but real 11 degC front between two wide water masses
+    a[3, 3] = 44.0                                   # one spike in cold water
+    a[10:12, 4:6] = [[19.4, 42.8], [43.1, 20.0]]     # a patch that would hide behind itself in a 3 x 3 window
+    out, n = woa.despike(a)
+    assert np.isnan(out[3, 3]) and np.isnan(out[10:12, 4:6]).all()
+    assert np.isfinite(out[:, 9:]).all()             # both sides of the front kept
+    assert n == 5

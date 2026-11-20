@@ -75,3 +75,12 @@ def test_weighted_quantiles_on_uniform_histogram():
     med, p90 = distance.weighted_quantiles(h, (0.5, 0.9))
     assert abs(med - (lo + 0.5 * (hi - lo))) < 1e-9
     assert abs(p90 - (lo + 0.9 * (hi - lo))) < 1e-9
+
+
+def test_measured_majority_gives_a_zero_median_and_nothing_falls_off_the_top():
+    d = np.array([0.0] * 6 + [0.4, 2.0, 30.0, 5000.0])          # 60 % measured, one cell beyond the old 3,000 km edge
+    h, _ = np.histogram(d, bins=distance.HIST_EDGES_KM)
+    assert h.sum() == d.size                                   # every value lands in a bin
+    med, p75 = distance.weighted_quantiles(h.astype(float), (0.5, 0.75))
+    assert med < 1e-6                                          # was ~0.83 km with a [0, 1) km first bin
+    assert 0.3 < p75 < 2.5

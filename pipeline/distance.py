@@ -45,7 +45,10 @@ UNIT_KM = 0.1
 NODATA = 65535
 THRESHOLDS_KM = (5, 10, 25, 50, 100, 200)
 LAT_EDGES = np.arange(-90, 91, 5)
-HIST_EDGES_KM = np.concatenate([[0.0], np.geomspace(1.0, 3000.0, 241)])   # for area-weighted quantiles
+# area-weighted quantiles: bin 0 holds exactly-measured cells (d = 0) alone, so a band where most of the ocean is
+# measured gets a median of 0 km, not a value interpolated across [0, 1) km; then 50 m .. 20,040 km (half the
+# Earth's circumference, so nothing falls off the top) on a log scale
+HIST_EDGES_KM = np.concatenate([[0.0, 1e-9], np.geomspace(0.05, 20040.0, 391)])
 
 
 def cell_area_km2() -> np.ndarray:
