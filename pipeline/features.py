@@ -4,8 +4,13 @@ Fetches the three ArcGIS layers (points, lines, polygons) published for the gaze
 (services2.arcgis.com/.../Undersea_Features/FeatureServer, linked from gebco.net), caches the raw
 GeoJSON in data/raw/gazetteer/, then writes one labelled Point per named feature with:
   name ("Challenger Deep"), kind ("Deep"), depth_m (GEBCO_2026 1' grid at the label point;
-  for Deep/Trench/Trough/Basin the minimum within +-2' since the 1' grid smooths narrow lows),
+  for Deep/Trench/Trough/Basin the minimum within +-2' since the 1' grid smooths narrow lows; the window
+  wraps across the antimeridian),
   rank (bigger = more prominent; extent in km), geom (point|line|polygon), blurb, source.
+
+Sign: depth_m is the GEBCO ELEVATION (negative below sea level, e.g. -10,900 for Challenger Deep), unlike the
+positive-down depths of other layers. The viewer (web/src/main.ts, formatDepth) prints it with its sign, so the
+field keeps this convention.
 """
 from __future__ import annotations
 
@@ -145,6 +150,14 @@ def label_and_extent(geom: dict, kind: str) -> tuple[list[float], float]:
     return [round(lon, 5), round(float(mid[1]), 5)], float(math.hypot(dx, dy))
 
 
+def window_min(elev: np.ndarray, r: int, c: int, half: int = 2) -> int:
+    """Minimum of elev in a (2*half+1)^2 window around (r, c). Columns wrap around the antimeridian
+    (global grid); rows are clipped at the grid edges (poles)."""
+    rows = slice(max(0, r - half), r + half + 1)
+    cols = np.arange(c - half, c + half + 1) % elev.shape[1]
+    return int(elev[rows][:, cols].min())
+
+
 def main() -> None:
     out = []
     with rasterio.open(ELEV) as src:
@@ -165,8 +178,7 @@ def main() -> None:
                 if typ.upper() == "UNKNOWN":  # gazetteer placeholder, not a feature type
                     typ = ""
                 if typ in LOWS:
-                    win = elev[max(0, r - 2):r + 3, max(0, c - 2):c + 3]
-                    depth = int(win.min())
+                    depth = window_min(elev, r, c, 2)
                 else:
                     depth = int(elev[r, c])
                 out.append({

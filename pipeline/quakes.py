@@ -18,10 +18,14 @@ UPDATE_OVERLAP_DAYS before the newest event to now (so recent magnitude/location
 picked up), merges by event id (new rows replace old ones), re-sorts and rewrites. Needs no raw cache.
 Events deleted from ComCat and revisions older than the overlap are only picked up by a full rebuild.
 
-Checks (full build only, written to metadata.stats and printed): the three largest instrumental
-earthquakes, the share of M >= 6 events within 100 km of a PB2002 plate boundary (any type, and
-subduction only) against the share of Earth's surface within the same distance, and the depth vs
-distance-from-trench profile of the Tonga slab (Wadati-Benioff zone).
+Checks (written to metadata.stats and printed): the three largest instrumental earthquakes, the share of
+M >= 6 events within 100 km of a PB2002 plate boundary (any type, and subduction only) against the share of
+Earth's surface within the same distance, and the depth vs distance-from-trench profile of the Tonga slab
+(Wadati-Benioff zone). Events without a depth are excluded from depth shares and counted separately.
+--update recomputes every stat that only needs events >= minmag (spot checks, top 10, plate boundaries,
+counts m5_5..m8, per-decade M6); the ones that need the M 5.0-5.5 events of a full build (counts.m5_all,
+counts.other_types_dropped, tonga_slab) are kept from the last full build and listed in
+stats.from_last_full_build.
 """
 from __future__ import annotations
 
@@ -201,13 +205,27 @@ def dist_to(tree: cKDTree, lon, lat):
     return gc_km(d), i
 
 
-def analyse(feats: list[dict]) -> dict:
-    lon = np.array([f["geometry"]["coordinates"][0] for f in feats])
-    lat = np.array([f["geometry"]["coordinates"][1] for f in feats])
-    mag = np.array([f["properties"]["mag"] for f in feats])
-    dep = np.array([np.nan if f["properties"]["depth_km"] is None else f["properties"]["depth_km"] for f in feats])
-    stats: dict = {}
+def columns(feats: list[dict]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """lon, lat, mag, depth_km (NaN where the depth is unknown) as arrays."""
+    lon = np.array([f["geometry"]["coordinates"][0] for f in feats], dtype=float)
+    lat = np.array([f["geometry"]["coordinates"][1] for f in feats], dtype=float)
+    mag = np.array([f["properties"]["mag"] for f in feats], dtype=float)
+    dep = np.array([np.nan if f["properties"]["depth_km"] is None else f["properties"]["depth_km"] for f in feats],
+                   dtype=float)
+    return lon, lat, mag, dep
 
+
+def share_deeper(dep: np.ndarray, km: float) -> tuple[float | None, int]:
+    """Share of events deeper than km among those WITH a known depth, and the number without one.
+    NaN depths are not counted as shallow."""
+    known = np.isfinite(dep)
+    share = round(float((dep[known] > km).mean()), 4) if known.any() else None
+    return share, int((~known).sum())
+
+
+def event_stats(feats: list[dict]) -> dict:
+    """Spot checks of the largest events and the top 10 by magnitude."""
+    stats: dict = {}
     # spot checks: largest events by id-independent search (time window + magnitude)
     checks = {"1960 Valdivia, Chile": ("1960-05-22", -38.1, -73.4), "2004 Sumatra-Andaman": ("2004-12-26", 3.3, 95.9),
               "2011 Tohoku, Japan": ("2011-03-11", 38.3, 142.4), "1964 Alaska": ("1964-03-28", 60.9, -147.3)}
@@ -225,8 +243,11 @@ def analyse(feats: list[dict]) -> dict:
     stats["top10"] = [{"mag": f["properties"]["mag"], "place": f["properties"]["place"],
                        "date": dt.datetime.fromtimestamp(f["properties"]["time"] / 1000, dt.timezone.utc).date().isoformat()}
                       for f in sorted(feats, key=sort_key)[:10]]
+    return stats
 
-    # plate boundaries: M >= 6
+
+def plate_stats(lon: np.ndarray, lat: np.ndarray, mag: np.ndarray, dep: np.ndarray) -> dict:
+    """M >= 6 events vs PB2002 plate boundaries (distance shares against the Earth-area baseline)."""
     all_pts, btype = boundary_points()
     sub_pts, _ = boundary_points({"subduction"})
     t_all, t_sub = cKDTree(unit(all_pts[:, 0], all_pts[:, 1])), cKDTree(unit(sub_pts[:, 0], sub_pts[:, 1]))
@@ -239,9 +260,9 @@ def analyse(feats: list[dict]) -> dict:
     base_all = gc_km(t_all.query(v)[0])
     base_sub = gc_km(t_sub.query(v)[0])
     near = d_all <= 100
-    far_deep = float((dep[m6][~near] > 70).mean())
+    far_deep, far_unknown = share_deeper(dep[m6][~near], 70)
     types, counts = np.unique(btype[i_all[near]], return_counts=True)
-    stats["plate_boundaries"] = {
+    return {
         "events_m6": int(m6.sum()),
         "within_100km_any": round(float(near.mean()), 4),
         "within_100km_subduction": round(float((d_sub <= 100).mean()), 4),
@@ -250,10 +271,17 @@ def analyse(feats: list[dict]) -> dict:
         "earth_area_within_100km_subduction": round(float((base_sub <= 100).mean()), 4),
         "nearest_type_of_events_within_100km": {str(k): int(n) for k, n in zip(types, counts)},
         "median_distance_km": round(float(np.median(d_all)), 1),
-        "beyond_100km_share_deeper_70km": round(far_deep, 4),
+        "beyond_100km_share_deeper_70km": far_deep,
+        "beyond_100km_depth_unknown": far_unknown,
         "method": "great-circle distance to PB2002 lines in plates.geojson densified to <= 2 km; Earth area share "
-                  "from 400,000 uniform random points on the sphere",
+                  "from 400,000 uniform random points on the sphere; depth share among events with a known depth",
     }
+
+
+def analyse(feats: list[dict]) -> dict:
+    lon, lat, mag, dep = columns(feats)
+    stats = event_stats(feats)
+    stats["plate_boundaries"] = plate_stats(lon, lat, mag, dep)
 
     # Tonga slab: events between 26 S and 15 S, 176 E to 172 W
     lon360 = np.where(lon < 0, lon + 360, lon)
@@ -286,6 +314,35 @@ def analyse(feats: list[dict]) -> dict:
     return stats
 
 
+def mag_counts(mags: np.ndarray) -> dict:
+    return {"m5_5": int((mags >= 5.5).sum()), "m6": int((mags >= 6).sum()),
+            "m7": int((mags >= 7).sum()), "m8": int((mags >= 8).sum())}
+
+
+def per_decade_m6(feats: list[dict]) -> dict:
+    mags = np.array([f["properties"]["mag"] for f in feats], dtype=float)
+    years = np.array([dt.datetime.fromtimestamp(f["properties"]["time"] / 1000, dt.timezone.utc).year for f in feats])
+    return {int(d): int(((years // 10 * 10) == d)[mags >= 6].sum()) for d in range(1900, 2030, 10)}
+
+
+FULL_BUILD_ONLY = ["counts.m5_all", "counts.other_types_dropped", "tonga_slab"]
+
+
+def refresh_stats(feats: list[dict], stats: dict | None) -> dict | None:
+    """Recompute the stats that need only the events in the browser file (M >= minmag, minmag <= 6).
+    Stats that need the M 5.0-5.5 events of a full build are kept and listed in from_last_full_build."""
+    if not stats:
+        return stats
+    lon, lat, mag, dep = columns(feats)
+    out = dict(stats)
+    out.update(event_stats(feats))
+    out["plate_boundaries"] = plate_stats(lon, lat, mag, dep)
+    out["counts"] = {**stats.get("counts", {}), **mag_counts(mag)}
+    out["per_decade_m6"] = per_decade_m6(feats)
+    out["from_last_full_build"] = FULL_BUILD_ONLY
+    return out
+
+
 def build(refresh: bool, minmag: float) -> None:
     rows = fetch_years(refresh)
     seen, feats, other = set(), [], {}
@@ -301,10 +358,8 @@ def build(refresh: bool, minmag: float) -> None:
     print(f"{len(rows)} rows M>={FETCH_MINMAG}; {len(feats)} earthquakes; other types dropped: {other}")
     stats = analyse(feats)
     mags = np.array([f["properties"]["mag"] for f in feats])
-    stats["counts"] = {"m5_all": len(feats), "m5_5": int((mags >= 5.5).sum()), "m6": int((mags >= 6).sum()),
-                       "m7": int((mags >= 7).sum()), "m8": int((mags >= 8).sum()), "other_types_dropped": other}
-    years = np.array([dt.datetime.fromtimestamp(f["properties"]["time"] / 1000, dt.timezone.utc).year for f in feats])
-    stats["per_decade_m6"] = {int(d): int(((years // 10 * 10) == d)[mags >= 6].sum()) for d in range(1900, 2030, 10)}
+    stats["counts"] = {"m5_all": len(feats), **mag_counts(mags), "other_types_dropped": other}
+    stats["per_decade_m6"] = per_decade_m6(feats)
     prof = stats.pop("tonga_profile")
     derived = ROOT / "data/derived"
     derived.mkdir(parents=True, exist_ok=True)
@@ -324,7 +379,6 @@ def read_out() -> tuple[dict, list[dict]]:
 def update() -> None:
     meta, old = read_out()
     minmag = meta["minmag"]
-    stats = meta.get("stats")
     by_id = {f["properties"]["id"]: f for f in old}
     newest = max(f["properties"]["time"] for f in old)
     start = dt.datetime.fromtimestamp(newest / 1000, dt.timezone.utc) - dt.timedelta(days=UPDATE_OVERLAP_DAYS)
@@ -344,7 +398,7 @@ def update() -> None:
     # an event revised below the threshold within the overlap window drops out
     feats = [f for f in by_id.values() if f["properties"]["mag"] >= minmag]
     print(f"update from {start.isoformat()[:19]}Z: {len(rows)} rows, {added} new, {changed} revised")
-    write(feats, minmag, stats)
+    write(feats, minmag, refresh_stats(feats, meta.get("stats")))
 
 
 def main() -> None:

@@ -223,7 +223,7 @@ SPOTS = [
 def check() -> None:
     for label, key, lon, lat in SPOTS:
         print(f"{label:<56} {key:>6} ({lon:>7.1f}, {lat:>6.1f}): {value_at(key, lon, lat, radius=4):7.3f} mg/m3 "
-              f"(1 deg mean)")
+              f"(2.25 deg box mean)")
 
 
 if __name__ == "__main__":

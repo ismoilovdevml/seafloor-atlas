@@ -55,3 +55,54 @@ def test_seal_deepest_within_box_finds_nearby_hole():
     r_km = np.array([0.2, 2.0])                    # too small to reach the hole / large enough
     out = seals.deepest_within(E, 0, T, lat, lon, r_km)
     assert out[0] == -100 and out[1] == -900
+
+
+def test_seal_quantize_cells_rounds_up_and_handles_values_past_the_ladder():
+    q = seals.quantize_cells(np.array([0.0, 0.2, 7.0, 43.2, 256.0, 257.0, 496.0, 700.0]))
+    assert q.tolist() == [0, 1, 8, 48, 256, 320, 512, 704]
+    x = np.random.default_rng(1).uniform(0, 2000, 10_000)
+    assert (seals.quantize_cells(x) >= np.ceil(x)).all()
+
+
+def test_seal_deepest_within_near_pole_does_not_index_past_quant():
+    # at 84.5 S a 20 km half-width is ~495 columns, beyond QUANT[-1] = 256 (used to raise IndexError)
+    E = np.full((200, 86400), -100, dtype=np.int16)
+    T = Affine(1 / 240, 0, -180, 0, -1 / 240, -84)
+    lat, lon = np.array([-84.5]), np.array([0.0])
+    E[int((-84 - lat[0]) * 240), int((lon[0] + 180) * 240) + 400] = -3000    # 400 columns east
+    assert seals.deepest_within(E, 0, T, lat, lon, np.array([20.0]))[0] == -3000
+
+
+def test_seal_bin_counts_separates_all_dives_from_dives_in_written_bins():
+    n = np.array([5, 7, 11, 13])
+    c = seals.bin_counts(n, np.array([1, 3]))
+    assert c == {"bins": 2, "bins_all": 4, "dives_in_file": 36, "dives_in_bins": 20}
+
+
+def test_seals_geojson_metadata_counts_match_its_bins():
+    import json
+    p = Path(__file__).resolve().parents[1] / "web/public/data/seals.geojson"
+    g = json.loads(p.read_text())
+    m = g["metadata"]
+    assert m["bins"] == len(g["features"])
+    assert m["dives_in_bins"] == sum(f["properties"]["n"] for f in g["features"])
+    assert m["dives_in_file"] >= m["dives_in_bins"]
+
+
+def test_weighted_quantile_and_correlations():
+    rng = np.random.default_rng(0)
+    x = rng.normal(size=10_001)
+    y = x + rng.normal(size=x.size)
+    ones = np.ones_like(x)
+    assert uncertainty.weighted_quantile(x, ones, 0.5) == np.median(x)
+    # integer weights = repeating values
+    assert uncertainty.weighted_quantile([1.0, 2.0, 3.0], [1.0, 1.0, 5.0], 0.5) == 3.0
+    assert uncertainty.weighted_quantile([1.0, 2.0, 3.0], [5.0, 1.0, 1.0], 0.5) == 1.0
+    assert abs(uncertainty.weighted_pearson(x, y, ones) - np.corrcoef(x, y)[0, 1]) < 1e-12
+    from scipy.stats import spearmanr
+    yt = np.round(y, 1)                                  # with ties
+    assert abs(uncertainty.weighted_spearman(x, yt, ones) - spearmanr(x, yt).statistic) < 1e-12
+    w = rng.integers(1, 4, x.size)
+    xr, yr = np.repeat(x, w), np.repeat(yt, w)
+    assert abs(uncertainty.weighted_pearson(x, yt, w) - np.corrcoef(xr, yr)[0, 1]) < 1e-9
+    assert abs(uncertainty.weighted_spearman(x, yt, w) - spearmanr(xr, yr).statistic) < 1e-9

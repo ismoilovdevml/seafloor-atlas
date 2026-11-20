@@ -28,6 +28,7 @@ from rasterio.transform import from_bounds
 from rasterio.vrt import WarpedVRT
 from rasterio.warp import Resampling
 from rasterio.windows import Window
+from scipy.ndimage import distance_transform_edt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from tiles import BLEND_FROM, MERC, blend_poles, down2, terrarium, veil  # noqa: E402
@@ -48,6 +49,20 @@ def webp(rgb: np.ndarray) -> bytes:
 def row_lat_global(rows: np.ndarray, size: int) -> np.ndarray:
     y = (rows + 0.5) / size
     return np.degrees(np.arctan(np.sinh(np.pi * (1 - 2 * y))))
+
+
+def fill_nearest(a: np.ndarray) -> np.ndarray:
+    """Replace NaN pixels with the value of the nearest finite pixel (Euclidean, in pixels).
+
+    Used for the DEM, where Terrarium needs a finite height everywhere: the warp leaves hairline gaps at the
+    antimeridian seam, and a nearest-neighbour fill keeps the local depth instead of a tile-wide mean.
+    Returns a unchanged if it has no NaN, and an all-NaN array unchanged (nothing to fill from).
+    """
+    bad = np.isnan(a)
+    if not bad.any() or bad.all():
+        return a
+    idx = distance_transform_edt(bad, return_distances=False, return_indices=True)
+    return a[tuple(idx)]
 
 
 def build_coverage_15s(elev15: Path, tid15: Path, out: Path) -> None:
@@ -94,8 +109,7 @@ def run(kind: str, src_path: Path, caps: tuple[float, float], out_path: Path, li
                 if np.abs(lat).max() > BLEND_FROM:
                     blend_poles(a, *caps, lat=lat, edge_rows=(y6 == 0, y6 == n6 - 1))
                 if kind == "dem":
-                    if np.isnan(a).any():                # tiny gaps at the antimeridian seam
-                        a = np.where(np.isnan(a), np.nanmean(a), a)
+                    a = fill_nearest(a)                  # tiny gaps at the antimeridian seam
                     enc = lambda b: terrarium(np.rint(b))
                 else:
                     enc = veil

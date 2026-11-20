@@ -107,6 +107,21 @@ def bilinear(E: np.ndarray, r0: int, T, lat: np.ndarray, lon: np.ndarray) -> np.
 
 QUANT = np.array([0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128,
                   160, 192, 224, 256])
+QUANT_STEP = 64      # beyond the ladder: round up to a multiple of this
+
+
+def quantize_cells(cells: np.ndarray) -> np.ndarray:
+    """Round half-widths (in cells) UP to the QUANT ladder, so few distinct filter sizes are needed.
+
+    Values above QUANT[-1] (possible for x near the pole, where cos(lat) is small) round up to a multiple of
+    QUANT_STEP instead of indexing past the end of QUANT. The result is never smaller than the input.
+    """
+    c = np.ceil(np.asarray(cells, dtype=np.float64))
+    i = np.searchsorted(QUANT, c)
+    big = i >= QUANT.size
+    out = QUANT[np.minimum(i, QUANT.size - 1)].astype(np.int64)
+    out[big] = (np.ceil(c[big] / QUANT_STEP) * QUANT_STEP).astype(np.int64)
+    return out
 
 
 def deepest_within(E: np.ndarray, r0: int, T, lat: np.ndarray, lon: np.ndarray, r_km: np.ndarray) -> np.ndarray:
@@ -118,8 +133,8 @@ def deepest_within(E: np.ndarray, r0: int, T, lat: np.ndarray, lon: np.ndarray, 
     """
     ci = np.floor((T.f - lat) / -T.e).astype(np.int64) - r0           # containing 15" cell
     cj = np.floor((lon - T.c) / T.a).astype(np.int64) % E.shape[1]
-    ry = QUANT[np.searchsorted(QUANT, np.ceil(r_km / CELL_KM))]
-    rx = QUANT[np.searchsorted(QUANT, np.ceil(r_km / (CELL_KM * np.cos(np.radians(lat)))))]
+    ry = quantize_cells(r_km / CELL_KM)
+    rx = np.minimum(quantize_cells(r_km / (CELL_KM * np.cos(np.radians(lat)))), E.shape[1] // 2)
     out = np.empty(lat.size, dtype=np.float64)
     chunk = 240
     for c0 in range(0, E.shape[0], chunk):
@@ -248,6 +263,17 @@ def _bins(lat: np.ndarray, lon: np.ndarray, deg: float):
     return inv, u.size, clat, clon
 
 
+def bin_counts(n: np.ndarray, keep: np.ndarray) -> dict:
+    """Bin and dive counts for the seals.geojson metadata.
+
+    dives_in_file is ALL reliable (flag == 1) dives in the SO-ABBA file, i.e. the denominator of the headline
+    share; the viewer (web/src/certainty.ts) divides the summed `d` by it. dives_in_bins is the sum of `n`
+    over the bins actually written (only bins with >= 1 deeper dive), so it is smaller.
+    """
+    return {"bins": int(keep.size), "bins_all": int(n.size),
+            "dives_in_file": int(n.sum()), "dives_in_bins": int(n[keep].sum())}
+
+
 def _meta(extra: dict) -> dict:
     return {"source": "SO-ABBA v1.0 (Zenodo 19121676), dives with flag == 1, vs GEBCO_2026 15\"",
             "citation": CITATION, "licence": "CC BY 4.0 (SO-ABBA); OGL v3 (GEBCO_2026)",
@@ -282,7 +308,7 @@ def aggregate(v: dict, ex_box: np.ndarray, ex_pt: np.ndarray) -> tuple[dict, dic
             "x": "largest excess in the bin (m) = max_dep minus the deepest chart depth within the uncertainty",
             "md": "deepest dive in the bin (m)",
             "cd": "mean GEBCO_2026 depth at the dive locations (m, positive down; negative = chart says land/ice)"},
-        "bins": int(keep.size), "bins_all": int(nb), "dives_in_file": int(n.sum())}), "features": feats}
+        **bin_counts(n, keep)}), "features": feats}
     # context layer: where the seals dived at all
     inv2, nb2, clat2, clon2 = _bins(v["lat"], v["lon"], 0.5)
     n2 = np.bincount(inv2, minlength=nb2)

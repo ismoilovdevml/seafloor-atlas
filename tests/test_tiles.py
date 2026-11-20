@@ -77,3 +77,16 @@ def test_blend_poles_leaves_real_arctic_data_alone():
     assert abs(a[0].mean() + 3175) < 1e-3
     # 64 outermost rows exact -> top 2 rows of every lower zoom (2x2 means down to z0) are exact too
     assert np.all(a[:64] == -3175.0) and np.all(a[-64:] == 2585.0)
+
+
+def test_fill_nearest_uses_neighbours_not_the_tile_mean():
+    from tiles_hires import fill_nearest
+    a = np.full((4, 6), -5000.0, dtype=np.float32)
+    a[:, 3:] = -100.0
+    a[1, 2] = np.nan            # next to the -5000 side
+    a[2, 4] = np.nan            # inside the -100 side
+    f = fill_nearest(a)
+    assert f[1, 2] == -5000.0 and f[2, 4] == -100.0
+    assert not np.isnan(f).any()
+    b = np.full((2, 2), np.nan, dtype=np.float32)
+    assert np.isnan(fill_nearest(b)).all()

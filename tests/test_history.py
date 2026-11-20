@@ -129,3 +129,11 @@ def test_history_bins_decode_and_agree():
     assert first[int((90 - 46) * 60), int((100 + 180) * 60)] == 0
     codes = set(np.unique(first).tolist())
     assert codes <= {0} | set(range(19, 27)) | set(range(119, 126))
+
+
+@pytest.mark.skipif(not MAN.exists(), reason="run pipeline/history.py build")
+def test_history_manifest_names_only_shipped_bin_files():
+    import re
+    text = MAN.read_text()
+    for name in set(re.findall(r"[A-Za-z0-9_-]+\.bin\b", text)):
+        assert (MAN.parent / name).exists(), name

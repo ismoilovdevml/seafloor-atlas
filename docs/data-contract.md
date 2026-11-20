@@ -52,7 +52,7 @@ Official citation: GEBCO Compilation Group (2026) GEBCO 2026 Grid (doi:10.5285/4
 ## Vector overlays (web/public/data/)
 
 * `plates.geojson`: PB2002 boundary steps merged into lines. Properties: `type` in {ridge, rift, transform, subduction, convergent} (from PB2002 `STEPCLASS`: OSR/CRB/OTF+CTF/SUB/OCB+CCB), `cls`, `boundary` ("PA-NA"), `plates` (full names), `rate_mm_yr` (length-weighted mean relative velocity).
-* `features.geojson`: 5,412 named undersea features as label Points, sorted by `rank` desc. Properties `id`, `name`, `kind`, `depth_m` (1' GEBCO at the label point; min within +-2' for deeps/trenches/basins), `rank` (extent in km), `geom` (point|line|polygon), `blurb`, `source`.
+* `features.geojson`: 5,412 named undersea features as label Points, sorted by `rank` desc. Properties `id`, `name`, `kind`, `depth_m` (1' GEBCO **elevation** at the label point, so negative below sea level, unlike the positive-down depths of other layers; the viewer prints it with its sign; min within +-2' for deeps/trenches/basins, the window wrapping across the antimeridian), `rank` (extent in km), `geom` (point|line|polygon), `blurb`, `source`.
 * `hypsometry.json` (`pipeline/hypsometry.py`): area of Earth's surface at or above a sea level L, from the 1' elevation grid with true spherical cell areas (R = 6371.0072 km). `{source, method, radius_km, earth_km2, today_km2, levels_m: [int], land_km2: [int]}`; `levels_m` is every 1 m from -500 to +200 m and every 10 m elsewhere from -11,000 to +9,000 m; `land_km2[i]` = area of cells with elevation >= `levels_m[i]`. Ice surfaces count as land; no isostasy. The viewer interpolates linearly between levels.
 * `stories.json`: guided views `{id, title, blurb, center:[lon,lat], zoom, pitch, bearing, exaggeration, veil?}`; `veil: true` turns the coverage layer on. Centres are checked against the DEM tiles by `web/test/stories.test.ts`.
 
@@ -318,7 +318,7 @@ Citations (also in each `manifest.json`):
 
 ### Checks (`pipeline/chlorophyll.py check`, `pipeline/flow.py check`, `tests/test_chl_flow.py`)
 
-Chlorophyll (geometric mean over a 1° box, mg/m³): Peru upwelling 10° S 78° W 3.54 (annual), Benguela 23° S 13.5° E 3.25,
+Chlorophyll (geometric mean over a 2.25° box = 9 × 9 cells of 0.25°, mg/m³): Peru upwelling 10° S 78° W 3.54 (annual), Benguela 23° S 13.5° E 3.25,
 Arabian Sea off Oman (19° N 58° E) 2.25 in August (SW monsoon) vs 0.57 in April, North Atlantic 50° N 25° W 0.63 in May
 (spring bloom) vs 0.23 in January; oligotrophic gyres: South Pacific (25° S 120° W) 0.017, Sargasso (25° N 50° W) 0.040,
 Indian Ocean (25° S 80° E) 0.037, North Pacific (25° N 150° W) 0.060; equatorial Pacific upwelling tongue (0°, 140° W) 0.20.
@@ -458,8 +458,8 @@ https://ismoilovdevml.github.io in a real browser (checklist ~1.2 s, statistics 
 * AquaMaps is a model (environmental envelopes plus expert ranges), smooth by construction, and excludes species with
   fewer than 10 good occurrence cells; per-group AquaMaps richness is not included (see below).
 * Not included: per-group AquaMaps richness (needs the 1.25 GB `am.db.bz2`, ~10 GB unpacked SQLite, from
-  archive.org/details/aquamapsdb, version 2019) and a chlorophyll layer (NASA OceanColor file search returned no
-  public climatology without an Earthdata login).
+  archive.org/details/aquamapsdb, version 2019). Chlorophyll is its own layer (`chl/`, see "Phytoplankton, winds and
+  currents").
 
 ## How sure is the depth? (model disagreement, seal dives, prediction confidence)
 
@@ -527,7 +527,9 @@ Every `legend.json` / GeoJSON `metadata` carries `citation`, `licence` and `attr
 * `seals.geojson`: Points at 0.1° bin centres, **only bins with ≥ 1 such dive**, sorted by `x` ascending (largest excess
   drawn last). Properties: `n` dives, `d` dives deeper than the chart beyond the uncertainty, `dp` deeper than the chart
   at the point, `x` largest excess in the bin (m), `md` deepest dive (m), `cd` mean GEBCO depth at the dives (m, positive
-  down). Share = `d / n`.
+  down). Share = `d / n`. `metadata`: `bins` (written) and `bins_all` (0.1° bins with any dive); `dives_in_file` =
+  all 4,492,019 reliable dives in SO-ABBA (the denominator of the headline share; the viewer divides the summed `d`
+  by it); `dives_in_bins` = 1,471,460, the sum of `n` over the written bins only.
 * `seals-coverage.geojson`: Points at 0.5° bin centres for every bin with a dive, `n` and `d`: where seals sampled at
   all (no point in a bin = no seal data, not "chart confirmed").
 * Numbers vs GEBCO_2026: **2.18 % of dives (97,933) are > 20 m deeper than the chart beyond the location uncertainty**
@@ -569,6 +571,10 @@ Every `legend.json` / GeoJSON `metadata` carries `citation`, `licence` and `attr
   **0.44** per 1′ cell (Pearson 0.39; 0.44 in GEBCO-unmeasured cells only), **0.63** for 15′ block means (n = 418,421).
   Both are partly circular (both grow where gravity-to-depth prediction is hard, e.g. rough seafloor, far from tracks),
   so this shows consistency, not an independent calibration.
+  The median `predicted_error` per class (51 / 104 / 178) and the correlations above come from a build that used
+  unweighted medians and correlations, while the |AUST − GEBCO| medians were area-weighted. `pipeline/uncertainty.py`
+  now area-weights all of them (`weighted_quantile`, `weighted_pearson`, `weighted_spearman`). It has not been rerun,
+  so these numbers may shift slightly at the next build (cell areas vary only with latitude).
 * Note: Zenodo 24085730 (Phrampus 2026, "Global bathymetry with calibrated uncertainty") was the first choice, but its
   files are restricted (HTTP 403), so this earlier open confidence product is used.
 
@@ -631,7 +637,10 @@ GitHub Pages serves both gzipped (0.89 MB and 1.01 MB on the wire).
 * `--update` (weekly CI): reads `quakes.json`, queries FDSN from 30 days before the newest event to now with the file's
   `minmag`, merges by `id` (new versions replace old), drops events revised below `minmag`, re-sorts, rewrites; needs
   no raw cache. Tested: idempotent on a current file (0 new, 0 revised); with the 5 newest events removed it restored
-  all 5. Deletions from ComCat and revisions older than 30 days are only picked up by a full rebuild.
+  all 5. Deletions from ComCat and revisions older than 30 days are only picked up by a full rebuild. `--update` also
+  recomputes `metadata.stats` from the merged file (spot checks, top 10, plate boundaries, counts `m5_5`..`m8`,
+  `per_decade_m6`); `counts.m5_all`, `counts.other_types_dropped` and `tonga_slab` need the M 5.0–5.5 events and stay
+  from the last full build (listed in `stats.from_last_full_build`).
 * **Live layer (last 30 days)**, called directly by the viewer, no pipeline:
   `https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_month.geojson` (M ≥ 2.5, 30 days; 2,007 events,
   1.41 MB, 178 kB gzipped on 2026-11-15), also `4.5_month`, `2.5_week`, `all_day`, `significant_month` (same path
@@ -650,8 +659,9 @@ GitHub Pages serves both gzipped (0.89 MB and 1.01 MB on the wire).
     14,485 M ≥ 6 events lie within 100 km of a boundary line**, which covers only 9.5 % of Earth's surface (400,000
     random points); 85.3 % within 200 km; **36.5 % within 100 km of a subduction line** (2.1 % of the surface). Nearest
     type for those within 100 km: subduction 4,603, transform 2,253, convergent 1,170, rift 759, ridge 695. Of the
-    events beyond 100 km, 24.7 % are deeper than 70 km (intraslab events under the overriding plate); most of the rest
-    are in PB2002's diffuse orogens (Himalaya–Tibet, Iran, Anatolia), which are areas, not lines.
+    events beyond 100 km with a known depth, 25.0 % are deeper than 70 km (intraslab events under the overriding
+    plate; 61 such events have no depth in ComCat and are left out, as are all 223 `null` depths in the file from any
+    depth share); most of the rest are in PB2002's diffuse orogens (Himalaya–Tibet, Iran, Anatolia), which are areas, not lines.
   * Tonga slab (15–26° S, 176° E–172° W, all M ≥ 5): 7,837 events, 2,637 deeper than 300 km, deepest 700 km. Median
     distance west of the PB2002 TO/PA trench line: 75 km at 0–70 km depth, 226 km at 70–300 km, 451 km at 300–500 km,
     523 km at 500–800 km. Linear fit of depth vs distance below 100 km: apparent dip **45°** (slope 1.01). That is the
@@ -785,8 +795,13 @@ Which seafloor was **directly measured** (TID 10-17) in each GEBCO release 2019-
 | 2025 | 29.69 % | 27.3 % | 4.92 | 0.76 | 31.47 % |
 | 2026 | 30.81 % | 28.7 % | 6.57 | 2.51 | 33.04 % |
 
-Cross-checks: 2026 = `coverage.py` (30.81 %); 2025→2026 new/lost = `change.py` (6.57 / 2.51 M km²; `change.py`
-uses the union mask, hence 2.513 vs 2.506). Bookkeeping m(y) = m(y−1) + new − lost holds to < 5 km² every year.
+Cross-checks: 2026 = `coverage.py` (30.81 %); 2025→2026 new/lost = `change.py` (6.57 / 2.51 M km²). Until
+2026-11-20 `change.py` used the union mask (TID != 0 in 2025 or 2026, 64,036 km² more ocean), so the published
+`tiles/meta.json` `change2025to2026` still holds `measured_2026_frac` 0.308047 (vs 0.308102), `measured_2025_frac`
+0.296845 (vs 0.296878) and `no_longer_measured_km2` 2,512,741 (vs 2,505,725 here: 7,016 km² measured in 2025 that
+are TID 0 in 2026). `change.py` now uses this table's mask (GEBCO_2026 TID != 0 and 1′ elevation < 0); the next
+`change.py` + `tiles.py` run brings `meta.json` in line. Bookkeeping m(y) = m(y−1) + new − lost holds to < 5 km²
+every year.
 
 Official figures (each read on the cited page, 2026-11-15): 2019 15 % (GEBCO press release, 13 Jun 2019),
 2020 19 % (Nippon Foundation, 21 Jun 2020), 2021 20.6 % (GEBCO, 1 Aug 2021), 2022 23.4 % (GEBCO, 22 Sep 2022),
@@ -811,7 +826,8 @@ Group); official percentages from Seabed 2030 / GEBCO announcements".
 * Ours is not the official metric: Seabed 2030 counts cells holding data on its depth-dependent target grid
   (100 m to 800 m cells, Mayer et al. 2018, Geosciences 8:63; the release notes do not give the exact method), so a 15" TID share is expected to differ (ours is 2.6 pp lower in 2019, 0.8 pp lower in 2020,
   1.3-2.4 pp higher from 2021 on).
-* TID codes change between releases for reasons other than surveys: 2.5-4.6 M km² per release stop being
+* TID codes change between releases for reasons other than surveys: 0.8-4.6 M km² per release (0.76 M in 2025
+  to 4.62 M in 2020, column "Re-coded away" above) stop being
   "measured", mostly to 40 (satellite-gravity predicted), 41 (interpolated), 44 (mixed gridded) or 70
   (pre-generated grid). By 2026, 33.0 % has been measured in at least one release vs 30.8 % in GEBCO_2026.
 * "First measured in 20YY" = first appears as TID 10-17 in a GEBCO release, not the survey year: a release can

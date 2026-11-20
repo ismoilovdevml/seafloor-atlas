@@ -68,3 +68,26 @@ def test_read_dbf(tmp_path):
     p.write_bytes(bytes(out))
     rows = seamounts.read_dbf(p)
     assert rows == [{"X": "12.5", "Height": "1200"}, {"X": "-170.25", "Height": "300"}]
+
+
+def test_share_deeper_ignores_unknown_depths():
+    share, unknown = quakes.share_deeper(np.array([10.0, 100.0, np.nan, np.nan, 300.0]), 70)
+    assert share == round(2 / 3, 4) and unknown == 2
+    assert quakes.share_deeper(np.array([np.nan]), 70) == (None, 1)
+
+
+def test_refresh_stats_recomputes_from_browser_file_and_keeps_full_build_parts():
+    def ev(i, mag, t, lon=0.0, lat=0.0, depth=10):
+        return {"type": "Feature", "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                "properties": {"id": f"e{i}", "time": t, "mag": mag, "depth_km": depth, "place": ""}}
+    feats = [ev(0, 6.5, 0), ev(1, 7.2, 10**12, 10.0, 5.0, None), ev(2, 5.6, 2 * 10**12)]
+    old = {"counts": {"m5_all": 99, "m5_5": 1, "m6": 1, "m7": 0, "m8": 0, "other_types_dropped": {"x": 1}},
+           "tonga_slab": {"events": 7}, "plate_boundaries": {}, "per_decade_m6": {}}
+    new = quakes.refresh_stats(feats, old)
+    assert new["counts"] == {"m5_all": 99, "m5_5": 3, "m6": 2, "m7": 1, "m8": 0, "other_types_dropped": {"x": 1}}
+    assert new["tonga_slab"] == {"events": 7}
+    assert new["top10"][0]["mag"] == 7.2 and len(new["top10"]) == 3
+    assert new["plate_boundaries"]["events_m6"] == 2
+    assert new["per_decade_m6"][1970] == 1 and new["per_decade_m6"][2000] == 1
+    assert new["from_last_full_build"] == quakes.FULL_BUILD_ONLY
+    assert quakes.refresh_stats(feats, None) is None

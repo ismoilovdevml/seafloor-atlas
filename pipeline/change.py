@@ -1,8 +1,12 @@
 """What was newly measured between GEBCO_2025 and GEBCO_2026 (TID grids, 15").
 
-Same ocean mask for both years (TID != 0 in either year and 2026 1' elevation < 0), so the
-difference comes only from the TID codes. Areas use the spherical cell area on the
-authalic sphere (R = 6371.0072 km).
+Same ocean mask for both years, so the difference comes only from the TID codes. The mask is the one of
+the dataset tables (pipeline/build_dataset.py, pipeline/history.py, pipeline/coverage.py): a 15" cell is
+ocean if its GEBCO_2026 TID != 0 and the 2026 1' elevation of the 1' cell containing it is < 0. Until
+2026-11-20 this script used the union TID != 0 in 2025 OR 2026, which added ~64,000 km2 of cells that are
+TID 0 (land) in 2026 and gave a 2026 share of 0.30805 (vs 0.30810) and 7,016 km2 more "no longer
+measured" (2,512,741 vs 2,505,725 km2) than global_by_release.csv. Areas use the spherical cell area on
+the authalic sphere (R = 6371.0072 km).
 
 Output: data/derived/change_2025_2026.json, new_measured_4arcmin.npz (figure), new2026_1arcmin.tif (web tiles).
 """
@@ -29,6 +33,14 @@ def direct(t: np.ndarray) -> np.ndarray:
     return (t >= 10) & (t <= 17)
 
 
+def strip_masks(t25: np.ndarray, t26: np.ndarray, sea: np.ndarray) -> dict[str, np.ndarray]:
+    """Masks of one strip of 15" cells. sea = 2026 1' elevation < 0, repeated to 15"."""
+    ocean = sea & (t26 != 0)
+    m25 = ocean & direct(t25)
+    m26 = ocean & direct(t26)
+    return {"ocean": ocean, "m25": m25, "m26": m26, "new": m26 & ~m25, "lost": m25 & ~m26}
+
+
 def main() -> None:
     with rasterio.open(T25) as a, rasterio.open(T26) as b, rasterio.open(ELEV) as e:
         assert a.shape == b.shape == (43200, 86400)
@@ -53,15 +65,12 @@ def main() -> None:
             t26 = b.read(1, window=win).astype(np.int16)
             h = e.read(1, window=rasterio.windows.Window(0, r0 // 4, W // 4, n // 4))
             sea = np.repeat(np.repeat(h < 0, 4, axis=0), 4, axis=1)
-            ocean = sea & ((t25 != 0) | (t26 != 0))
+            mk = strip_masks(t25, t26, sea)
+            ocean, m25, m26, new, lost = mk["ocean"], mk["m25"], mk["m26"], mk["new"], mk["lost"]
             lat_top = 90 - r0 / 240
             phi1 = np.radians(lat_top - np.arange(n) / 240)
             area = (R_KM ** 2) * d * (np.sin(phi1) - np.sin(phi1 - d))  # km2 per cell, per row
             A = np.broadcast_to(area[:, None], t25.shape)
-            m25 = ocean & direct(t25)
-            m26 = ocean & direct(t26)
-            new = m26 & ~m25
-            lost = m25 & ~m26
             tot["ocean"] += A[ocean].sum()
             tot["m25"] += A[m25].sum()
             tot["m26"] += A[m26].sum()
@@ -94,7 +103,8 @@ def main() -> None:
         "newly_measured_km2": tot["new"], "no_longer_measured_km2": tot["lost"],
         "net_km2": tot["m26"] - tot["m25"],
         "top_boxes_new": top,
-        "note": "same ocean mask both years; TID 10-17 = measured",
+        "note": "same ocean mask both years (GEBCO_2026 TID != 0 and 2026 1' elevation < 0, as in the dataset "
+                "tables); TID 10-17 = measured",
     }
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "change_2025_2026.json").write_text(json.dumps(res, indent=1))

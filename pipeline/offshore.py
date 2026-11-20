@@ -21,6 +21,7 @@ Why OSM and not the preferred sources (checked 2026-11-14):
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import glob
 import gzip
 import json
@@ -46,7 +47,17 @@ EEZ_DIR = ROOT / "data/raw/regions/eez"
 OUT = ROOT / "web/public/data"
 OVERPASS = "https://overpass-api.de/api/interpreter"
 UA = "seafloor-atlas-data-prep/0.1 (open-data ocean map; https://github.com/ismoilovdevml/seafloor-atlas)"
-YEAR_NOW = 2026
+YEAR_NOW: int | None = None   # None = the current UTC year; set an int to pin it (tests)
+
+
+def year_now() -> int:
+    return YEAR_NOW if YEAR_NOW is not None else dt.datetime.now(dt.timezone.utc).year
+
+
+def wind_status(tags: dict, start_year: int | None, now: int | None = None) -> str:
+    """'construction' if construction=* is set or the start year is after the current year, else 'operating'."""
+    now = year_now() if now is None else now
+    return "construction" if (tags.get("construction") or (start_year and start_year > now)) else "operating"
 
 QUERIES = {
     "platforms": '[out:json][timeout:600];(nwr["man_made"="offshore_platform"];nwr["seamark:type"="platform"];);'
@@ -333,7 +344,7 @@ def windfarms(sea: Sea, eez: EEZ, refresh: bool) -> None:
             continue
         t = e.get("tags", {})
         y = year_of(t.get("start_date"))
-        status = "construction" if (t.get("construction") or (y and y > YEAR_NOW)) else "operating"
+        status = wind_status(t, y)
         props = clean({"id": f"{e['type'][0]}{e['id']}", "name": t.get("name"),
                        "capacity_mw": capacity_mw(t.get("plant:output:electricity")), "status": status,
                        "start": t.get("start_date"), "operator": t.get("operator"),
@@ -347,7 +358,7 @@ def windfarms(sea: Sea, eez: EEZ, refresh: bool) -> None:
     write("windfarms.geojson", feats, {
         "source": "OpenStreetMap via Overpass: power=plant + plant:source=wind whose centre is at sea "
                   "(GEBCO TID != land, elevation < 0, inside a Marine Regions EEZ polygon)", "osmTimestamp": ts,
-        "note": "status is a heuristic: construction if start_date is after 2026 or construction=* is set"})
+        "note": f"status is a heuristic: construction if start_date is after {year_now()} or construction=* is set"})
 
 
 def main() -> None:

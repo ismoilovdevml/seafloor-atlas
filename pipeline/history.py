@@ -461,7 +461,8 @@ def tiles() -> int:
     man["tiles"] = {"url": "tiles/{z}/{x}/{y}.webp", "minzoom": 0, "maxzoom": MAXZOOM, "tileSize": TILE,
                     "projection": "Web Mercator XYZ", "format": "lossless WebP RGBA (exact)",
                     "R": "first-measured code (same codes as first-measured_1arcmin.bin)",
-                    "G": "year bitmask (same as years-mask_1arcmin.bin), OR over the pixel",
+                    "G": "year bitmask (bit i = GEBCO_(2019 + i) measured), OR over the pixel; the 1' bitmask itself "
+                         "is not shipped (data/derived/history_mask_1arcmin.npy)",
                     "B": "0 (unused; the measured share per pixel is in tiles/coverage/)",
                     "A": "255 = ocean (inside the mask), 0 = land / outside the mask",
                     "aggregation": "R/G: OR of all 1' cells under the pixel (z5 pixel ~1.3' at the equator; z0 "

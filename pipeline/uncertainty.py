@@ -33,7 +33,6 @@ import numpy as np
 import rasterio
 from netCDF4 import Dataset
 from PIL import Image
-from scipy.stats import spearmanr
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from tiles import blend_poles, down2, warp_to_merc  # noqa: E402
@@ -116,6 +115,40 @@ def wsum(m: np.ndarray, w: np.ndarray) -> float:
     return float((m * w).sum())
 
 
+def weighted_quantile(x: np.ndarray, w: np.ndarray, q: float) -> float:
+    """Lower weighted quantile: the smallest x whose cumulative weight share (x sorted) is >= q.
+    With equal weights and odd n, q = 0.5 gives the ordinary median."""
+    x = np.asarray(x, dtype=np.float64).ravel()
+    w = np.asarray(w, dtype=np.float64).ravel()
+    o = np.argsort(x, kind="stable")
+    c = np.cumsum(w[o]) / w.sum()
+    return float(x[o][min(np.searchsorted(c, q), x.size - 1)])
+
+
+def weighted_pearson(x: np.ndarray, y: np.ndarray, w: np.ndarray) -> float:
+    """Pearson correlation with weights w (e.g. cell areas)."""
+    x, y, w = (np.asarray(a, dtype=np.float64).ravel() for a in (x, y, w))
+    w = w / w.sum()
+    dx, dy = x - (w * x).sum(), y - (w * y).sum()
+    return float((w * dx * dy).sum() / np.sqrt((w * dx * dx).sum() * (w * dy * dy).sum()))
+
+
+def weighted_ranks(x: np.ndarray, w: np.ndarray) -> np.ndarray:
+    """Mid-ranks on the weight scale: cumulative weight below a value plus half its own weight, tied values
+    averaged. With equal weights this is a linear function of the ordinary average ranks."""
+    x = np.asarray(x, dtype=np.float64).ravel()
+    w = np.asarray(w, dtype=np.float64).ravel()
+    u, inv = np.unique(x, return_inverse=True)
+    wu = np.bincount(inv, weights=w, minlength=u.size)
+    mid = np.cumsum(wu) - wu / 2
+    return mid[inv]
+
+
+def weighted_spearman(x: np.ndarray, y: np.ndarray, w: np.ndarray) -> float:
+    """Spearman correlation with weights: weighted Pearson of the weighted mid-ranks."""
+    return weighted_pearson(weighted_ranks(x, w), weighted_ranks(y, w), w)
+
+
 def validate(cls: np.ndarray, err: np.ndarray, row0: int) -> dict:
     H, W = cls.shape
     with rasterio.open(COV) as s:
@@ -124,7 +157,8 @@ def validate(cls: np.ndarray, err: np.ndarray, row0: int) -> dict:
         g = s.read(1, window=((row0, row0 + H), (0, W)))
     with rasterio.open(DIFF) as s:
         d = s.read(1, window=((row0, row0 + H), (0, W)))
-    w = np.broadcast_to(area_rows(H, row0)[:, None], (H, W))
+    arow = area_rows(H, row0)                       # km2 per cell, by row
+    w = np.broadcast_to(arow[:, None], (H, W))
     ocean = cov > 0
     meas = cov == 255
     unmeas = cov == 1
@@ -155,43 +189,47 @@ def validate(cls: np.ndarray, err: np.ndarray, row0: int) -> dict:
     for k in (1, 2, 3):
         m = deep & (cls == k)
         x, ww = ad[m], w[m]
-        o = np.argsort(x)
-        c = np.cumsum(ww[o]) / ww.sum()
         out["abs_diff_by_class_deep"][str(k)] = {
             "area_km2": round(float(ww.sum())),
-            "median_abs_diff_m": round(float(x[o][np.searchsorted(c, 0.5)]), 1),
-            "p90_abs_diff_m": round(float(x[o][np.searchsorted(c, 0.9)]), 1),
+            "median_abs_diff_m": round(weighted_quantile(x, ww, 0.5), 1),
+            "p90_abs_diff_m": round(weighted_quantile(x, ww, 0.9), 1),
             "rms_diff_m": round(float(np.sqrt((x.astype(np.float64) ** 2 * ww).sum() / ww.sum())), 1),
-            "median_predicted_error": round(float(np.median(err[m])), 1)}
+            "median_predicted_error": round(weighted_quantile(err[m], ww, 0.5), 1)}
+    # correlations: a uniform random sample of cells, each weighted by its area, estimates the area-weighted value
     rng = np.random.default_rng(0)
     idx = np.flatnonzero(deep)
     sub = rng.choice(idx, size=min(2_000_000, idx.size), replace=False)
-    rho1 = spearmanr(err.ravel()[sub], ad.ravel()[sub]).statistic
-    pr1 = np.corrcoef(err.ravel()[sub], ad.ravel()[sub])[0, 1]
-    # 15' blocks: averages out the pixel noise of both grids
+    es, ds, ws = err.ravel()[sub], ad.ravel()[sub], arow[sub // W]
+    rho1 = weighted_spearman(es, ds, ws)
+    pr1 = weighted_pearson(es, ds, ws)
+    # 15' blocks: averages out the pixel noise of both grids; area-weighted means inside a block, blocks
+    # weighted by their qualifying area
     k = 15
     Hb, Wb = H // k, W // k
     blk = lambda a: a[: Hb * k, : Wb * k].reshape(Hb, k, Wb, k)
     nb = blk(deep).sum(axis=(1, 3))
-    eb = np.where(deep, err, 0)
-    db = np.where(deep, ad, 0)
-    me = blk(eb).sum(axis=(1, 3)) / np.maximum(nb, 1)
-    md = blk(db).sum(axis=(1, 3)) / np.maximum(nb, 1)
+    wd = np.where(deep, arow.astype(np.float32)[:, None], np.float32(0))
+    ab = blk(wd).sum(axis=(1, 3))
+    me = blk(np.where(deep, err, 0) * wd).sum(axis=(1, 3)) / np.maximum(ab, 1e-12)
+    md = blk(np.where(deep, ad, 0) * wd).sum(axis=(1, 3)) / np.maximum(ab, 1e-12)
     okb = nb >= 0.5 * k * k
-    rho2 = spearmanr(me[okb], md[okb]).statistic
-    pr2 = np.corrcoef(me[okb], md[okb])[0, 1]
+    rho2 = weighted_spearman(me[okb], md[okb], ab[okb])
+    pr2 = weighted_pearson(me[okb], md[okb], ab[okb])
     out["correlation_predicted_error_vs_abs_aust_minus_gebco"] = {
         "domain": "GEBCO depth >= 1000 m, classification 1-3 (no sounding), AUST defined (75 S - 75 N)",
-        "cells_1arcmin": {"n_sample": int(sub.size), "spearman": round(float(rho1), 3), "pearson": round(float(pr1), 3)},
-        "blocks_15arcmin": {"n": int(okb.sum()), "spearman": round(float(rho2), 3), "pearson": round(float(pr2), 3),
-                            "note": "block = mean over its qualifying 1' cells; blocks with >= 50 % qualifying cells"},
+        "weights": "cell area (uniform random sample of cells, each weighted by its spherical area)",
+        "cells_1arcmin": {"n_sample": int(sub.size), "spearman": round(rho1, 3), "pearson": round(pr1, 3)},
+        "blocks_15arcmin": {"n": int(okb.sum()), "spearman": round(rho2, 3), "pearson": round(pr2, 3),
+                            "note": "block = area-weighted mean over its qualifying 1' cells, blocks weighted by "
+                                    "their qualifying area; blocks with >= 50 % qualifying cells"},
     }
     # same correlation restricted to GEBCO-unmeasured cells only
     um = deep & unmeas
     idx = np.flatnonzero(um)
     sub = rng.choice(idx, size=min(2_000_000, idx.size), replace=False)
     out["correlation_predicted_error_vs_abs_aust_minus_gebco"]["cells_1arcmin_gebco_unmeasured"] = {
-        "n_sample": int(sub.size), "spearman": round(float(spearmanr(err.ravel()[sub], ad.ravel()[sub]).statistic), 3)}
+        "n_sample": int(sub.size),
+        "spearman": round(weighted_spearman(err.ravel()[sub], ad.ravel()[sub], arow[sub // W]), 3)}
     return out
 
 
