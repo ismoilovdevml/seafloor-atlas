@@ -86,3 +86,102 @@ def test_spec_copy_is_independent():
     s = copy.deepcopy(SPEC)
     s["min"] = 0
     assert ro.LAYERS["windfarms"]["min"] == 50
+
+
+# ---------------------------------------------------------------- Overpass outages
+import urllib.error  # noqa: E402
+
+import offshore  # noqa: E402
+
+OK = b'{"elements": [{"type": "node", "id": 1}]}'
+
+
+def fake_post(script):
+    """post() that answers from a list of (url-substring, result) rules; result = bytes or an exception."""
+    calls = []
+
+    def post(url, query, timeout):
+        calls.append((url, query == offshore.PROBE))
+        for key, res in script:
+            if key in url:
+                if isinstance(res, Exception):
+                    raise res
+                return res
+        raise AssertionError(url)
+    return post, calls
+
+
+def test_overpass_falls_back_to_the_next_instance():
+    post, calls = fake_post([("a.example", urllib.error.HTTPError("u", 502, "busy", {}, None)), ("b.example", OK)])
+    body = offshore.overpass_query("q", ["https://a.example/api", "https://b.example/api"], [0], post, lambda s: None)
+    assert body == OK
+    assert calls == [("https://a.example/api", True), ("https://b.example/api", True), ("https://b.example/api", False)]
+
+
+def test_overpass_unavailable_after_every_round():
+    waits = []
+    post, calls = fake_post([("example", OSError(101, "Network is unreachable"))])
+    try:
+        offshore.overpass_query("q", ["https://a.example/api", "https://b.example/api"], [0, 120, 300], post, waits.append)
+        raise AssertionError("no exception")
+    except offshore.OverpassUnavailable as e:
+        assert e.code == offshore.UNAVAILABLE == ro.UNAVAILABLE
+        assert "unreachable" in e.msg
+    assert waits == [120, 300] and len(calls) == 6
+
+
+def test_overpass_client_error_is_raised_at_once():
+    post, calls = fake_post([("a.example", urllib.error.HTTPError("u", 400, "bad query", {}, None))])
+    try:
+        offshore.overpass_query("q", ["https://a.example/api", "https://b.example/api"], [0, 120], post, lambda s: None)
+        raise AssertionError("no exception")
+    except urllib.error.HTTPError as e:
+        assert e.code == 400
+    assert len(calls) == 1
+
+
+def test_incomplete_answers_are_not_accepted():
+    assert offshore.overpass_answer_ok(OK) is None
+    assert offshore.overpass_answer_ok(b"<html>504</html>")
+    assert offshore.overpass_answer_ok(b'{"elements": [], "remark": "runtime error: Query timed out in \\"query\\""}')
+    post, _ = fake_post([("a.example", b'{"elements": [], "remark": "runtime error: Query run out of memory"}'), ("b.example", OK)])
+    assert offshore.overpass_query("q", ["https://a.example/api", "https://b.example/api"], [0], post, lambda s: None) == OK
+
+
+def test_outage_skips_the_other_overpass_layers_and_stays_green(tmp_path, monkeypatch):
+    runs = []
+
+    class Proc:
+        def __init__(self, rc):
+            self.returncode = rc
+
+    def run(cmd, cwd):
+        runs.append(Path(cmd[1]).name + ":" + (cmd[3] if len(cmd) > 3 else ""))
+        return Proc(ro.UNAVAILABLE)
+
+    out = tmp_path / "gh_out"
+    monkeypatch.setattr(ro.subprocess, "run", run)
+    monkeypatch.setattr(ro, "STAGE", tmp_path / "stage")
+    monkeypatch.setattr(ro.time, "sleep", lambda s: None)
+    monkeypatch.setattr(ro, "osm_age_days", lambda fc, now=None: 7.0)
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    monkeypatch.setattr(sys, "argv", ["refresh_overlays.py", "--layers", "platforms,pipelines,cables-osm"])
+    ro.main()  # no SystemExit: an outage with fresh data is a warning, not a failure
+    assert runs == ["offshore.py:platforms"]  # pipelines and cables-osm were not queried again
+    assert "unavailable=platforms,pipelines,cables-osm" in out.read_text()
+    assert "failed=\n" in out.read_text()
+
+    monkeypatch.setattr(ro, "osm_age_days", lambda fc, now=None: 90.0)
+    runs.clear()
+    try:
+        ro.main()
+        raise AssertionError("stale data during an outage must fail the run")
+    except SystemExit as e:
+        assert "platforms" in str(e.code)
+
+
+def test_osm_age_days():
+    fcx = {"metadata": {"osmTimestamp": "2026-11-16T12:00:00Z"}}
+    now = ro.time.mktime(ro.time.strptime("2026-11-23T12:00:00Z", "%Y-%m-%dT%H:%M:%SZ")) - ro.time.timezone
+    assert abs(ro.osm_age_days(fcx, now) - 7.0) < 1e-6
+    assert ro.osm_age_days({}) is None

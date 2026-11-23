@@ -26,8 +26,11 @@ import glob
 import gzip
 import json
 import math
+import os
 import re
+import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -45,7 +48,27 @@ ELEV = ROOT / "data/raw/gebco_2026/gebco_2026_elev_1arcmin.tif"
 TID = ROOT / "data/raw/gebco_2026/gebco_2026_tid.tif"
 EEZ_DIR = ROOT / "data/raw/regions/eez"
 OUT = ROOT / "web/public/data"
-OVERPASS = "https://overpass-api.de/api/interpreter"
+# Overpass instances, tried in order (OVERPASS_URLS, comma-separated, overrides). The main one is often at capacity
+# and the mirrors come and go: a tiny probe query picks one that answers before the real query is sent to it.
+OVERPASS_URLS = [u for u in os.environ.get("OVERPASS_URLS", "").split(",") if u] or [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+]
+OVERPASS = OVERPASS_URLS[0]
+PROBE = '[out:json][timeout:10];node(1);out ids;'
+# rounds over all instances, and the pause before each next round (seconds)
+ROUND_WAITS = [0, 120, 300]
+UNAVAILABLE = 75  # exit status (EX_TEMPFAIL) when no Overpass instance answered: the caller keeps the old file
+
+
+class OverpassUnavailable(SystemExit):
+    """No Overpass instance answered after every round; exits with status UNAVAILABLE when not caught."""
+
+    def __init__(self, msg: str):
+        print(f"  {msg}", file=sys.stderr)
+        super().__init__(UNAVAILABLE)
+        self.msg = msg
 UA = "seafloor-atlas-data-prep/0.1 (open-data ocean map; https://github.com/ismoilovdevml/seafloor-atlas)"
 YEAR_NOW: int | None = None   # None = the current UTC year; set an int to pin it (tests)
 
@@ -77,22 +100,63 @@ HYDROCARBON = {"gas": "gas", "natural_gas": "gas", "oil": "oil", "crude_oil": "o
 
 
 # ---------------------------------------------------------------- fetching / helpers
+def _post(url: str, query: str, timeout: float) -> bytes:
+    req = urllib.request.Request(url, data=urllib.parse.urlencode({"data": query}).encode(), headers={"User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read()
+
+
+def overpass_answer_ok(body: bytes) -> str | None:
+    """None if body is a complete Overpass JSON answer, else why not (a 200 can still carry a timeout remark)."""
+    try:
+        d = json.loads(body)
+    except ValueError:
+        return "not JSON (an HTML error page?)"
+    if not isinstance(d, dict) or "elements" not in d:
+        return "no 'elements' in the answer"
+    remark = str(d.get("remark", ""))
+    if "error" in remark.lower() or "timed out" in remark.lower() or "out of memory" in remark.lower():
+        return f"incomplete answer: {remark[:160]}"
+    return None
+
+
+def overpass_query(query: str, urls: list[str] | None = None, waits: list[int] | None = None,
+                   post=_post, sleep=time.sleep) -> bytes:
+    """The answer to `query` from the first Overpass instance that answers a probe and then the query in full.
+
+    Rounds over every instance with pauses between rounds; a 4xx other than 429 is our query's fault and is raised
+    at once. Raises OverpassUnavailable when nothing answered."""
+    urls = urls or OVERPASS_URLS
+    waits = ROUND_WAITS if waits is None else waits
+    tried: list[str] = []
+    for rnd, wait in enumerate(waits):
+        if wait:
+            print(f"  no Overpass instance answered; round {rnd + 1} in {wait} s", flush=True)
+            sleep(wait)
+        for url in urls:
+            host = urllib.parse.urlparse(url).netloc
+            try:
+                if overpass_answer_ok(post(url, PROBE, 30)):
+                    raise ValueError("probe answer not usable")
+                body = post(url, query, 900)
+                why = overpass_answer_ok(body)
+                if why:
+                    raise ValueError(why)
+                print(f"  overpass: {host}", flush=True)
+                return body
+            except urllib.error.HTTPError as e:
+                if 400 <= e.code < 500 and e.code != 429:
+                    raise
+                tried.append(f"{host}: HTTP {e.code}")
+            except Exception as e:  # network down, timeouts, 5xx pages, incomplete answers
+                tried.append(f"{host}: {str(e)[:120]}")
+    raise OverpassUnavailable("Overpass unavailable on every instance: " + " | ".join(tried[-len(urls):]))
+
+
 def overpass(layer: str, refresh: bool) -> tuple[list[dict], str]:
     p = RAW / CACHE[layer]
     if refresh or not p.exists():
-        req = urllib.request.Request(OVERPASS, data=urllib.parse.urlencode({"data": QUERIES[layer]}).encode(),
-                                     headers={"User-Agent": UA})
-        for attempt in range(3):
-            try:
-                with urllib.request.urlopen(req, timeout=900) as r:
-                    body = r.read()
-                break
-            except Exception as e:
-                code = getattr(e, "code", None)
-                if attempt == 2 or (code is not None and 400 <= code < 500 and code != 429):
-                    raise
-                print(f"  overpass failed ({e}); retrying in 60 s")
-                time.sleep(60)
+        body = overpass_query(QUERIES[layer])
         RAW.mkdir(parents=True, exist_ok=True)
         p.write_bytes(body)
     d = json.loads(p.read_text())

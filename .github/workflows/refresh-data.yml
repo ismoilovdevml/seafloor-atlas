@@ -97,6 +97,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run pages.yml --ref main
+      - name: Warn when the source was down
+        if: steps.refresh.outputs.unavailable != ''
+        run: echo "::warning::Overpass was unavailable on every instance; kept the old files for '${{ steps.refresh.outputs.unavailable }}'. Next week's run retries."
       - name: Fail the run if a layer failed
         if: steps.refresh.outcome == 'failure'
         run: |

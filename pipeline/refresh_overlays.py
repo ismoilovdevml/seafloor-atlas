@@ -20,6 +20,11 @@ properties present; ids unique; size limit; feature count within +-20 % of the c
 Inputs: the GEBCO and EEZ files from pipeline/sea_inputs.py. Politeness: one API query at a time, a pause
 between Overpass queries, retries with back-off inside the scripts, a User-Agent with the project URL.
 
+Source down is not a failure: when no Overpass instance answers (offshore.py exits UNAVAILABLE), the layer and the
+remaining Overpass layers are skipped with their old files, reported as `unavailable`, and the run stays green with
+a warning. It does fail once a skipped layer's data is older than STALE_DAYS, so a long outage is not missed.
+A script error or a file that fails validation always fails the run.
+
 usage: python pipeline/refresh_overlays.py [--layers platforms,wrecks] [--allow-count-change]
                                            [--no-fetch] [--summary FILE] [--commit-message FILE]
 """
@@ -41,6 +46,8 @@ STAGE = ROOT / "data/derived/refresh"
 PY = sys.executable
 OSM_ATTR = "© OpenStreetMap contributors (ODbL)"
 MAX_COUNT_CHANGE = 0.20
+UNAVAILABLE = 75  # offshore.UNAVAILABLE: no Overpass instance answered
+STALE_DAYS = 60   # a layer skipped for an outage fails the run once its OSM data is older than this
 
 LAYERS = {
     "platforms": {"file": "platforms.geojson", "cmd": ["offshore.py", "--only", "platforms", "--out-dir", "{stage}"],
@@ -116,6 +123,15 @@ def validate(spec: dict, path: Path, old: dict | None, allow_count_change: bool)
     return d, errs
 
 
+def osm_age_days(fc: dict | None, now: float | None = None) -> float | None:
+    """Days since the file's metadata.osmTimestamp (None if it has none)."""
+    ts = (fc or {}).get("metadata", {}).get("osmTimestamp")
+    if not ts:
+        return None
+    t = time.mktime(time.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")) - time.timezone
+    return ((now if now is not None else time.time()) - t) / 86400
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--layers", default=",".join(LAYERS), help="comma-separated subset of " + ",".join(LAYERS))
@@ -131,10 +147,18 @@ def main() -> None:
         sys.exit(f"unknown layers: {sorted(unknown)}")
     STAGE.mkdir(parents=True, exist_ok=True)
 
-    rows, changed, failed = [], [], []
+    rows, changed, failed, unavailable = [], [], [], []
     last_overpass = 0.0
+    overpass_down = False
     for name in names:
         spec = LAYERS[name]
+        if spec["overpass"] and overpass_down:
+            # one outage answer is enough: do not hammer the instances again for each layer
+            cur = DATA / spec["file"]
+            old = json.loads(cur.read_text()) if cur.exists() else None
+            unavailable.append(name)
+            rows.append((name, len(old["features"]) if old else None, None, "skipped: Overpass unavailable, old file kept"))
+            continue
         staged = STAGE / spec["file"]
         staged.unlink(missing_ok=True)
         cmd = [PY, str(ROOT / "pipeline" / spec["cmd"][0]),
@@ -151,6 +175,11 @@ def main() -> None:
         cur = DATA / spec["file"]
         old = json.loads(cur.read_text()) if cur.exists() else None
         n_old = len(old["features"]) if old else None
+        if proc.returncode == UNAVAILABLE and spec["overpass"]:
+            overpass_down = True
+            unavailable.append(name)
+            rows.append((name, n_old, None, "skipped: Overpass unavailable, old file kept"))
+            continue
         if proc.returncode != 0:
             failed.append(name)
             rows.append((name, n_old, None, f"FAILED: script exit {proc.returncode}"))
@@ -186,10 +215,18 @@ def main() -> None:
             f"Refresh data {time.strftime('%Y-%m-%d', time.gmtime())}: {', '.join(n for n, _, _ in changed)}\n\n"
             + "\n".join(f"- {p} features" for p in parts)
             + "\n\nAutomatic weekly refresh (pipeline/refresh_overlays.py); each file validated before replacing.\n")
+    # an outage is tolerated only while the kept data is reasonably fresh
+    for name in unavailable:
+        cur = DATA / LAYERS[name]["file"]
+        age = osm_age_days(json.loads(cur.read_text())) if cur.exists() else None
+        if age is None or age > STALE_DAYS:
+            failed.append(name)
+            print(f"   {name}: Overpass down and the kept data is {'of unknown age' if age is None else f'{age:.0f} days old'}")
     gh_out = os.environ.get("GITHUB_OUTPUT")
     if gh_out:
         with open(gh_out, "a") as f:
-            f.write(f"changed={','.join(n for n, _, _ in changed)}\nfailed={','.join(failed)}\n")
+            f.write(f"changed={','.join(n for n, _, _ in changed)}\nfailed={','.join(failed)}\n"
+                    f"unavailable={','.join(unavailable)}\n")
     if failed:
         # exit 1 so CI marks the run red; the layers that passed are already in place and can be committed
         sys.exit(f"failed layers (old files kept): {', '.join(failed)}")

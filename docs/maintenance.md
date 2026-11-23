@@ -25,8 +25,10 @@ GitHub release, so releases stay a manual decision of the owner.
    TID from BODC/CEDA, EEZ from the Marine Regions WMS, about 5–10 minutes. They never go into git.
 2. `pipeline/refresh_overlays.py` runs each layer on its own: `offshore.py --only platforms|pipelines|windfarms`,
    `wrecks.py`, `cables_osm.py`, each with `--refresh`, writing into `data/derived/refresh/`. One query at a time,
-   30 s between Overpass queries, at most 3 tries with 60 s back-off inside each script, User-Agent with the
-   project URL.
+   30 s between Overpass queries, User-Agent with the project URL. Overpass goes to the first of several instances
+   (`offshore.OVERPASS_URLS`; overpass-api.de, overpass.private.coffee, maps.mail.ru; env `OVERPASS_URLS`
+   overrides) that answers a tiny probe query, in 3 rounds 2 and 5 minutes apart; a 200 answer carrying a
+   timeout or out-of-memory remark counts as no answer.
 3. Each new file must pass: valid GeoJSON FeatureCollection, `metadata.attribution` and `licence` as in
    `docs/data-contract.md`, a minimum feature count, the expected geometry type, finite lon/lat in range,
    required properties, unique ids, a size limit (cables-osm < 3 MB), and **a feature count within ±20 % of the
@@ -39,6 +41,10 @@ GitHub release, so releases stay a manual decision of the owner.
    `Refresh data 2026-11-23: platforms, wrecks` and the before → after counts; push to `main`; start `pages.yml`
    (a push made with `GITHUB_TOKEN` does not trigger other workflows, so the job dispatches the deploy itself).
 7. If any layer failed, the run ends red with the reason in the job summary.
+8. **Source down is not a failure.** When no Overpass instance answers (seen 2026-11-23: the main instance at
+   capacity, the mirrors timing out, the runner unable to connect at all), that layer and the remaining Overpass
+   layers are skipped with their old files, listed as `unavailable`, and the run stays green with a warning; the
+   next weekly run tries again. It still ends red once a skipped layer's `osmTimestamp` is older than 60 days.
 
 **When the ±20 % check stops a layer** (a mass OSM edit, a Wikidata bulk import, a broken query): open the failed
 run's summary, compare the counts, look at the data if needed
