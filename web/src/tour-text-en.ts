@@ -22,6 +22,7 @@ export const TEXT_EN: TourText = {
     paused: 'Paused',
     sourcePrefix: 'Source: ',
     keys: 'Left and Right arrows: back and next. Space: pause or play. Esc: exit.',
+    language: 'Tour language',
   },
   chapters: {
     globe: {
@@ -56,7 +57,7 @@ export const TEXT_EN: TourText = {
     },
     water: {
       title: 'Inside the water',
-      text: 'Ocean water shows temperature, salinity and density at 11 depths from the surface to 5,000 m, averaged over 1991–2020. Click the ocean for its water column: this one is in the western Pacific, warm at the top and cold below the thermocline.',
+      text: 'Ocean water shows temperature, salinity and density at 11 depths from the surface to 5,000 m, averaged over 1991–2020, and on the seafloor itself, the slider’s last stop. Click the ocean for its water column: this one is in the western Pacific, warm at the top and cold below the thermocline.',
       source: 'World Ocean Atlas 2023 (NOAA NCEI), 1991–2020 climate normal (woa/manifest.json).',
     },
     monsoon: {

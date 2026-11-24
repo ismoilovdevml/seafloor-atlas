@@ -32,6 +32,14 @@
 .tour-name { font-size: 12px; font-weight: 600; color: var(--ink-3); letter-spacing: 0.02em; }
 #tour-count { font-size: 13.5px; font-weight: 600; color: var(--ink-2); }
 .tour-exit { margin-right: -4px; }
+/* EN / UZ: a small two-button switch beside the close button */
+.tour-lang { display: flex; flex: none; border: 1px solid var(--line-strong); border-radius: 8px; padding: 2px; gap: 2px; }
+.tour-lang button {
+  min-width: 32px; height: 28px; padding: 0 6px; border: 0; border-radius: 6px; background: none;
+  font: 700 12px/1 var(--sans); letter-spacing: 0.03em; color: var(--ink-2);
+}
+.tour-lang button:hover { color: var(--ink); }
+.tour-lang button[aria-pressed='true'] { background: var(--selected); color: var(--acc); box-shadow: inset 0 -2px 0 var(--acc); }
 
 /* the speech bubble: its tail points up at Ping */
 .tour-bubble {
@@ -112,7 +120,14 @@
   .tour-dots { display: none; }
   .tour-btn { height: 44px; padding: 0 12px; }
   .tour-btn.icon { width: 44px; }
-  .ui.touring .tabs, .ui.touring .readout, .ui.touring .stories, .ui.touring .layers, .ui.touring .card { display: none !important; }
+  .ui.touring .tabs, .ui.touring .stories, .ui.touring .layers, .ui.touring .card { display: none !important; }
+  /* the readout steps aside, but the satellite imagery's attribution (#map-att, required by Esri) stays: the readout
+     box shrinks to that one line, and goes only when satellite land is off */
+  .ui.touring .readout > :not(.map-att) { display: none !important; }
+  .ui.touring .readout { min-height: 0; padding: 4px 10px; align-self: center; }
+  .ui.touring .readout .map-att { margin: 0; padding: 0; border: 0; }
+  .ui.touring .readout:not(:has(.map-att:not([hidden]))) { display: none !important; }
+  .tour-lang button { min-width: 40px; height: 36px; }
   /* an open tool keeps only its header bar, so sheet + header leave the globe most of the screen */
   .ui.touring .tool-panel > :not(header) { display: none !important; }
   .ui.touring .tool-panel { padding-top: 6px; padding-bottom: 6px; max-height: 22vh; }
@@ -120,7 +135,7 @@
   .ui.touring .sea-change, .ui.touring .water-sub { display: none; }
   .ui:has(.legend.collapsed).touring {
     grid-template-rows: auto minmax(0, 1fr) 0 auto minmax(0, auto) auto;
-    grid-template-areas: "top top" "card card" ". ." "legend legend" "panel panel" "tabs tabs";
+    grid-template-areas: "top top" "card card" ". ." "legend readout" "panel panel" "tabs tabs";
   }
   .ui.touring .legend.collapsed { justify-self: start; }
 }

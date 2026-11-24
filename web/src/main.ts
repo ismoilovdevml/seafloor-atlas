@@ -1,6 +1,6 @@
 import '@fontsource-variable/newsreader/opsz.css';
 import { atFromHash } from './at';
-import { tourLang } from './tour-lang';
+import { langFromHash, tourLang } from './tour-lang';
 import '@fontsource-variable/atkinson-hyperlegible-next/wght.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './styles.css';
@@ -38,8 +38,9 @@ import { amocCard, type AmocData } from './amoc';
 import { PolarLayer, type PolarMeta } from './polar-layer';
 import { MeasureTool } from './measure';
 import { STATUS, STATUS_ORDER, type StatusKey } from './palette';
-import { SEARCH_KM, classify, formatNearest, pixelKm, pct, verdict } from './inspect';
-import { SAT_ATTRIBUTION, clearLand, hashWithLand, iceLand, rampExpression, satLandFromHash, satSource } from './basemap';
+import { NOT_RATED_VERDICT, classify, pixelKm, pct, verdict } from './inspect';
+import { SAT_ATTRIBUTION, clearLand, hashWithLand, iceLand, initialSatLand, rampExpression, satLandFromHash, satSource, storeSatLand, storedSatLand } from './basemap';
+import { basinAt, farVerdictCapped, inlandVerdict, nearestText, searchKm, shownFraction, swotText, swotUnrated } from './point-info';
 
 maplibregl.setWorkerUrl(workerUrl);
 
@@ -48,15 +49,47 @@ interface FeatureProps { name: string; kind: string; depth_m: number; blurb: str
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
+// prefers-reduced-motion: camera moves made for the visitor (search, cards, layout fits) jump instead of flying;
+// the tour and the guided views read it themselves (declared here, before any camera move can run)
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+const anim = <T extends object>(o: T) => (reduceMotion.matches ? { ...o, duration: 0 } : o);
 
 async function getJSON<T>(url: string): Promise<T | null> {
   try { const r = await fetch(url); return r.ok ? ((await r.json()) as T) : null; } catch { return null; }
 }
+/** window.localStorage, or null where even reading the accessor throws (blocked site data). */
+function localStore(): Storage | null { try { return window.localStorage; } catch { return null; } }
+
+// Start-up runs through several downloads before every control is wired (the end of this module sets appReady).
+// A click on one of these buttons before then is held and replayed once everything is wired, instead of being lost.
+// (appReady is declared here, before the first await: the listener below can run during any of them.)
+let appReady = false;
+const EARLY_BUTTONS = new Set(['explore-btn', 'layers-btn', 'tour-btn', 'time-btn', 'sea-btn', 'profile-btn', 'water-btn', 'about-btn', 'settings-btn', 'tab-stories', 'tab-layers', 'tab-tools']);
+const earlyClicks: string[] = [];
+function holdEarlyClick(e: MouseEvent) {
+  if (appReady) return;
+  const b = (e.target as Element | null)?.closest?.('button');
+  if (!b || !EARLY_BUTTONS.has(b.id)) return;
+  e.stopImmediatePropagation(); e.preventDefault();
+  const i = earlyClicks.indexOf(b.id);
+  if (i >= 0) earlyClicks.splice(i, 1); else earlyClicks.push(b.id); // a second click undoes the first
+  b.toggleAttribute('aria-busy', i < 0);
+}
+document.addEventListener('click', holdEarlyClick, true);
 
 // ---------- tiles: real by default, synthetic on ?tiles=synthetic or when real tiles are absent ----------
 // ?tiles=synthetic forces the dev set from scripts/make_synthetic_tiles.mjs
 const TILESETS: Record<string, string> = { synthetic: 'tiles-synthetic' };
 let tilesBase = TILESETS[params.get('tiles') ?? ''] ?? 'tiles';
+// the start-up JSON with fixed paths is requested together with meta.json (one round trip instead of a chain);
+// the real-tile ones are dropped if the page falls back to the synthetic set
+const realFirst = tilesBase === 'tiles';
+const hiresP = realFirst ? getJSON<ChunkedHires>('hires/manifest.json') : Promise.resolve(null);
+const legendsP = realFirst
+  ? Promise.all([getJSON<DisagreeLegend>('tiles/disagree/legend.json'), getJSON<UncertaintyLegend>('tiles/uncertainty/legend.json')])
+  : Promise.resolve([null, null] as const);
+const storiesP = getJSON<Story[]>('data/stories.json');
+const hypsoP = getJSON<Hypsometry>('data/hypsometry.json');
 let meta = await getJSON<Meta>(`${tilesBase}/meta.json`);
 if (!meta && tilesBase === 'tiles') { tilesBase = 'tiles-synthetic'; meta = await getJSON<Meta>(`${tilesBase}/meta.json`); }
 if (!meta) {
@@ -71,7 +104,7 @@ const dataBase = synthetic ? 'tiles-synthetic/data' : 'data';
 // static z0..meta.maxzoom next to the page, PMTiles above it when meta.hires is set (tilesource.ts)
 // the high-resolution archives as static pieces next to the page when the deploy added them (Cloudflare Pages),
 // else straight from Hugging Face with range requests (GitHub Pages mirror, local dev)
-const chunkedHires = synthetic ? null : await getJSON<ChunkedHires>('hires/manifest.json');
+const chunkedHires = synthetic ? null : await hiresP;
 configureTiles(tilesBase, meta.maxzoom, synthetic ? null : meta.hires, chunkedHires);
 maplibregl.addProtocol(PROTOCOL, protocolHandler);
 const demMaxZoom = maxZoomFor('dem');
@@ -149,8 +182,8 @@ $<HTMLInputElement>('exag-auto').addEventListener('change', (e) => {
 });
 
 // start the start-up JSON downloads now, so they overlap with the style and first tiles instead of queuing after them
+// (stories, hypsometry and the depth-certainty legends started with meta.json above)
 const featureDataP = getJSON<GeoJSON.FeatureCollection<GeoJSON.Point, FeatureProps>>(`${dataBase}/features.geojson`);
-const hypsoP = getJSON<Hypsometry>('data/hypsometry.json');
 // Wait for the style only, not for 'load': 'load' fires after every first-view tile has arrived, and on a slow
 // connection that held back the rest of this module (the Tour button, layers, panels) for tens of seconds.
 // Sources and layers can be added as soon as the style is in.
@@ -160,24 +193,31 @@ mountNav3d(map, document.body);
 let polarLayer: PolarLayer | null = null;
 // satellite land (basemap.ts): Esri imagery under the relief, whose land colours turn transparent; #land=grey = off.
 // The relief ramp depends on it, on the sea level and on the ocean-water under-layer (declared here: used from now on).
-let satLand = satLandFromHash(location.hash);
+// The visitor's choice is remembered (localStorage); a land= part in the hash wins over it.
+let satLand = initialSatLand(location.hash, storedSatLand(localStore()));
 let seaLevel = 0;
-let underlayOn = false;
+/** Who needs the relief's neutral under-layer now: ocean water and phytoplankton each switch their own part. */
+const underlayBy = new Set<'water' | 'chl'>();
+/** The AMOC record once loaded (declared early: the map's click handler reads it). */
+let amocLast: AmocData | null = null;
 if (!synthetic) {
   void getJSON<PolarMeta>(`${tilesBase}/polar/polar.json`).then((pm) => {
     if (!pm) return;
     polarLayer = new PolarLayer(`${tilesBase}/polar/`, pm, reliefStops().polar);
-    // right above the shaded relief: overlays (veil, coverage, age, ...) still draw over the disc between 83 and 85 degrees
+    // right above the shaded relief: overlays (veil, coverage, age, ...) still draw over the disc between 83 and 85 degrees.
+    // (Tried 2026-11-24: right above the relief ramp, so the colour fields under the hillshade draw over the disc too.
+    // Rejected: the map's hillshade then draws over the disc and shows a dark seam along 85.05 degrees in every Arctic
+    // view, worse than the 83.05-85.05 degree gap under marine life / water / phytoplankton. Either position makes
+    // two render-to-texture stacks; only a renderToTerrainTile implementation in polar-layer.ts would avoid that.)
     const ids = map.getStyle().layers.map((l) => l.id);
     map.addLayer(polarLayer, ids[ids.indexOf('hillshade') + 1]);
   });
 }
 // "Measure distance" (measure.ts): the ruler under the compass, or right-click on the map
 // the ruler works from the first frame, but the panels it closes and the layout code are created further down:
-// until the end of this module has run (appReady) there is nothing to close and nothing to lay out yet
-let appReady = false;
+// until the end of this module has run (appReady, declared at the top) there is nothing to close and nothing to lay out yet
 const measureTool = new MeasureTool(map, {
-  beforeStart: () => { if (!appReady) return; if (profiling) setProfiling(false); if (seaOpen) closeSea(); water.close(); timeUI?.close(); },
+  beforeStart: () => { if (appReady) closeTools('measure'); },
   layout: () => { if (appReady) updatePadding(); },
 }, document.getElementById('ui')!, document.getElementById('nav-measure') as HTMLButtonElement);
 {
@@ -215,7 +255,12 @@ function placeNav3d() {
   const anchors = (small ? ['readout', 'legend', 'feature-card', 'story-card'] : ['readout']).filter(shown).map(rect);
   el.hidden = busy || !anchors.length;
   if (el.hidden) return;
-  el.style.bottom = `${Math.round(H - Math.min(...anchors.map((a) => a.top)) + 10)}px`;
+  // keep the rail below the top bar: on a short window with a tall readout there is no room, so it hides (and
+  // shows again on the next layout pass with room, since hidden is recomputed above every time)
+  const anchorTop = Math.min(...anchors.map((a) => a.top));
+  const topLimit = rect('topbar').bottom + 8;
+  if (anchorTop - 10 - el.offsetHeight < topLimit) { el.hidden = true; return; }
+  el.style.bottom = `${Math.round(H - anchorTop + 10)}px`;
   el.style.right = `${Math.round(W - rect('readout').right)}px`;
   el.dataset.placed = '';
 }
@@ -229,15 +274,23 @@ function setVisible(layer: string | string[], on: boolean) {
 }
 // ---------- satellite land (basemap.ts) ----------
 /** The relief ramp for the current state: map stops (land clear when satellite land is on) and polar-cap stops. */
+// A sea level other than today's always wins over the under-layer: the slider must never be dead (opening Sea
+// level also switches the colour fields off, see openSea; this covers the Time panel's sea level as well).
+const underlayActive = () => underlayBy.size > 0 && seaLevel === 0;
 function reliefStops(): { map: [number, string][]; polar: [number, string][] } {
-  const stops = underlayOn ? [...UNDERLAY_STOPS, ...LAND_STOPS] : seaLevelStops(seaLevel);
-  const landFrom = underlayOn ? 0 : Math.max(0, Math.round(seaLevel));
+  const under = underlayActive();
+  const stops = under ? [...UNDERLAY_STOPS, ...LAND_STOPS] : seaLevelStops(seaLevel);
+  const landFrom = under ? 0 : Math.max(0, Math.round(seaLevel));
   return satLand ? { map: clearLand(stops, landFrom), polar: iceLand(stops, landFrom) } : { map: stops, polar: stops };
 }
 function paintRelief() {
   const r = reliefStops();
   map.setPaintProperty('relief', 'color-relief-color', rampExpression(r.map) as never);
   polarLayer?.setStops(r.polar);
+  // the depth ramp legend does not describe the neutral under-layer (only written on a change: a legend observer
+  // re-lays out the page on every write of the attribute)
+  const dl = document.getElementById('depth-legend');
+  if (dl && dl.hidden !== underlayActive()) dl.hidden = underlayActive();
 }
 function setSatLand(on: boolean, writeHash = true) {
   satLand = on;
@@ -251,6 +304,7 @@ function setSatLand(on: boolean, writeHash = true) {
   $('row-satland').classList.toggle('on', on);
   $('map-att').hidden = !on;
   if (writeHash) {
+    storeSatLand(localStore(), on); // a visitor's own switch is remembered; a hash change is not
     const h = hashWithLand(location.hash, on);
     if (h !== location.hash) history.replaceState(null, '', h || location.pathname + location.search);
     requestAnimationFrame(() => updatePadding()); // the readout grows or shrinks by the attribution line
@@ -261,6 +315,8 @@ $('map-att').title = SAT_ATTRIBUTION;
 $('map-att').addEventListener('click', () => $('map-att').classList.toggle('open'));
 $<HTMLInputElement>('t-satland').addEventListener('change', (e) => setSatLand((e.target as HTMLInputElement).checked));
 setSatLand(satLand, false);
+// a remembered "grey" goes into the address too, so the hash and the map agree (hashchange compares the two)
+if (!satLand && satLandFromHash(location.hash)) history.replaceState(null, '', hashWithLand(location.hash, false));
 
 const tVeil = $<HTMLInputElement>('t-veil'), tPlates = $<HTMLInputElement>('t-plates'), tFeatures = $<HTMLInputElement>('t-features');
 function rowState(row: string, legend: string | null, on: boolean) {
@@ -330,8 +386,7 @@ const ATTRIBUTION_SEALS = 'Seal dives: SO-ABBA v1.0 (Hindell, McMahon, Jonsen et
 // ---------- how sure is the depth? (model disagreement, prediction confidence, seal soundings) ----------
 // real tiles only; each switch shows its layer and legend section, the readout adds the value under the cursor
 const tilesUrl = new URL(`${tilesBase}/`, location.href).href;
-const [disagreeLg, uncertaintyLg] = synthetic ? [null, null]
-  : await Promise.all([getJSON<DisagreeLegend>('tiles/disagree/legend.json'), getJSON<UncertaintyLegend>('tiles/uncertainty/legend.json')]);
+const [disagreeLg, uncertaintyLg] = synthetic ? [null, null] : await legendsP;
 const certaintyOk: Record<CertaintyId, boolean> = { disagree: !!disagreeLg, uncertainty: !!uncertaintyLg, seals: !synthetic };
 {
   const srcs = certaintySources(tilesUrl, rasterTileSize);
@@ -395,8 +450,19 @@ const marine = new MarineUI({
   beforeOn: () => { if (water.open) water.close(); water.hideLayer(); if (oceanUI?.chlOn) oceanUI.setChl(false); },
   onChange: () => { updateLayersBadge(); if (lastPoint) renderExtra(lastPoint[0], lastPoint[1]); },
 });
-const marineReady = synthetic ? false : await marine.init();
-if (!marineReady) $('row-marine').hidden = true;
+// the manifests of marine life and ocean water download alongside the other start-up files (awaited further down)
+let marineReady = false;
+const marineInitP = (synthetic ? Promise.resolve(false) : marine.init()).then((ok) => { marineReady = ok; if (!ok) $('row-marine').hidden = true; return ok; });
+const water = new WaterUI({
+  map, base: 'woa/',
+  beforeOpen: () => { closeTools('water'); if (marine.on) marine.set({ on: false }); if (oceanUI?.chlOn) oceanUI.setChl(false); },
+  layout: () => updatePadding(),
+  // static tiles only: the water-column caption should not wait on the high-resolution archive
+  seafloorAt: async (lon, lat) => (await sampler.sample([[lon, lat]], staticMaxZoom)).h[0],
+  onChange: () => { renderWaterReadout(); syncWaterRow(); },
+  underlay: (on) => setUnderlay('water', on),
+});
+const waterInitP = water.init();
 
 // measured statistic (meta.stats.measured_fraction_area, area-weighted, TID 10-17)
 const mfRaw = meta.stats?.measured_fraction_area;
@@ -528,7 +594,7 @@ function showPlate(p: Record<string, unknown>) {
 }
 
 // ---------- stories ----------
-const stories = (await getJSON<Story[]>('data/stories.json')) ?? [];
+const stories = (await storiesP) ?? [];
 const storyList = $('story-list');
 function where([lon, lat]: [number, number]) { return `${formatLat(lat).replace('.000', '').replace(/(\.\d)\d+/, '$1')}, ${formatLon(lon).replace(/(\.\d)\d+/, '$1')}`; }
 storyList.replaceChildren(...stories.map((s) => {
@@ -563,7 +629,7 @@ function playStory(s: Story, instant = false) {
   updatePadding();
   if (instant || reduce) map.jumpTo(cam); else map.flyTo({ ...cam, duration: 5200, curve: 1.6, essential: true });
   // keep #lang= and the extra layer tokens (quakes, winds, ...) when a story rewrites the address
-  const lang = /(?:^#|[#&])lang=(en|uz)(?:&|$)/.exec(location.hash)?.[1];
+  const lang = langFromHash(location.hash);
   history.replaceState(null, '', hashWithLand(hashWithLayers(`#story=${s.id}${lang ? `&lang=${lang}` : ''}`, { ...overlays.state, extra: extraTokens() }), satLand));
 }
 storyList.addEventListener('click', (e) => {
@@ -617,7 +683,7 @@ async function choose(i: number) {
     const f = features[Number(e.key)];
     showFeature(f.properties);
     updatePadding();
-    map.flyTo({ center: f.geometry.coordinates as [number, number], zoom: Math.max(map.getZoom(), 5), pitch: 45, duration: 3500, essential: true });
+    map.flyTo(anim({ center: f.geometry.coordinates as [number, number], zoom: Math.max(map.getZoom(), 5), pitch: 45, duration: 3500, essential: true }));
     return;
   }
   const r = await overlays.focus(e);
@@ -626,10 +692,10 @@ async function choose(i: number) {
   updatePadding();
   const below = belowCard();
   if (r.feature.geometry.type === 'Point') {
-    map.flyTo({ center: r.feature.geometry.coordinates as [number, number], zoom: Math.max(map.getZoom(), 5.5), pitch: 30, duration: 3500, essential: true, offset: [0, below] });
+    map.flyTo(anim({ center: r.feature.geometry.coordinates as [number, number], zoom: Math.max(map.getZoom(), 5.5), pitch: 30, duration: 3500, essential: true, offset: [0, below] as [number, number] }));
   } else {
     const b = lineBounds(r.feature.geometry as GeoJSON.MultiLineString);
-    map.fitBounds(b, { padding: { top: 60 + 2 * below, bottom: 60, left: 60, right: 60 }, maxZoom: 5.5, duration: 3000, essential: true });
+    map.fitBounds(b, anim({ padding: { top: 60 + 2 * below, bottom: 60, left: 60, right: 60 }, maxZoom: 5.5, duration: 3000, essential: true }));
   }
 }
 /** Desktop: how far to push a flown-to place down so it lands in the free space under a tall open card (px). */
@@ -690,9 +756,10 @@ async function readout(lon: number, lat: number) {
   }
 }
 function readLevel(lon: number, lat: number, h: number[], f: (number | null)[]) {
-  lastRead = { h: h[0], f: f[0] };
+  lastRead = { h: h[0], f: shownFraction(f[0], h[0]) };
   renderDepth();
-  $('r-meas').textContent = f[0] === null ? 'land' : Number.isNaN(f[0]) ? 'n/a' : `${Math.round(f[0] * 100)}%`;
+  const fs = lastRead.f;
+  $('r-meas').textContent = fs === null ? 'land' : Number.isNaN(fs) ? 'n/a' : `${Math.round(fs * 100)}%`;
   renderWaterReadout();
   renderExtra(lon, lat);
 }
@@ -774,7 +841,7 @@ function setProfileSource(a: [number, number] | null, b: [number, number] | null
   (map.getSource('profile') as GeoJSONSource).setData({ type: 'FeatureCollection', features: feats });
 }
 function setProfiling(on: boolean) {
-  if (on) { closeSea(); water.close(); timeUI?.close(); measureTool.stop(); }
+  if (on) closeTools('profile');
   profiling = on;
   $('profile-btn').setAttribute('aria-pressed', String(on));
   $('ui').classList.toggle('profiling', on);
@@ -806,6 +873,8 @@ async function runProfile(a: [number, number], b: [number, number]) {
   return { len, z, min: Math.min(...h), meas };
 }
 map.on('click', (e) => {
+  // until the end of this module has run, the panels a click opens (and the layout code) are not all there yet
+  if (!appReady) return;
   if (measureTool.active) return; // measure.ts handles the click
   if (profiling) {
     const p: [number, number] = [e.lngLat.lng, e.lngLat.lat];
@@ -817,8 +886,13 @@ map.on('click', (e) => {
     return;
   }
   readout(e.lngLat.lng, e.lngLat.lat);
-  if (water.open) water.showColumn(e.lngLat.lng, e.lngLat.lat);
   const box: [maplibregl.PointLike, maplibregl.PointLike] = [[e.point.x - 6, e.point.y - 6], [e.point.x + 6, e.point.y + 6]];
+  // the AMOC line first: a thin line in open water, where any other click would open the inspector or a marine card
+  if (amocLast && map.getLayer('amoc-line') && map.getLayoutProperty('amoc-line', 'visibility') !== 'none'
+    && map.queryRenderedFeatures(box, { layers: ['amoc-line', 'amoc-casing'] }).length) {
+    showCard(amocCard(amocLast)); updatePadding(); return;
+  }
+  if (water.open) water.showColumn(e.lngLat.lng, e.lngLat.lat);
   const layers = [...FEATURE_LAYERS, ...overlays.clickableLayers(), ...(eventsUI?.clickable ?? []), ...(certaintyOn.has('seals') ? ['seals'] : []), ...(tPlates.checked ? ['plates'] : [])];
   const hit: MapGeoJSONFeature | undefined = map.queryRenderedFeatures(box, { layers })[0];
   if (!hit) {
@@ -843,7 +917,7 @@ for (const id of [...FEATURE_LAYERS, 'plates']) {
 
 // ---------- point inspector: click the seafloor for how its depth is known (inspect.ts) ----------
 // Reads only our tiles: depth and measured fraction like the readout (fine zoom when the map is zoomed in), the
-// nearest measured cell within SEARCH_KM on the 1' coverage tiles, and the two depth-certainty rasters.
+// nearest measured cell within SEARCH_KM (less near the poles) on the 1' coverage tiles, and the two depth-certainty rasters.
 for (const k of Object.keys(STATUS) as StatusKey[]) document.documentElement.style.setProperty(`--st-${k}`, STATUS[k].color);
 $('status-key').innerHTML = STATUS_ORDER.map((k) => `<li data-st="${k}"><span class="sdot" style="background:var(--st-${k})" aria-hidden="true"></span><span>${STATUS[k].label}</span></li>`).join('');
 const NO_POINT: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
@@ -864,6 +938,20 @@ function closeInspector() {
   updatePadding();
 }
 $('insp-close').addEventListener('click', closeInspector);
+type Tool = 'sea' | 'water' | 'profile' | 'time' | 'measure';
+/**
+ * One tool at a time: closes every bottom tool except `keep`, and the point inspector, which would otherwise stay
+ * open beside (or, on short windows, on top of) the tool. seaHash: false leaves the sea level out of the address
+ * (the Time panel writes its own).
+ */
+function closeTools(keep: Tool, opts: { seaHash?: boolean } = {}) {
+  if (keep !== 'profile' && profiling) setProfiling(false);
+  if (keep !== 'sea' && seaOpen) closeSea(opts.seaHash ?? true);
+  if (keep !== 'water') water.close();
+  if (keep !== 'time') timeUI?.close();
+  if (keep !== 'measure') measureTool.stop();
+  closeInspector();
+}
 async function inspect(lon: number, lat: number) {
   const t = ++inspToken;
   show('feature-card', false); show('story-card', false); markStory(null); overlays.clearHighlight();
@@ -879,46 +967,72 @@ async function inspect(lon: number, lat: number) {
   inspMarker(lon, lat, '#ffffff');
   updatePadding();
   const zFine = demMaxZoom > staticMaxZoom && map.getZoom() >= staticMaxZoom ? demMaxZoom : staticMaxZoom;
-  const [pt, nearZ5] = await Promise.all([sampler.sample([[lon, lat]], zFine), sampler.nearestMeasured(lon, lat, SEARCH_KM, staticMaxZoom)]);
+  // The nearest-survey search runs only over water (on land it loaded tiles for nothing) and within a radius capped
+  // near the poles (point-info.searchKm: at 80-85 degrees one click loaded 18-50 tiles). The static cell, already
+  // read by the hover readout, decides first, so the search still starts together with the fine read.
+  const radiusKm = searchKm(lat, staticMaxZoom, meta!.tileSize);
+  const wet = (q: { h: number[]; f: (number | null)[] }) => q.f[0] !== null && !(q.h[0] > 0);
+  const ptP = sampler.sample([[lon, lat]], zFine);
+  const swotP = uncertaintyLg ? probes.uncertainty.at(lon, lat) : Promise.resolve(null);
+  const coarse = zFine === staticMaxZoom ? await ptP : await sampler.sample([[lon, lat]], staticMaxZoom);
+  const nearP = wet(coarse) ? sampler.nearestMeasured(lon, lat, radiusKm, staticMaxZoom) : Promise.resolve(null);
+  const [pt, swotPx] = await Promise.all([ptP, swotP]);
+  let nearZ5 = await nearP;
+  // on a coast the fine cell can be water where the static one is land
+  if (!wet(coarse) && wet(pt)) nearZ5 = await sampler.nearestMeasured(lon, lat, radiusKm, staticMaxZoom);
   if (t !== inspToken) return;
-  const h = pt.h[0], f = pt.f[0];
+  // without the DEM the coverage alpha cannot tell "fully measured" from land: unknown (point-info.shownFraction)
+  const h = pt.h[0], f = shownFraction(pt.f[0], h);
+  // poleward of inspect.RATED_TO_LAT the sampler does not rate coverage and says so (sampler.ts note)
+  const notRated = pt.note?.[0] ?? null;
+  const swotAlpha = swotPx ? swotPx[3] : null;
+  const swotLabel = swotPx && uncertaintyLg ? classFromAlpha(swotPx[3], uncertaintyLg)?.label ?? null : null;
+  // Inland basins below sea level (Caspian, Dead Sea, Death Valley, Qattara, Turpan, ...) are ocean cells in the
+  // coverage tiles (GEBCO TID not land, elevation below 0), so neither h nor the coverage mask can tell them from
+  // the sea. A point inside one of the dataset's inland-component boxes that the SWOT ocean model leaves unrated
+  // is shown as inland. Smaller basins (< 100 km², not listed) still read as seafloor.
+  let basin: { name: string } | null = null;
+  if (f !== null && Number.isFinite(h) && h < 0 && uncertaintyLg && swotUnrated(lat, swotAlpha, swotLabel)) {
+    basin = basinAt((await import('./inland-basins')).INLAND_BASINS, lon, lat);
+    if (t !== inspToken) return;
+  }
+  const inland = basin !== null;
   // the fine cell decides "this cell": a 1' cell with a sounding somewhere else in it is half a cell away
   const cellKm = pixelKm(lat, zFine, meta!.tileSize);
   let near = nearZ5;
   if (f !== null && f > 0) near = 0;
   else if (near === 0) near = Math.max(0.5, pixelKm(lat, staticMaxZoom, meta!.tileSize) / 2);
-  const s = classify(f, near);
+  const s = inland ? 'land' : classify(f, near);
   const land = f === null;
-  $('insp-title').textContent = land ? 'Land here' : 'Seafloor here';
+  const noSurvey = land || inland || !!notRated; // the ocean survey status (and the nearest survey) does not apply
+  $('insp-title').textContent = land ? 'Land here' : inland ? 'Inland, below sea level' : 'Seafloor here';
   $('insp-meta').textContent = `${formatLat(lat)}, ${formatLon(lon)} · cell about ${cellKm < 1 ? cellKm.toFixed(1) : Math.round(cellKm)} km`;
   if (s) { ins.style.setProperty('--st', STATUS[s].color); ins.dataset.st = s; }
-  $('insp-badge-t').textContent = s ? STATUS[s].label : 'No data here';
-  $('it-depth-l').textContent = land ? 'Height' : 'Depth';
+  $('insp-badge-t').textContent = inland ? (basin!.name || 'Inland basin') : s ? STATUS[s].label : notRated ? 'Not rated' : 'No data here';
+  const hLabel = land ? 'Height' : inland ? 'Elevation' : 'Depth';
+  $('it-depth-l').textContent = hLabel;
   $('it-depth').textContent = Number.isFinite(h) ? formatDepth(h) : 'n/a';
-  $('it-meas').textContent = land ? 'land' : Number.isFinite(f) ? pct(f as number) : 'n/a';
-  $('it-meas-s').textContent = land ? '' : 'of the cell, by ship';
-  $('it-near').textContent = land ? '–' : formatNearest(near, true);
-  $('insp-verdict').textContent = s ? verdict(s, f, near) : 'No tile covers this point.';
+  $('it-meas').textContent = land ? 'land' : notRated ? 'not rated' : Number.isFinite(f) ? pct(f as number) : 'n/a';
+  $('it-meas-s').textContent = land || notRated ? '' : 'of the cell, by ship';
+  $('it-near').textContent = noSurvey ? '–' : nearestText(near, radiusKm, true);
+  $('insp-verdict').textContent = inland ? inlandVerdict(basin!.name) : notRated ? NOT_RATED_VERDICT
+    : s ? (s === 'far' ? farVerdictCapped(near, radiusKm) : null) ?? verdict(s, f, near) : 'No tile covers this point.';
   inspMarker(lon, lat, s ? STATUS[s].color : '#ffffff');
-  $('lg-status').hidden = land || !s;
+  $('lg-status').hidden = noSurvey || !s;
   $('status-key').querySelectorAll('li').forEach((li) => li.toggleAttribute('aria-current', li.dataset.st === s));
   // the table: every value at this point, the depth-certainty ones only where those layers exist
   const rows: [string, string][] = [
-    [land ? 'Height' : 'Depth', Number.isFinite(h) ? formatDepth(h) : 'n/a'],
+    [hLabel, Number.isFinite(h) ? formatDepth(h) : 'n/a'],
     ['Cell size at this zoom', `about ${cellKm < 1 ? cellKm.toFixed(2) : cellKm.toFixed(1)} km`],
-    ['Measured by ship', land ? 'land' : Number.isFinite(f) ? pct(f as number) : 'n/a'],
-    ['Nearest measured seafloor', land ? '–' : formatNearest(near)],
+    ['Measured by ship', land ? 'land' : notRated ?? (Number.isFinite(f) ? pct(f as number) : 'n/a')],
+    ['Nearest measured seafloor', noSurvey ? '–' : nearestText(near, radiusKm)],
   ];
-  if (!land && disagreeLg) {
+  if (!noSurvey && disagreeLg) {
     const px = await probes.disagree.at(lon, lat);
     const m = px ? disagreeFromAlpha(px[3], disagreeLg) : null;
-    rows.push(['Second model (AUST_2026) differs by', m === null ? 'under 50 m, or not compared here' : formatDisagree(m, disagreeLg.vmax)]);
+    rows.push(['Second model (AUST_2026) differs by', !px ? 'could not be loaded' : m === null ? 'under 50 m, or not compared here' : formatDisagree(m, disagreeLg.vmax)]);
   }
-  if (!land && uncertaintyLg) {
-    const px = await probes.uncertainty.at(lon, lat);
-    const c = px ? classFromAlpha(px[3], uncertaintyLg) : null;
-    rows.push(['SWOT model confidence', c ? c.label.replace(' confidence', '') : 'not rated (sounding here)']);
-  }
+  if (!land && uncertaintyLg) rows.push(['SWOT model confidence', inland ? 'not rated (inland)' : swotText(lat, swotAlpha, swotLabel, f)]);
   rows.push(['Latitude', formatLat(lat)], ['Longitude', formatLon(lon)]);
   if (t !== inspToken) return;
   $('insp-rows').replaceChildren(...rows.map(([k, v]) => {
@@ -928,7 +1042,7 @@ async function inspect(lon: number, lat: number) {
   // phone: the sheet covers the lower half; bring the point into the free band above it
   if (phone()) {
     const p = map.project([lon, lat]), top = ins.getBoundingClientRect().top;
-    if (p.y > top - 24) map.easeTo({ center: [lon, lat], duration: 500, essential: true });
+    if (p.y > top - 24) map.easeTo(anim({ center: [lon, lat] as [number, number], duration: 500, essential: true }));
   }
 }
 
@@ -1052,10 +1166,11 @@ function setPlaying(on: boolean) {
 }
 
 function openSea(level?: number) {
-  if (profiling) setProfiling(false);
-  measureTool.stop();
-  water.close();
-  timeUI?.close();
+  closeTools('sea');
+  // the colour fields draw today's ocean over the relief and switch it to the neutral under-layer: with them on,
+  // the sea-level ramp could not be seen (and the slider looked dead), so they go off as for ocean water
+  if (oceanUI?.chlOn) void oceanUI.setChl(false);
+  water.hideLayer();
   seaOpen = true;
   show('sea', true);
   $('ui').classList.add('sea-open');
@@ -1086,23 +1201,14 @@ $('sea-presets').addEventListener('click', (e) => {
 document.addEventListener('visibilitychange', () => { lastT = 0; });
 
 // ---------- ocean water (WOA23) ----------
-const water = new WaterUI({
-  map, base: 'woa/',
-  beforeOpen: () => { timeUI?.close(); if (seaOpen) closeSea(); if (profiling) setProfiling(false); measureTool.stop(); if (marine.on) marine.set({ on: false }); if (oceanUI?.chlOn) oceanUI.setChl(false); },
-  layout: () => updatePadding(),
-  // static tiles only: the water-column caption should not wait on the high-resolution archive
-  seafloorAt: async (lon, lat) => (await sampler.sample([[lon, lat]], staticMaxZoom)).h[0],
-  onChange: () => { renderWaterReadout(); syncWaterRow(); },
-  underlay: (on) => setUnderlay(on),
-});
-/** The relief's neutral under-layer while a colour field (ocean water, phytoplankton) is on. */
-function setUnderlay(on: boolean) {
-  underlayOn = on;
-  paintRelief();
+// (the panel object is created next to marine life above, so its manifest downloads with the other start-up files)
+/** The relief's neutral under-layer while a colour field (ocean water, phytoplankton) is on; each owns its part. */
+function setUnderlay(by: 'water' | 'chl', on: boolean) {
+  if (on) underlayBy.add(by); else underlayBy.delete(by);
+  paintRelief(); // also shows or hides the depth ramp legend
   seaApplied = seaLevel;
-  $('depth-legend').hidden = on; // the depth ramp legend does not describe the neutral under-layer
 }
-const waterReady = await water.init();
+const waterReady = await waterInitP;
 // "Ocean water" is a tool (bottom panel) and also a row in the Layers drawer; both drive the same panel
 const tWater = $<HTMLInputElement>('t-water');
 function syncWaterRow() {
@@ -1144,6 +1250,8 @@ function updatePadding() {
     // panel (sea level, ocean water, profile) pad the bottom, the same panel docked right (short windows) the right
     let bottom = visible('toolbar') ? H - r('toolbar').top + 8 : 0;
     let right = visible('layers') ? W - r('layers').left : 0;
+    // the point inspector shares the right column with the Layers drawer
+    if (visible('inspector')) right = Math.max(right, W - r('inspector').left);
     let left = visible('stories') ? r('stories').right : 0;
     const tour = tourEl();
     if (tour) left = Math.max(left, tour.getBoundingClientRect().right); // the tour's bubble sits in the left column
@@ -1185,13 +1293,14 @@ function fitGlobe() {
   if (d.r > target * 1.01) {
     const to = Math.max(z - 1.5, zoomForRadius(z, d.r, target));
     fitted = { from: fitted?.from ?? z, to };
-    map.easeTo({ zoom: to, duration: 450, essential: true });
+    // listener first: with reduced motion the move ends inside easeTo
     map.once('moveend', () => requestAnimationFrame(fitGlobe));
+    map.easeTo(anim({ zoom: to, duration: 450, essential: true }));
   } else if (fitted && d.r < target * 0.97) {
     const to = Math.min(fitted.from, zoomForRadius(z, d.r, target));
     fitted = to >= fitted.from - 0.01 ? null : { from: fitted.from, to };
-    map.easeTo({ zoom: to, duration: 450, essential: true });
     map.once('moveend', () => requestAnimationFrame(fitGlobe));
+    map.easeTo(anim({ zoom: to, duration: 450, essential: true }));
   }
 }
 
@@ -1214,7 +1323,7 @@ for (const id of Object.keys(MIN_LABEL)) { // panels with a minimise button (mea
 
 /** QA: the globe disk vs the panels covering it (every visible piece of UI, top bar items included). */
 function uiRects(): (Rect & { id: string })[] {
-  const els: [string, Element][] = ['stories', 'layers', 'readout', 'story-card', 'feature-card', 'profile', 'sea', 'water', 'time', 'time-offer', 'legend', 'toolbar', 'about', 'settings']
+  const els: [string, Element][] = ['stories', 'layers', 'readout', 'story-card', 'feature-card', 'inspector', 'profile', 'sea', 'water', 'time', 'time-offer', 'legend', 'toolbar', 'about', 'settings']
     .filter(visible).map((id) => [id, $(id)]);
   const tour = tourEl();
   if (tour) els.push(['tour', tour]);
@@ -1245,7 +1354,7 @@ function mapShare() {
 {
   let raf = 0;
   const ro = new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(updatePadding); });
-  for (const id of ['ui', 'topbar', 'readout', 'stories', 'layers', 'legend', 'toolbar', 'profile', 'sea', 'water', 'time', 'time-offer', 'story-card', 'feature-card', 'measure']) ro.observe($(id));
+  for (const id of ['ui', 'topbar', 'readout', 'stories', 'layers', 'legend', 'toolbar', 'profile', 'sea', 'water', 'time', 'time-offer', 'story-card', 'feature-card', 'measure', 'inspector']) ro.observe($(id));
 }
 
 // ---------- panels: drawers, legend dock, popovers, info notes (open state remembered in localStorage) ----------
@@ -1421,8 +1530,8 @@ function loadOcean(): Promise<OceanUI> {
   oceanP ??= import('./ocean-ui').then((m) => {
     const o = new m.OceanUI({
       map,
-      beforeChl: () => { if (water.open) water.close(); water.hideLayer(); if (marine.on) marine.set({ on: false }); },
-      underlay: (on) => setUnderlay(on),
+      beforeChl: () => { if (seaOpen) closeSea(); if (water.open) water.close(); water.hideLayer(); if (marine.on) marine.set({ on: false }); },
+      underlay: (on) => setUnderlay('chl', on),
       onChange: layersChanged,
       offerTime: () => offerTime('months'),
     });
@@ -1460,7 +1569,7 @@ async function setAmoc(on: boolean, card = true) {
     map.addSource('amoc', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: d.line.coordinates } } });
     map.addLayer({ id: 'amoc-casing', type: 'line', source: 'amoc', paint: { 'line-color': '#000000', 'line-opacity': 0.5, 'line-width': 7 } });
     map.addLayer({ id: 'amoc-line', type: 'line', source: 'amoc', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#f2b84b', 'line-width': 3, 'line-dasharray': [2, 1.2] } });
-    map.on('click', 'amoc-line', () => { const x = amocLast; if (x) { showCard(amocCard(x)); updatePadding(); } });
+    // clicks on the line go through the map's common click handler (AMOC first, nothing while measuring or profiling)
     map.on('mouseenter', 'amoc-line', () => { if (!map.getCanvas().style.cursor) map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', 'amoc-line', () => { if (map.getCanvas().style.cursor === 'pointer') map.getCanvas().style.cursor = ''; });
   }
@@ -1469,7 +1578,6 @@ async function setAmoc(on: boolean, card = true) {
   if (card) { showCard(amocCard(d)); updatePadding(); }
   layersChanged();
 }
-let amocLast: AmocData | null = null;
 $<HTMLInputElement>('t-amoc').addEventListener('change', (e) => setAmoc((e.target as HTMLInputElement).checked));
 
 /** Something on the map changed: hash, badge, readout, the Time panel's targets, the tool-bar dot. */
@@ -1647,7 +1755,7 @@ function loadTime(): Promise<TimeUI> {
       },
     } : null;
     const t = new m.TimeUI({
-      beforeOpen: () => { hideOffer(); if (seaOpen) closeSea(false); water.close(); if (profiling) setProfiling(false); measureTool.stop(); },
+      beforeOpen: () => { hideOffer(); closeTools('time', { seaHash: false }); },
       layout: () => updatePadding(),
       onChange: () => { updateTimeDot(); eventsUI?.refreshLegend(); updateLayersBadge(); },
     }, years, months, ago);
@@ -1723,7 +1831,7 @@ map.on('idle', loadEnd);
 // ---------- guided tour (tour.ts and its chapters load on first use) ----------
 // The tour drives the same functions as the controls: layers by their #layers= tokens (plus the seafloor
 // switches), one tool at a time, the camera, the exaggeration and the drawers. Exiting puts them back.
-const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+// (reduceMotion is declared at the top of the module)
 /** Every layer that is on, as tokens (veil, plates, new2026, the depth-certainty ids, marine, and #layers= tokens). */
 function layerTokens(): string[] {
   const t: string[] = [];
@@ -1828,6 +1936,7 @@ async function startTour(n = 1) { await (await loadTour()).start(n); }
 $('tour-btn').addEventListener('click', () => { if (tour?.active) tour.exit(); else startTour(1); });
 
 // ---------- deep link ----------
+await marineInitP; // the marine-life switch and the tour's layer tokens need its manifest
 function storyFromHash() {
   const m = /story=([\w-]+)/.exec(location.hash);
   return m ? stories.find((s) => s.id === m[1]) : undefined;
@@ -2070,3 +2179,7 @@ Object.assign(window, {
 // every control above is wired; hooks that ran earlier (the ruler) may now reach the other panels
 appReady = true;
 updatePadding();
+// replay the clicks held during start-up (holdEarlyClick), and search for what was typed meanwhile
+document.removeEventListener('click', holdEarlyClick, true);
+for (const id of earlyClicks.splice(0)) { $(id).removeAttribute('aria-busy'); $(id).click(); }
+if (document.activeElement === input) { loadOverlaySearch(); if (input.value.trim()) renderResults(); }

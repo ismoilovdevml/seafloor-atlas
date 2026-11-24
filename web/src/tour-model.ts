@@ -34,6 +34,8 @@ export interface TourText {
     region: string; start: string; exit: string; back: string; next: string; finish: string; pause: string; play: string;
     voiceOn: string; voiceOff: string; chapters: string; count: (n: number, total: number) => string;
     chapter: (n: number, title: string) => string; paused: string; sourcePrefix: string; keys: string;
+    /** name of the EN / UZ switch in the tour card */
+    language: string;
   };
   chapters: Record<string, TourChapterText>;
 }

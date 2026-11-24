@@ -257,7 +257,7 @@
             <label class="row-main"><input type="checkbox" role="switch" id="t-water" aria-controls="water" /> <span class="row-name">Ocean water</span></label>
             <button class="info-btn" type="button" aria-expanded="false" aria-controls="info-water" aria-label="About ocean water"><svg width="18" height="18" aria-hidden="true"><use href="#i-info"/></svg></button>
             <div class="info" id="info-water" hidden>
-              <p>Temperature, salinity and density at 11 depths, averaged over 1991–2020. Switching it on opens the Ocean water tool.</p>
+              <p>Temperature, salinity and density at 11 depths and at the seafloor, averaged over 1991–2020. Switching it on opens the Ocean water tool.</p>
               <p class="src">World Ocean Atlas 2023, NOAA NCEI.</p>
             </div>
           </li>
@@ -516,7 +516,7 @@
     </aside>
 
     <!-- ================= readout (bottom right) ================= -->
-    <div class="readout" id="readout" aria-live="polite">
+    <div class="readout" id="readout">
       <span class="hint" id="readout-hint">Point at the seafloor to read its depth</span>
       <dl class="readout-grid" id="readout-grid" hidden>
         <div class="r-depth"><dt id="r-depth-dt">Depth</dt><dd id="r-depth"></dd></div>
@@ -526,7 +526,7 @@
         <div class="r-extra" id="r-extra" hidden><dt id="r-extra-dt"></dt><dd id="r-extra-dd"></dd></div>
         <div class="r-extra" id="r-extra2" hidden><dt id="r-extra2-dt"></dt><dd id="r-extra2-dd"></dd></div>
       </dl>
-      <p class="map-att" id="map-att" hidden></p>
+      <p class="map-att" id="map-att" tabindex="0" hidden></p>
     </div>
 
     <!-- ================= tool panels (bottom centre, one at a time) ================= -->

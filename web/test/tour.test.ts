@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { CHAPTERS } from '../src/tour-chapters';
 import { TEXT_EN } from '../src/tour-text-en';
 import { TEXT_UZ } from '../src/tour-text-uz';
-import { tourLang } from '../src/tour-lang';
+import { hashWithLang, langFromHash, tourLang } from '../src/tour-lang';
 import { READ_MIN_MS, TOUR_LAYER_TOKENS, cameraFor, hashWithTour, nearCamera, readingMs, tourFromHash, wordCount } from '../src/tour-model';
 import { PRESETS, SEA_MAX, SEA_MIN, landAreaAt, type Hypsometry } from '../src/sealevel';
 import { BATHY_STOPS } from '../src/palette';
@@ -207,6 +207,8 @@ describe('tour numbers match their sources', () => {
     has('sea-level', `${FACTS['land at the ice age, million km² (hypsometry)']} million km² stand above the sea, ${FACTS['more land than today, million km² (hypsometry)']} million km² more than today`);
     has('sea-level', `from −${FACTS['lowest sea level, m (slider)']} m to +${FACTS['highest sea level, m (slider)']} m`);
     has('water', `${FACTS['water depths (WOA manifest)']} depths from the surface to ${FACTS['deepest water layer, m (WOA manifest)']} m, averaged over ${woa.period.replace('-', '–')}`);
+    // the depth slider ends at a "Seafloor" stop when the manifest has the bottom layers: the tour says so
+    if (woa.map.bottom) { has('water', 'on the seafloor itself'); expect(TEXT_UZ.chapters.water.text).toContain('okean tubining oʻzida'); }
     has('monsoon', MONTH_LONG[(CHAPTERS.find((c) => c.id === 'monsoon')!.tool as { state: { month: number } }).state.month - 1]);
     for (const s of ['0.02 mg/m³', 'over 3 in the Peru upwelling', 'about 1.3 m/s']) { has('monsoon', s); expect(visibleText(html)).toContain(s); }
     has('quakes', `magnitude ${FACTS['earthquake magnitude floor (quakes.json)']} or more since ${FACTS['earthquake catalogue start (quakes.json)']}`);
@@ -256,5 +258,13 @@ describe('Uzbek tour text', () => {
     expect(tourLang(['en-US'], '#tour=3&lang=uz')).toBe('uz');
     expect(tourLang(['uz'], '#lang=en')).toBe('en');
     expect(tourLang([], '')).toBe('en');
+  });
+  it('the EN / UZ switch writes #lang= and keeps the rest of the address', () => {
+    expect(hashWithLang('', 'uz')).toBe('#lang=uz');
+    expect(hashWithLang('#tour=3&lang=en', 'uz')).toBe('#tour=3&lang=uz');
+    expect(hashWithLang('#story=x&lang=uz&tour=2', 'en')).toBe('#story=x&tour=2&lang=en');
+    expect(langFromHash('#tour=3&lang=uz')).toBe('uz');
+    expect(langFromHash('#tour=3')).toBeNull();
+    expect(langFromHash('#lang=fr')).toBeNull();
   });
 });

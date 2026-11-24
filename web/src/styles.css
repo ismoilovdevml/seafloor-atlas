@@ -95,6 +95,9 @@ kbd { font: 600 11.5px/1 var(--sans); color: var(--ink-3); border: 1px solid var
   display: flex; align-items: center; gap: 9px; margin: 0 6px 0 2px; flex: none;
   font: 500 20px/1 var(--serif); font-variation-settings: 'opsz' 36; letter-spacing: -0.005em; white-space: nowrap;
   text-shadow: 0 1px 10px rgba(0, 0, 0, 0.7);
+  /* a faint glass backing: invisible over open ocean or space, it keeps the name readable over ice and shelf */
+  height: 40px; padding: 0 12px 0 9px; margin-left: -4px; border-radius: var(--r-ctl);
+  background: rgba(11, 17, 30, 0.72); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
 }
 /* the mark is the depth ramp itself, shelf to abyss, as a sounding disc */
 .brand-mark {
@@ -132,7 +135,10 @@ kbd { font: 600 11.5px/1 var(--sans); color: var(--ink-3); border: 1px solid var
 }
 .chip svg { color: var(--ink-2); flex: none; }
 .chip:hover { border-color: var(--line-strong); }
-.chip[aria-expanded='true'], .chip[aria-pressed='true'] { background: rgba(255, 179, 92, 0.14); border-color: var(--acc); color: var(--acc); }
+.chip[aria-expanded='true'], .chip[aria-pressed='true'] {
+  /* the amber tint sits on the same glass as the idle chip, so the accent text keeps >= 5:1 over white ice */
+  background: linear-gradient(rgba(255, 179, 92, 0.14), rgba(255, 179, 92, 0.14)), var(--glass); border-color: var(--acc); color: var(--acc);
+}
 .chip[aria-expanded='true'] svg, .chip[aria-pressed='true'] svg { color: var(--acc); }
 .badge {
   min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: inline-grid; place-items: center;
@@ -455,6 +461,11 @@ input[role='switch']:checked::after { transform: translateX(12px); background: v
 #water-depth { width: 100%; accent-color: var(--acc); margin: 2px 0 0; height: 22px; }
 .water-depth-ticks { position: relative; height: 15px; margin: 0 8px; font-size: 11.5px; color: var(--ink-3); }
 .water-depth-ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; line-height: 15px; }
+/* the last two stops ("5 km", "floor") are one step apart: the end label ends at the track's end, the one before it
+   ends at its own stop, so in a narrow panel they no longer run together as "5 kmfloor" */
+.water-depth-ticks span:first-child { transform: translateX(-4px); }
+.water-depth-ticks span:last-child { transform: translateX(calc(-100% + 8px)); }
+.water-depth-ticks span:nth-last-child(2):not(:first-child) { transform: translateX(-100%); padding-right: 2px; }
 .water-months { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 8px; align-items: center; }
 .water-months[aria-disabled='true'] { opacity: 0.45; }
 .water-play { width: 32px; height: 32px; }
@@ -613,6 +624,15 @@ input[role='switch']:checked::after { transform: translateX(12px); background: v
   .chip { padding: 0 10px; }
   .ui { grid-template-columns: minmax(240px, 260px) minmax(0, 1fr) minmax(240px, 270px); }
 }
+/* the centre column is 438 px at 1024 px but the labelled tool bar was 483 px, so it ran 11 px under the legend and
+   the readout (901-1068 px windows): tighter tools from 901 px, icons only below 1021 px (as below 900 px) */
+@media (min-width: 901px) and (max-width: 1100px) {
+  .tool { padding: 0 9px 0 8px; gap: 6px; }
+}
+@media (min-width: 901px) and (max-width: 1020px) {
+  .tool span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .tool { padding: 0 12px; }
+}
 @media (min-width: 761px) and (max-width: 900px) {
   .brand { font-size: 0; gap: 0; margin-right: 2px; }
   .tool span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
@@ -666,7 +686,7 @@ input[role='switch']:checked::after { transform: translateX(12px); background: v
   .legend.collapsed .legend-head { min-height: 44px; height: 100%; }
   .topbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 6px; row-gap: 8px; align-items: center; }
   .top-left, .top-right { display: contents; }
-  .brand { grid-row: 1; grid-column: 1; font-size: 21px; }
+  .brand { grid-row: 1; grid-column: 1; font-size: 21px; justify-self: start; }
   .top-right { grid-row: 1; grid-column: 3; }
   #tour-btn { grid-row: 1; grid-column: 2; height: 44px; padding: 0 12px 0 10px; }
   .top-right { display: flex; gap: 6px; }
@@ -719,6 +739,7 @@ input[role='switch']:checked::after { transform: translateX(12px); background: v
   .tool-panel { grid-area: panel; max-height: 52vh; overflow: auto; overscroll-behavior: contain; padding: 8px 12px 10px; }
   .ui.profiling .card { display: none; }
   .ui.profiling :is(.stories, .layers, .tabs, .toolbar, .legend),
+  .ui.measuring :is(.stories, .layers, .tabs, .toolbar, .legend, .card),
   .ui.sea-open :is(.stories, .layers, .tabs, .toolbar, .legend, .card),
   .ui.water-open :is(.stories, .layers, .tabs, .toolbar, .legend, .card),
   .ui.time-open :is(.stories, .layers, .tabs, .toolbar, .legend, .card) { display: none !important; }
@@ -758,8 +779,13 @@ input[role='switch']:checked::after { transform: translateX(12px); background: v
   .row-main { min-height: 44px; }
 }
 @media (max-width: 370px) {
-  .readout-grid { grid-template-columns: auto auto; }
   .tabs button svg { display: none; }
+}
+/* phones up to 430 px: four readout cells do not fit beside the folded legend (they ran together as "-4,518 m0%"),
+   so depth and measured share sit on one row, latitude and longitude on the next, as on a desktop */
+@media (max-width: 430px) {
+  .readout-grid { grid-template-columns: minmax(0, auto) minmax(0, auto); }
+  .r-meas, .readout .r-pos + .r-pos { text-align: right; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -780,13 +806,22 @@ input[role='switch']:checked::after { transform: translateX(12px); background: v
 }
 .nav3d-btn + .nav3d-btn { border-top: 1px solid var(--line); }
 .nav3d-btn:hover { color: var(--ink); background: var(--hover); }
-.nav3d-btn[aria-pressed='true'] { color: var(--acc); background: var(--selected); }
+.nav3d-btn[aria-pressed='true'], .nav3d-btn[data-tilted] { color: var(--acc); background: var(--selected); }
 .nav3d-compass .needle { transform-box: view-box; transform-origin: 12px 12px; transition: transform 0.12s linear; }
 @media (max-width: 760px) {
   .nav3d { flex-direction: row; }
   .nav3d-btn + .nav3d-btn { border-top: 0; border-left: 1px solid var(--line); }
 }
 @media (pointer: coarse) { .nav3d-btn { width: 44px; height: 44px; } }
+/* short desktop windows dock Sea level / Ocean water / Time in the right column, over the rail's usual place above
+   the readout: the rail steps just left of that column (column width + page padding + 10 px; main.ts places the rail
+   with inline styles, hence !important) */
+@media (min-width: 761px) and (max-height: 759px) {
+  .ui:is(.water-open, .sea-open, .time-open) ~ .nav3d { right: calc(max(16px, env(safe-area-inset-right)) + 292px + 10px) !important; }
+}
+@media (min-width: 761px) and (max-width: 1100px) and (max-height: 759px) {
+  .ui:is(.water-open, .sea-open, .time-open) ~ .nav3d { right: calc(max(16px, env(safe-area-inset-right)) + 270px + 10px) !important; }
+}
 @media (prefers-reduced-motion: reduce) { .nav3d-compass .needle { transition: none; } }
 
 /* ================= measure distance (measure.ts) ================= */
@@ -873,4 +908,4 @@ input[role='switch']:checked::after { transform: translateX(12px); background: v
 /* ================= satellite land attribution (basemap.ts): one line under the readout, tap to read it all ================= */
 .readout { flex-wrap: wrap; }
 .map-att { flex-basis: 100%; min-width: 0; margin: 6px 0 0; padding-top: 5px; border-top: 1px solid var(--line); font-size: 10.5px; line-height: 1.35; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-.map-att.open { white-space: normal; }
+.map-att.open, .map-att:focus { white-space: normal; }

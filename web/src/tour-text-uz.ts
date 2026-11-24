@@ -25,6 +25,7 @@ export const TEXT_UZ: TourText = {
     paused: 'Pauzada',
     sourcePrefix: 'Manba: ',
     keys: 'Chap va oʻng strelkalar: orqaga va oldinga. Probel: pauza yoki davom. Esc: chiqish.',
+    language: 'Sayohat tili',
   },
   chapters: {
     globe: {
@@ -59,7 +60,7 @@ export const TEXT_UZ: TourText = {
     },
     water: {
       title: 'Suv ichida',
-      text: '“Ocean water” harorat, shoʻrlik va zichlikni sirtdan 5 000 m gacha 11 ta chuqurlikda, 1991–2020-yillar oʻrtachasi sifatida koʻrsatadi. Suv ustunini koʻrish uchun okeanni bosing: bu nuqta Tinch okeanining gʻarbida, yuqorisi iliq, termoklin ostida esa sovuq.',
+      text: '“Ocean water” harorat, shoʻrlik va zichlikni sirtdan 5 000 m gacha 11 ta chuqurlikda va okean tubining oʻzida (shkalaning oxirgi qadami), 1991–2020-yillar oʻrtachasi sifatida koʻrsatadi. Suv ustunini koʻrish uchun okeanni bosing: bu nuqta Tinch okeanining gʻarbida, yuqorisi iliq, termoklin ostida esa sovuq.',
       source: src('water'),
     },
     monsoon: {

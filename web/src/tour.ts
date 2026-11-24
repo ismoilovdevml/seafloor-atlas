@@ -3,10 +3,13 @@
 // by itself after the reading time (words at 200 per minute, at least 6 s) once the camera has settled.
 // Back / Next / Pause / Exit, chapter dots, keys (Left / Right, Space, Esc), optional read-aloud (Web Speech,
 // off by default), #tour=N deep link. Exiting restores the layers, tool, exaggeration and drawers the viewer
-// had before. Loaded on demand (main.ts); scenes in tour-chapters.ts, words in tour-text-en.ts.
+// had before. Loaded on demand (main.ts); scenes in tour-chapters.ts, words in tour-text-en.ts / tour-text-uz.ts.
+// The EN / UZ switch in the card changes the words in place and writes #lang= (so a shared link keeps it); a
+// #lang= typed into the address later, or a new start, is followed too, so the one cached Tour never goes stale.
 import './tour.css';
 import { CHAPTERS } from './tour-chapters';
 import { TEXT_EN } from './tour-text-en';
+import { hashWithLang, langFromHash, tourLang, type TourLang } from './tour-lang';
 import { cameraFor, hashWithTour, nearCamera, readingMs, type TourCamera, type TourScene, type TourText, type TourTool } from './tour-model';
 
 export interface TourHost {
@@ -75,7 +78,7 @@ export class Tour {
   /** id of the element spotlit now (null: none) */
   spotId: string | null = null;
   /** read aloud only where the browser has speech, and for a non-English tour only with a voice for that language */
-  readonly canSpeak: boolean;
+  canSpeak = false;
   readonly stats = { flights: 0, retries: 0, lastFlyMs: 0 };
   private token = 0;
   private elapsed = 0;
@@ -92,36 +95,77 @@ export class Tour {
   private current: Promise<void> = Promise.resolve();
   /** tools and layers are applied one chapter at a time, so a quick Next or Exit never interleaves two */
   private applying: Promise<void> = Promise.resolve();
+  /** the language picked with the switch this session (it wins over the browser's when #lang= is absent) */
+  private chosen: TourLang | null = null;
+  private langSeq = 0;
 
   constructor(private host: TourHost, readonly chapters: TourScene[] = CHAPTERS, private t: TourText = TEXT_EN) {
-    const speech = typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
-    let voiced = t.lang === 'en';
-    if (speech && !voiced) { try { voiced = speechSynthesis.getVoices().some((v) => v.lang.toLowerCase().startsWith(t.lang)); } catch { /* none */ } }
-    this.canSpeak = speech && voiced;
+    this.canSpeak = Tour.voiced(t.lang);
     this.root = document.createElement('section');
-    this.root.lang = t.lang; // screen readers and hyphenation follow the tour's language
     this.build(this.root);
+    this.localize();
     this.spot = document.createElement('div');
     this.spot.className = 'tour-spot';
     this.spot.setAttribute('aria-hidden', 'true');
     this.spot.hidden = true;
     document.body.append(this.spot);
+    // an edited or pasted #lang= switches the words even while the tour is closed
+    window.addEventListener('hashchange', () => {
+      const l = langFromHash(location.hash);
+      if (l && l !== this.t.lang) void this.setLang(l, false);
+    });
+  }
+
+  private static voiced(lang: string): boolean {
+    const speech = typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
+    if (!speech) return false;
+    if (lang === 'en') return true;
+    try { return speechSynthesis.getVoices().some((v) => v.lang.toLowerCase().startsWith(lang)); } catch { return false; }
+  }
+
+  get lang(): TourLang { return this.t.lang === 'uz' ? 'uz' : 'en'; }
+
+  /** Switches the tour's words to `lang` (loading the Uzbek file on first use); the chapter and its timer go on. */
+  async setLang(lang: TourLang, writeHash = true): Promise<void> {
+    const seq = ++this.langSeq;
+    if (writeHash) {
+      this.chosen = lang;
+      const h = hashWithLang(location.hash, lang);
+      if (h !== location.hash) history.replaceState(null, '', h);
+    }
+    if (lang === this.t.lang) { this.renderLang(); return; }
+    const text = lang === 'uz' ? (await import('./tour-text-uz')).TEXT_UZ : TEXT_EN;
+    if (seq !== this.langSeq) return; // a later switch won
+    const voiceWas = this.voice;
+    this.stopSpeech();
+    this.t = text;
+    this.canSpeak = Tour.voiced(text.lang);
+    if (!this.canSpeak) this.voice = false;
+    this.localize();
+    if (this.active) {
+      const tx = this.t.chapters[this.chapters[this.index].id];
+      this.total = readingMs(tx.text);
+      this.render(false);
+      this.renderPlay();
+      if (voiceWas && this.voice && this.settled && this.playing) this.speak();
+    }
   }
 
   private $<T extends HTMLElement = HTMLElement>(id: string) { return this.root.querySelector<T>(`#${id}`)!; }
 
   private build(el: HTMLElement) {
-    const u = this.t.ui;
     el.className = 'tour';
     el.id = 'tour';
     el.hidden = true;
-    el.setAttribute('aria-label', u.region);
     el.setAttribute('aria-describedby', 'tour-keys');
     el.innerHTML = `
       <div class="tour-head">
         <span class="tour-avatar">${AVATAR}</span>
-        <p class="tour-count"><span class="tour-name">${u.region}</span><span id="tour-count"></span></p>
-        <button type="button" class="close tour-exit" id="tour-exit" aria-label="${u.exit}"><svg width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
+        <p class="tour-count"><span class="tour-name" id="tour-name"></span><span id="tour-count"></span></p>
+        <div class="tour-lang" id="tour-lang" role="group">
+          <button type="button" data-lang="en" lang="en" title="English">EN</button><button type="button" data-lang="uz" lang="uz" title="Oʻzbekcha">UZ</button>
+        </div>
+        <button type="button" class="close tour-exit" id="tour-exit"><svg width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
       </div>
       <div class="tour-bubble">
         <div class="tour-say" id="tour-say" aria-live="polite" aria-atomic="true">
@@ -131,20 +175,21 @@ export class Tour {
         <p class="tour-src" id="tour-src"></p>
       </div>
       <div class="tour-timer" aria-hidden="true"><span id="tour-timer-fill"></span></div>
-      <div class="tour-dots" id="tour-dots" role="group" aria-label="${u.chapters}"></div>
+      <div class="tour-dots" id="tour-dots" role="group"></div>
       <div class="tour-ctrl">
-        <button type="button" class="tour-btn" id="tour-back">${ICON.back}<span>${u.back}</span></button>
-        <button type="button" class="tour-btn tour-play" id="tour-play">${ICON.play}<span id="tour-play-t">${u.pause}</span></button>
-        <button type="button" class="tour-btn primary" id="tour-next"><span id="tour-next-t">${u.next}</span>${ICON.next}</button>
-        <button type="button" class="tour-btn icon" id="tour-voice" aria-pressed="false" aria-label="${u.voiceOff}" title="${u.voiceOff}"${this.canSpeak ? '' : ' hidden'}>${ICON.voice}</button>
+        <button type="button" class="tour-btn" id="tour-back">${ICON.back}<span id="tour-back-t"></span></button>
+        <button type="button" class="tour-btn tour-play" id="tour-play">${ICON.play}<span id="tour-play-t"></span></button>
+        <button type="button" class="tour-btn primary" id="tour-next"><span id="tour-next-t"></span>${ICON.next}</button>
+        <button type="button" class="tour-btn icon" id="tour-voice" aria-pressed="false">${ICON.voice}</button>
       </div>
-      <p class="sr-only" id="tour-keys">${u.keys}</p>`;
-    this.$('tour-dots').innerHTML = this.chapters.map((c, i) =>
-      `<button type="button" class="tour-dot" data-i="${i}" aria-label="${u.chapter(i + 1, this.t.chapters[c.id].title)}" tabindex="-1"></button>`).join('');
+      <p class="sr-only" id="tour-keys"></p>`;
+    this.$('tour-dots').innerHTML = this.chapters.map((_, i) =>
+      `<button type="button" class="tour-dot" data-i="${i}" tabindex="-1"></button>`).join('');
     el.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
       if (!b) return;
-      if (b.id === 'tour-exit') this.exit();
+      if (b.dataset.lang) void this.setLang(b.dataset.lang as TourLang);
+      else if (b.id === 'tour-exit') this.exit();
       else if (b.id === 'tour-back') this.back();
       else if (b.id === 'tour-next') this.next();
       else if (b.id === 'tour-play') this.setPlaying(!this.playing);
@@ -154,9 +199,38 @@ export class Tour {
     document.getElementById('ui')!.append(el);
   }
 
+  /** Every fixed string of the card in the current language (the chapter words are set by render()). */
+  private localize() {
+    const u = this.t.ui, el = this.root;
+    el.lang = this.t.lang; // screen readers and hyphenation follow the tour's language
+    el.setAttribute('aria-label', u.region);
+    this.$('tour-name').textContent = u.region;
+    this.$('tour-lang').setAttribute('aria-label', u.language);
+    this.$('tour-exit').setAttribute('aria-label', u.exit);
+    this.$('tour-dots').setAttribute('aria-label', u.chapters);
+    this.$('tour-back-t').textContent = u.back;
+    this.$('tour-keys').textContent = u.keys;
+    const voice = this.$('tour-voice');
+    voice.hidden = !this.canSpeak;
+    voice.setAttribute('aria-label', u.voiceOff); // a toggle keeps its name; aria-pressed carries the state
+    voice.setAttribute('aria-pressed', String(this.voice));
+    voice.title = this.voice ? u.voiceOn : u.voiceOff;
+    this.$('tour-dots').querySelectorAll<HTMLButtonElement>('button').forEach((b, i) =>
+      b.setAttribute('aria-label', u.chapter(i + 1, this.t.chapters[this.chapters[i].id].title)));
+    this.renderPlay();
+    this.renderLang();
+    if (this.active) this.render(false);
+    else this.$('tour-next-t').textContent = u.next;
+  }
+  private renderLang() {
+    this.$('tour-lang').querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === this.t.lang)));
+  }
+
   // ---------- lifecycle ----------
   /** Starts (or jumps, when running) at chapter n (1-based); resolves when that chapter has settled. */
-  start(n = 1): Promise<void> {
+  async start(n = 1): Promise<void> {
+    const want = langFromHash(location.hash) ?? this.chosen ?? tourLang(navigator.languages ?? [navigator.language], '');
+    if (want !== this.t.lang) await this.setLang(want, false);
     if (!this.active) {
       this.snap = { layers: this.host.getLayers(), tool: this.host.getTool(), exaggeration: this.host.getExaggeration(), drawers: this.host.getDrawers() };
       this.active = true;
@@ -371,7 +445,7 @@ export class Tour {
   };
 
   // ---------- rendering ----------
-  private render() {
+  private render(resetTimer = true) {
     const i = this.index, n = this.chapters.length, ch = this.chapters[i], tx = this.t.chapters[ch.id], u = this.t.ui;
     this.$('tour-count').textContent = u.count(i + 1, n);
     this.$('tour-title').textContent = tx.title;
@@ -386,7 +460,7 @@ export class Tour {
     });
     this.$<HTMLButtonElement>('tour-back').disabled = i === 0;
     this.$('tour-next-t').textContent = i === n - 1 ? u.finish : u.next;
-    this.$('tour-timer-fill').style.transform = 'scaleX(0)';
+    if (resetTimer) this.$('tour-timer-fill').style.transform = 'scaleX(0)';
   }
   private renderPlay() {
     const b = this.$('tour-play');

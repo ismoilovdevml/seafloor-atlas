@@ -17,6 +17,21 @@ export function satSource(): RasterSourceSpecification {
 
 /** Satellite land is on unless the hash says `land=grey`. */
 export function satLandFromHash(hash: string): boolean { return !/(?:^#|[#&])land=grey(?:&|$)/.test(hash); }
+/** localStorage key of the visitor's Satellite land choice ('grey' = off, 'sat' = on). */
+export const SAT_KEY = 'sfa-land';
+/** The stored choice: true / false, null when nothing is stored or storage is blocked. */
+export function storedSatLand(storage: Pick<Storage, 'getItem'> | null): boolean | null {
+  try { const v = storage?.getItem(SAT_KEY); return v === 'grey' ? false : v === 'sat' ? true : null; } catch { return null; }
+}
+/** Remembers the choice; storage blocked: it lasts until reload. */
+export function storeSatLand(storage: Pick<Storage, 'setItem'> | null, on: boolean): void {
+  try { storage?.setItem(SAT_KEY, on ? 'sat' : 'grey'); } catch { /* storage blocked */ }
+}
+/** Satellite land at start-up: a land= part in the hash wins, then the stored choice, then the default (on). */
+export function initialSatLand(hash: string, stored: boolean | null): boolean {
+  if (/(?:^#|[#&])land=/.test(hash)) return satLandFromHash(hash);
+  return stored ?? true;
+}
 /** The hash with land=grey when satellite land is off (dropped when on, the default), other parts kept in order. */
 export function hashWithLand(hash: string, sat: boolean): string {
   const parts = hash.replace(/^#/, '').split('&').filter((p) => p && !p.startsWith('land='));
