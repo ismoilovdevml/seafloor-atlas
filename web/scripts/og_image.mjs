@@ -1,6 +1,10 @@
 // Render the social preview image (Open Graph / Twitter card), 1200x630, into web/public/og-image.png.
 // usage: node scripts/og_image.mjs [baseUrl=https://seaflooratlas.org/] [out=public/og-image.png]
 // The page is loaded with the UI hidden, the "what's actually measured" veil on, and a title card drawn on top.
+// Then shrink it below 300 KB (Telegram / WhatsApp drop larger previews; test/assets.test.ts checks): a 256-colour
+// Floyd-Steinberg palette is visually identical here (472 KB -> 158 KB, PSNR 41.6 dB, 2026-11-24):
+//   ../.venv/bin/python -c "from PIL import Image as I; i=I.open('public/og-image.png').convert('RGB'); \
+//     i.quantize(palette=i.quantize(256, method=I.Quantize.FASTOCTREE), dither=I.Dither.FLOYDSTEINBERG).save('public/og-image.png', optimize=True)"
 import { chromium } from 'playwright-core';
 
 const [,, base = 'https://seaflooratlas.org/', out = 'public/og-image.png'] = process.argv;

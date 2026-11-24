@@ -26,7 +26,7 @@ describe('static SEO pages', () => {
       const p = `public/views/${s.id}/index.html`;
       expect(existsSync(join(WEB, p)), p).toBe(true);
       const html = read(p);
-      expect(html).toContain(`href="/#story=${s.id}"`);
+      expect(html).toContain(`href="../../#story=${s.id}"`);
       expect(html).toContain(`<link rel="canonical" href="https://seaflooratlas.org/views/${s.id}/">`);
     }
   });
@@ -54,7 +54,7 @@ describe('EEZ report cards and downloads', () => {
       const html = read(`public/eez/${r.slug}/index.html`);
       expect(html).toContain(`${(r.share! * 100).toFixed(1)} %`);
       expect(sm).toContain(`<loc>https://seaflooratlas.org/eez/${r.slug}/</loc>`);
-      expect(idx).toContain(`href="/eez/${r.slug}/"`);
+      expect(idx).toContain(`href="../eez/${r.slug}/"`);
     }
   });
   it('serves every dataset CSV table linked from the about page', () => {
@@ -62,7 +62,32 @@ describe('EEZ report cards and downloads', () => {
     expect(files.length).toBeGreaterThan(5);
     for (const f of files) {
       expect(read(`public/data/tables/${f}`)).toBe(read(`../dataset/tables/${f}`));
-      expect(about).toContain(`href="/data/tables/${f}"`);
+      expect(about).toContain(`href="../data/tables/${f}"`);
     }
+  });
+});
+
+describe('SEO pages work under any base path (seaflooratlas.org/ and the /seafloor-atlas/ mirror)', () => {
+  const pages = ['public/about/index.html', 'public/eez/index.html',
+    ...readdirSync(join(WEB, 'public/views')).map((d) => `public/views/${d}/index.html`),
+    ...readdirSync(join(WEB, 'public/eez')).filter((d) => !d.includes('.')).map((d) => `public/eez/${d}/index.html`)]
+    .filter((p) => existsSync(join(WEB, p)));
+  it('no root-absolute href or src, and every internal link points at a file in public/', () => {
+    expect(pages.length).toBeGreaterThan(250);
+    const absolute: string[] = [], broken: string[] = [];
+    for (const p of pages) {
+      const html = read(p);
+      for (const m of html.matchAll(/\b(?:href|src)="([^"]*)"/g)) {
+        const u = m[1];
+        if (u.startsWith('/') && !u.startsWith('//')) absolute.push(`${p}: ${u}`);
+        if (/^(?:[a-z]+:|\/\/|#)/i.test(u)) continue; // external, data: or same-page
+        const target = new URL(u, `https://x.test/${p.replace(/^public\//, '')}`).pathname; // drops #hash and ?query
+        const file = join(WEB, 'public', decodeURIComponent(target), target.endsWith('/') ? 'index.html' : '');
+        // the globe itself (/index.html) is built by Vite from web/index.html, not kept in public/
+        if (target !== '/' && !existsSync(file)) broken.push(`${p}: ${u}`);
+      }
+    }
+    expect(absolute).toEqual([]);
+    expect(broken).toEqual([]);
   });
 });

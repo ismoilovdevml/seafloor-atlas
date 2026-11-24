@@ -31,13 +31,17 @@ OUT = ROOT / "web/public/data/wrecks.geojson"
 ENDPOINT = "https://query.wikidata.org/sparql"
 UA = "seafloor-atlas-data-prep/0.1 (open-data ocean map; https://github.com/ismoilovdevml/seafloor-atlas)"
 
-QUERY = """
-SELECT ?item ?label ?coord ?cpart ?crank ?typeLabel ?sunkWreck ?sunkEvent ?sunkEvent2 ?dissolved ?image ?article ?sl WHERE {
+# The patterns that decide which items a query returns (its OPTIONALs only add columns). COUNT_QUERY counts the same
+# items, so a CSV that WDQS cut short mid-stream (it can answer 200 and stop at its 60 s limit) is caught.
+CORE = """
   ?item wdt:P31/wdt:P279* wd:Q852190 ; wikibase:sitelinks ?sl ;
         p:P625 ?cst .
   ?cst ps:P625 ?coord ; wikibase:rank ?crank .
   FILTER(?crank != wikibase:DeprecatedRank)
-  OPTIONAL { ?cst pq:P518 ?cpart }
+"""
+QUERY = """
+SELECT ?item ?label ?coord ?cpart ?crank ?typeLabel ?sunkWreck ?sunkEvent ?sunkEvent2 ?dissolved ?image ?article ?sl WHERE {""" \
+    + CORE + """  OPTIONAL { ?cst pq:P518 ?cpart }
   OPTIONAL { ?item rdfs:label ?label FILTER(LANG(?label) = "en") }
   OPTIONAL { ?item wdt:P31 ?type FILTER(?type != wd:Q852190) ?type rdfs:label ?typeLabel FILTER(LANG(?typeLabel) = "en") }
   OPTIONAL { ?item p:P31 ?s1 . ?s1 ps:P31 wd:Q852190 ; pq:P580 ?sunkWreck }
@@ -52,13 +56,15 @@ SELECT ?item ?label ?coord ?cpart ?crank ?typeLabel ?sunkWreck ?sunkEvent ?sunkE
 # Ships that are not typed as shipwrecks but carry a shipwrecking event (Q906512, or an event item that is
 # an instance of it, e.g. "sinking of the Wilhelm Gustloff") with a coordinate qualifier on that event.
 # Only the event's coordinate is used: the item's own P625 may be a museum or home port.
-EVENT_QUERY = """
-SELECT ?item ?label ?coord ?cpart ?crank ?typeLabel ?sunkWreck ?sunkEvent ?sunkEvent2 ?dissolved ?image ?article ?sl WHERE {
+EVENT_CORE = """
   ?item p:P793 ?s ; wikibase:sitelinks ?sl .
   ?s ps:P793 ?ev ; pq:P625 ?coord .
   { VALUES ?ev { wd:Q906512 } } UNION { ?ev wdt:P31/wdt:P279* wd:Q906512 }
   MINUS { ?item wdt:P31/wdt:P279* wd:Q852190 }
-  BIND("event" AS ?cpart) BIND(wikibase:NormalRank AS ?crank)
+"""
+EVENT_QUERY = """
+SELECT ?item ?label ?coord ?cpart ?crank ?typeLabel ?sunkWreck ?sunkEvent ?sunkEvent2 ?dissolved ?image ?article ?sl WHERE {""" \
+    + EVENT_CORE + """  BIND("event" AS ?cpart) BIND(wikibase:NormalRank AS ?crank)
   OPTIONAL { ?s pq:P585 ?d1 } OPTIONAL { ?ev wdt:P585 ?d2 } BIND(COALESCE(?d1, ?d2) AS ?sunkEvent)
   OPTIONAL { ?s pq:P580 ?sunkEvent2 }
   OPTIONAL { ?item rdfs:label ?label FILTER(LANG(?label) = "en") }
@@ -68,6 +74,12 @@ SELECT ?item ?label ?coord ?cpart ?crank ?typeLabel ?sunkWreck ?sunkEvent ?sunkE
   OPTIONAL { ?article schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/> }
 }
 """
+
+COUNT_QUERY = "SELECT (COUNT(DISTINCT ?item) AS ?n) WHERE {%s}"
+# items may be added or removed between the count and the full query (seconds apart): tolerate a few
+COUNT_SLACK = 10
+# what Blazegraph appends when a streamed answer fails part way (java.util.concurrent.TimeoutException, ...)
+JAVA_ERROR = re.compile(r"\b(?:java|javax|com\.bigdata|org\.openrdf)\.[\w.$]*(?:Exception|Error)\b|SPARQL-QUERY:")
 
 LABELS_QUERY = """
 SELECT ?item (SAMPLE(?l) AS ?label) WHERE {
@@ -82,23 +94,58 @@ GENERIC_TYPES = {"ship", "archaeological site", "recreational dive site", "offsh
                  "underwater archaeological site", "wreck", "maritime archaeological site"}
 
 
-def sparql(query: str, cache: Path, refresh: bool) -> list[dict]:
+def csv_problem(text: str, expect_items: int | None = None) -> str | None:
+    """None if `text` is a complete WDQS CSV answer, else what is wrong with it. A query that hits the server time
+    limit can still answer 200: the CSV then stops mid-row, or a Java exception is appended to it."""
+    if not text.strip():
+        return "empty answer"
+    if not text.endswith("\n"):
+        return "last line incomplete (answer cut short)"
+    if JAVA_ERROR.search(text[-4000:]):
+        return "server error appended to the answer"
+    rows = list(csv.reader(io.StringIO(text)))
+    width = len(rows[0])
+    short = sum(1 for r in rows[1:] if len(r) != width)
+    if short:
+        return f"{short} rows without {width} fields"
+    if expect_items is not None and "item" in rows[0]:
+        k = rows[0].index("item")
+        n = len({r[k] for r in rows[1:]})
+        if n < expect_items - COUNT_SLACK:
+            return f"{n} items, but a count query says {expect_items} (answer cut short)"
+    return None
+
+
+def _fetch(query: str) -> str:
+    req = urllib.request.Request(ENDPOINT, data=urllib.parse.urlencode({"query": query}).encode(),
+                                 headers={"User-Agent": UA, "Accept": "text/csv"})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        return r.read().decode("utf-8")
+
+
+def sparql(query: str, cache: Path, refresh: bool, core: str | None = None, fetch=_fetch,
+           sleep=time.sleep) -> list[dict]:
+    """Rows of a SPARQL CSV answer, cached. With `core` (the query's item patterns), the distinct items are checked
+    against a COUNT query, so a truncated answer is retried and never cached or used."""
     if cache.exists() and not refresh:
         text = cache.read_text()
     else:
-        req = urllib.request.Request(ENDPOINT, data=urllib.parse.urlencode({"query": query}).encode(),
-                                     headers={"User-Agent": UA, "Accept": "text/csv"})
         for attempt in range(3):
             try:
-                with urllib.request.urlopen(req, timeout=120) as r:
-                    text = r.read().decode("utf-8")
+                expect = None
+                if core is not None:
+                    expect = int(list(csv.DictReader(io.StringIO(fetch(COUNT_QUERY % core))))[0]["n"])
+                text = fetch(query)
+                why = csv_problem(text, expect)
+                if why:
+                    raise ValueError(f"incomplete SPARQL answer: {why}")
                 break
-            except Exception as e:  # 429/5xx: back off politely, at most 3 tries
+            except Exception as e:  # 429/5xx/truncated: back off politely, at most 3 tries
                 code = getattr(e, "code", None)
                 if attempt == 2 or (code is not None and 400 <= code < 500 and code != 429):
                     raise
-                print(f"  query failed ({e}), retrying in 60 s")
-                time.sleep(60)
+                print(f"  query failed ({str(e)[:200]}), retrying in 60 s")
+                sleep(60)
         cache.parent.mkdir(parents=True, exist_ok=True)
         cache.write_text(text)
     return list(csv.DictReader(io.StringIO(text)))
@@ -161,12 +208,12 @@ def main() -> None:
     out = args.out
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    rows = sparql(QUERY, RAW / "wikidata_shipwrecks.csv", args.refresh)
+    rows = sparql(QUERY, RAW / "wikidata_shipwrecks.csv", args.refresh, core=CORE)
     by_item: dict[str, list[dict]] = {}
     for r in rows:
         by_item.setdefault(qid(r["item"]), []).append(r)
     n_typed = len(by_item)
-    ev_rows = sparql(EVENT_QUERY, RAW / "wikidata_wreck_events.csv", args.refresh)
+    ev_rows = sparql(EVENT_QUERY, RAW / "wikidata_wreck_events.csv", args.refresh, core=EVENT_CORE)
     for r in ev_rows:
         if qid(r["item"]) not in by_item or by_item[qid(r["item"])][0]["cpart"] == "event":
             by_item.setdefault(qid(r["item"]), []).append(r)

@@ -53,10 +53,19 @@ ul.views{list-style:none;padding:0;display:grid;grid-template-columns:repeat(aut
 ul.views small{display:block;color:var(--muted)}.crumbs{font-size:14px;color:var(--muted)}.crumbs a{color:var(--muted)}pre{white-space:pre-wrap;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:14px}
 footer{max-width:820px;margin:0 auto;padding:24px 16px 40px;color:var(--muted);font-size:14px;border-top:1px solid var(--line)}`;
 
+/** Site-internal href/src values written as "/x" become relative to the page ("../../x"), so the pages work under
+ *  any base path: seaflooratlas.org/ and the GitHub Pages mirror's /seafloor-atlas/ alike. Absolute URLs (canonical,
+ *  og:image, JSON-LD, external links) are untouched. */
+export function relativize(html, path) {
+  const depth = path.split('/').filter(Boolean).length;
+  const root = depth ? '../'.repeat(depth) : './';
+  return html.replace(/\b(href|src)="\/(?!\/)/g, (_, attr) => `${attr}="${root}`);
+}
+
 function page({ path, title, description, image, imageAlt, body, jsonld = [] }) {
   const url = `${SITE}${path}`;
   const img = image ? `${SITE}${image}` : `${SITE}/og-image.png`;
-  return `<!doctype html>
+  return relativize(`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -85,7 +94,7 @@ ${body}
 </footer>
 </body>
 </html>
-`;
+`, path);
 }
 
 const stories = JSON.parse(readFileSync(join(PUB, 'data', 'stories.json'), 'utf8'));

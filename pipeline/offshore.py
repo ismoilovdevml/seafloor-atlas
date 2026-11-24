@@ -57,8 +57,18 @@ OVERPASS_URLS = [u for u in os.environ.get("OVERPASS_URLS", "").split(",") if u]
 ]
 OVERPASS = OVERPASS_URLS[0]
 PROBE = '[out:json][timeout:10];node(1);out ids;'
+PROBE_TIMEOUT = 30
+# Client read timeout for one real query, and the server-side [timeout:N] it is sent with (never above this).
+# Observed: the four layers answer in 50-100 s each, processing included (refresh run 2026-11-16).
+QUERY_TIMEOUT = 300
+MIN_QUERY_S = 60  # do not start a query with less time than this left before the deadline
 # rounds over all instances, and the pause before each next round (seconds)
 ROUND_WAITS = [0, 120, 300]
+# Unix time after which no new Overpass request starts (set by refresh_overlays.py for all its Overpass layers
+# together, so a slow Overpass cannot use up the workflow's time). Unset: no deadline.
+DEADLINE_ENV = "OVERPASS_DEADLINE"
+# A complete answer has thousands of elements; far fewer is a broken mirror, so the next instance is tried.
+MIN_ELEMENTS = {"platforms": 1000, "pipelines": 500, "windfarms": 100, "cables": 100}
 UNAVAILABLE = 75  # exit status (EX_TEMPFAIL) when no Overpass instance answered: the caller keeps the old file
 
 
@@ -106,57 +116,91 @@ def _post(url: str, query: str, timeout: float) -> bytes:
         return r.read()
 
 
-def overpass_answer_ok(body: bytes) -> str | None:
-    """None if body is a complete Overpass JSON answer, else why not (a 200 can still carry a timeout remark)."""
+def overpass_answer_ok(body: bytes, min_elements: int = 1) -> str | None:
+    """None if body is a complete Overpass JSON answer with at least `min_elements` elements, else why not (a 200
+    can still carry a timeout remark, and a mirror with a broken database answers an empty list)."""
     try:
         d = json.loads(body)
     except ValueError:
         return "not JSON (an HTML error page?)"
-    if not isinstance(d, dict) or "elements" not in d:
+    if not isinstance(d, dict) or not isinstance(d.get("elements"), list):
         return "no 'elements' in the answer"
     remark = str(d.get("remark", ""))
     if "error" in remark.lower() or "timed out" in remark.lower() or "out of memory" in remark.lower():
         return f"incomplete answer: {remark[:160]}"
+    if len(d["elements"]) < min_elements:
+        return f"only {len(d['elements'])} elements (expected at least {min_elements})"
     return None
 
 
+def env_deadline() -> float | None:
+    v = os.environ.get(DEADLINE_ENV)
+    return float(v) if v else None
+
+
+def with_server_timeout(query: str, seconds: int) -> str:
+    """The query with its [timeout:N] lowered to `seconds` (Overpass schedules short queries more readily)."""
+    return re.sub(r"\[timeout:(\d+)\]", lambda m: f"[timeout:{min(int(m.group(1)), seconds)}]", query, count=1)
+
+
 def overpass_query(query: str, urls: list[str] | None = None, waits: list[int] | None = None,
-                   post=_post, sleep=time.sleep) -> bytes:
+                   post=_post, sleep=time.sleep, *, min_elements: int = 1, deadline: float | None = None,
+                   clock=time.time) -> bytes:
     """The answer to `query` from the first Overpass instance that answers a probe and then the query in full.
 
-    Rounds over every instance with pauses between rounds; a 4xx other than 429 is our query's fault and is raised
-    at once. Raises OverpassUnavailable when nothing answered."""
+    Rounds over every instance with pauses between rounds. Only HTTP 400 (our query's syntax) is raised at once;
+    403, 404, 429, 5xx, network errors, timeouts and incomplete or near-empty answers move on to the next instance.
+    No request starts after `deadline` (default: env OVERPASS_DEADLINE), and the query's client and server timeouts
+    are cut to the time left. Raises OverpassUnavailable when nothing answered in time."""
     urls = urls or OVERPASS_URLS
     waits = ROUND_WAITS if waits is None else waits
+    deadline = env_deadline() if deadline is None else deadline
+
+    def left() -> float:
+        return math.inf if deadline is None else deadline - clock()
+
     tried: list[str] = []
+    out_of_time = False
     for rnd, wait in enumerate(waits):
         if wait:
+            if left() < wait + PROBE_TIMEOUT + MIN_QUERY_S:
+                out_of_time = True
+                break
             print(f"  no Overpass instance answered; round {rnd + 1} in {wait} s", flush=True)
             sleep(wait)
         for url in urls:
+            budget = min(QUERY_TIMEOUT, left() - PROBE_TIMEOUT)
+            if budget < MIN_QUERY_S:
+                out_of_time = True
+                break
             host = urllib.parse.urlparse(url).netloc
+            probing = True
             try:
-                if overpass_answer_ok(post(url, PROBE, 30)):
+                if overpass_answer_ok(post(url, PROBE, PROBE_TIMEOUT), 0):
                     raise ValueError("probe answer not usable")
-                body = post(url, query, 900)
-                why = overpass_answer_ok(body)
+                probing = False
+                body = post(url, with_server_timeout(query, int(budget)), budget)
+                why = overpass_answer_ok(body, min_elements)
                 if why:
                     raise ValueError(why)
                 print(f"  overpass: {host}", flush=True)
                 return body
             except urllib.error.HTTPError as e:
-                if 400 <= e.code < 500 and e.code != 429:
-                    raise
-                tried.append(f"{host}: HTTP {e.code}")
+                if e.code == 400 and not probing:
+                    raise  # the query itself is wrong: no instance will answer it
+                tried.append(f"{host}: HTTP {e.code}")  # 403/404 (mirror moved or blocks us), 429, 5xx
             except Exception as e:  # network down, timeouts, 5xx pages, incomplete answers
                 tried.append(f"{host}: {str(e)[:120]}")
-    raise OverpassUnavailable("Overpass unavailable on every instance: " + " | ".join(tried[-len(urls):]))
+        if out_of_time:
+            break
+    why = "time budget spent" if out_of_time else "unavailable on every instance"
+    raise OverpassUnavailable(f"Overpass {why}: " + " | ".join(tried[-len(urls):] or ["no request made"]))
 
 
 def overpass(layer: str, refresh: bool) -> tuple[list[dict], str]:
     p = RAW / CACHE[layer]
     if refresh or not p.exists():
-        body = overpass_query(QUERIES[layer])
+        body = overpass_query(QUERIES[layer], min_elements=MIN_ELEMENTS.get(layer, 1))
         RAW.mkdir(parents=True, exist_ok=True)
         p.write_bytes(body)
     d = json.loads(p.read_text())
@@ -288,18 +332,37 @@ def platform_type(t: dict) -> str:
     return "unknown"
 
 
+R_EARTH_KM = 6371.0088
+DUPLICATE_KM = 0.111  # 0.001 deg of great-circle arc, the north-south radius the old lon/lat metric used
+
+
+def unit_vectors(lonlat: np.ndarray) -> np.ndarray:
+    """(n, 2) lon/lat degrees -> (n, 3) points on the unit sphere (no latitude scaling, no antimeridian seam)."""
+    lon, lat = np.radians(lonlat[:, 0]), np.radians(lonlat[:, 1])
+    return np.column_stack([np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)])
+
+
+def seamark_duplicates(lonlat: np.ndarray, seamark_only: np.ndarray, radius_km: float = DUPLICATE_KM) -> np.ndarray:
+    """The same structure is often mapped twice (man_made way + seamark node): flag a seamark-only element when a
+    man_made=offshore_platform element lies within `radius_km` great-circle distance. Distances are chords between
+    unit vectors, so the radius is the same at every latitude and across the antimeridian (a fixed cos(55 deg)
+    longitude scale merged up to 1.7x too far east-west at the equator and too little at high latitude)."""
+    drop = np.zeros(len(lonlat), bool)
+    if len(lonlat) < 2:
+        return drop
+    chord = 2 * math.sin(radius_km / R_EARTH_KM / 2)
+    for i, j in cKDTree(unit_vectors(np.asarray(lonlat, float))).query_pairs(chord):
+        for a, b in ((i, j), (j, i)):
+            if seamark_only[a] and not seamark_only[b]:
+                drop[a] = True
+    return drop
+
+
 def platforms(sea: Sea, eez: EEZ, refresh: bool) -> None:
     els, ts = overpass("platforms", refresh)
     ll = np.array([lonlat(e) for e in els])
     seamark_only = np.array([e.get("tags", {}).get("man_made") != "offshore_platform" for e in els])
-    # the same structure is often mapped twice (man_made way + seamark node): drop a seamark-only
-    # element when a man_made=offshore_platform element lies within ~100 m
-    tree = cKDTree(ll * [math.cos(math.radians(55)), 1])
-    drop = np.zeros(len(els), bool)
-    for i, j in tree.query_pairs(0.001):
-        for a, b in ((i, j), (j, i)):
-            if seamark_only[a] and not seamark_only[b]:
-                drop[a] = True
+    drop = seamark_duplicates(ll, seamark_only)
     keep = ~drop & sea.at_sea(ll[:, 0], ll[:, 1], neighbourhood=True)
     depth = sea.elevation(ll[:, 0], ll[:, 1])
     feats = []
@@ -327,7 +390,7 @@ def geodesic_km(coords) -> float:
     a = np.radians(np.asarray(coords, float))
     lon, lat = a[:, 0], a[:, 1]
     h = np.sin(np.diff(lat) / 2) ** 2 + np.cos(lat[:-1]) * np.cos(lat[1:]) * np.sin(np.diff(lon) / 2) ** 2
-    return float((2 * 6371.0088 * np.arcsin(np.sqrt(h))).sum())
+    return float((2 * R_EARTH_KM * np.arcsin(np.sqrt(h))).sum())
 
 
 def pipelines(sea: Sea, eez: EEZ, refresh: bool, tol: float) -> None:

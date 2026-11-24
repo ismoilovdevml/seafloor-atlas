@@ -8,6 +8,7 @@ import {
   windCard, windInService, wreckCard, wreckFilter, yearFilterOn,
   type CardModel, type DataKey, type LayerState, type OverlayId, type SearchEntry,
 } from './overlays';
+import { resolveIndexed, type SearchIndexFile } from './search-index';
 import { yearFromText } from './timeline';
 
 type FC = GeoJSON.FeatureCollection<GeoJSON.Geometry, Record<string, any>>;
@@ -103,6 +104,8 @@ export class OverlayUI {
   private applied = new Set<DataKey>();
   private cableNames = new Map<string, string>();
   private landingNames = new Map<string, string>();
+  /** Wreck year per search key: tells apart two wrecks of the same name if a row's id is gone. */
+  private searchYear = new Map<string, number | null>();
   private hlKey: string | null = null;
   readonly loadMs: Record<string, number> = {};
 
@@ -423,22 +426,24 @@ export class OverlayUI {
 
   // ---------- search ----------
   /** Cable names and notable wreck names: from the small data/search-index.json written at build time
-   *  (scripts/search_index.mjs); without it (dev server) from the two full files, as before. */
+   *  (scripts/search_index.mjs); without it (dev server) from the two full files, as before. Entry keys are the
+   *  features' stable properties.id, resolved in focus() with resolveIndexed(), never an array position. */
   async searchEntries(): Promise<SearchEntry[]> {
-    type Index = { cables: [string, number, number][]; wrecks: [string, number | null, number][] };
-    const idx: Index | null = await fetch(`${this.host.dataBase}/search-index.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    const idx: Partial<SearchIndexFile> | null = await fetch(`${this.host.dataBase}/search-index.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
     if (idx?.cables && idx?.wrecks) {
+      for (const [, year, id] of idx.wrecks) this.searchYear.set(String(id), year);
       return [
-        ...idx.cables.map(([name, planned, i]) => ({ name, label: planned ? 'Cable, planned' : 'Undersea cable', kind: 'cable' as const, key: String(i), n: normName(name) })),
-        ...idx.wrecks.map(([name, year, i]) => ({ name, label: year ? `Shipwreck, ${year}` : 'Shipwreck', kind: 'wreck' as const, key: String(i), n: normName(name) })),
+        ...idx.cables.map(([name, planned, id]) => ({ name, label: planned ? 'Cable, planned' : 'Undersea cable', kind: 'cable' as const, key: String(id), n: normName(name) })),
+        ...idx.wrecks.map(([name, year, id]) => ({ name, label: year ? `Shipwreck, ${year}` : 'Shipwreck', kind: 'wreck' as const, key: String(id), n: normName(name) })),
       ];
     }
     const [c, w] = await Promise.all([this.load('cables'), this.load('wrecks')]);
     const out: SearchEntry[] = [];
-    for (const f of c?.features ?? []) out.push({ name: f.properties.name, label: f.properties.planned ? 'Cable, planned' : 'Undersea cable', kind: 'cable', key: String(f.properties._i), n: normName(f.properties.name) });
+    for (const f of c?.features ?? []) out.push({ name: f.properties.name, label: f.properties.planned ? 'Cable, planned' : 'Undersea cable', kind: 'cable', key: String(f.properties.id), n: normName(f.properties.name) });
     for (const f of w?.features ?? []) {
       if (!f.properties.name || !isNotableWreck(f.properties)) continue;
-      out.push({ name: f.properties.name, label: f.properties.year ? `Shipwreck, ${f.properties.year}` : 'Shipwreck', kind: 'wreck', key: String(f.properties._i), n: normName(f.properties.name) });
+      this.searchYear.set(String(f.properties.id), f.properties.year ?? null);
+      out.push({ name: f.properties.name, label: f.properties.year ? `Shipwreck, ${f.properties.year}` : 'Shipwreck', kind: 'wreck', key: String(f.properties.id), n: normName(f.properties.name) });
     }
     return out;
   }
@@ -446,7 +451,7 @@ export class OverlayUI {
   async focus(e: SearchEntry): Promise<{ card: CardModel; feature: GeoJSON.Feature } | null> {
     const key: DataKey = e.kind === 'cable' ? 'cables' : 'wrecks';
     const fc = await this.load(key);
-    const f = fc?.features[Number(e.key)];
+    const f = fc ? resolveIndexed(fc.features, e.key, e.name, this.searchYear.get(e.key)) : undefined;
     if (!f) return null;
     await this.set(key === 'cables' ? 'cables' : 'wrecks', true);
     this.highlight(key, f);

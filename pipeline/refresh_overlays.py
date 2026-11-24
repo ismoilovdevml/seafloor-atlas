@@ -20,10 +20,14 @@ properties present; ids unique; size limit; feature count within +-20 % of the c
 Inputs: the GEBCO and EEZ files from pipeline/sea_inputs.py. Politeness: one API query at a time, a pause
 between Overpass queries, retries with back-off inside the scripts, a User-Agent with the project URL.
 
-Source down is not a failure: when no Overpass instance answers (offshore.py exits UNAVAILABLE), the layer and the
-remaining Overpass layers are skipped with their old files, reported as `unavailable`, and the run stays green with
-a warning. It does fail once a skipped layer's data is older than STALE_DAYS, so a long outage is not missed.
-A script error or a file that fails validation always fails the run.
+Layers that do not use Overpass (wrecks) run first, so a slow Overpass can never starve them. All Overpass layers
+together get OVERPASS_BUDGET_S (passed to offshore.overpass_query as the OVERPASS_DEADLINE environment variable):
+no Overpass request starts after it, which keeps the job inside the workflow's timeout-minutes.
+
+Source down is not a failure: when no Overpass instance answers in time (offshore.py exits UNAVAILABLE), the layer
+and the remaining Overpass layers are skipped with their old files, reported as `unavailable`, and the run stays
+green with a warning. It does fail once a skipped layer's data is older than STALE_DAYS, so a long outage is not
+missed. A script error or a file that fails validation always fails the run.
 
 usage: python pipeline/refresh_overlays.py [--layers platforms,wrecks] [--allow-count-change]
                                            [--no-fetch] [--summary FILE] [--commit-message FILE]
@@ -31,6 +35,7 @@ usage: python pipeline/refresh_overlays.py [--layers platforms,wrecks] [--allow-
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import math
 import os
@@ -45,9 +50,13 @@ DATA = ROOT / "web/public/data"
 STAGE = ROOT / "data/derived/refresh"
 PY = sys.executable
 OSM_ATTR = "© OpenStreetMap contributors (ODbL)"
-MAX_COUNT_CHANGE = 0.20
+MAX_COUNT_CHANGE = 0.20  # default; a layer can set its own "max_change"
 UNAVAILABLE = 75  # offshore.UNAVAILABLE: no Overpass instance answered
 STALE_DAYS = 60   # a layer skipped for an outage fails the run once its OSM data is older than this
+# All Overpass layers together (probes, queries, retry rounds, pauses). Observed 50-100 s per layer when Overpass
+# is healthy; the job also needs up to ~15 min for a GEBCO cache miss and a few minutes for wrecks and the tests.
+OVERPASS_BUDGET_S = 35 * 60
+DEADLINE_ENV = "OVERPASS_DEADLINE"  # offshore.DEADLINE_ENV
 
 LAYERS = {
     "platforms": {"file": "platforms.geojson", "cmd": ["offshore.py", "--only", "platforms", "--out-dir", "{stage}"],
@@ -61,7 +70,9 @@ LAYERS = {
                   "attribution": OSM_ATTR, "licence": "ODbL 1.0", "min": 50, "max_mb": 2},
     "wrecks": {"file": "wrecks.geojson", "cmd": ["wrecks.py", "--out", "{stage}/wrecks.geojson"],
                "overpass": False, "geom": {"Point"}, "required": ["id", "depth_m", "sitelinks"], "unique": "id",
-               "attribution": "Shipwrecks: Wikidata (CC0)", "licence": "CC0 1.0", "min": 5000, "max_mb": 8},
+               "attribution": "Shipwrecks: Wikidata (CC0)", "licence": "CC0 1.0", "min": 5000, "max_mb": 8,
+               # Wikidata moves ~0.1 % a week (20,124 -> 20,096 -> 20,098 in Nov 2026); a cut-short answer far more
+               "max_change": 0.05},
     "cables-osm": {"file": "cables-osm.geojson",
                    "cmd": ["cables_osm.py", "--out", "{stage}/cables-osm.geojson", "--report", "{stage}/cables-osm.md"],
                    "overpass": True, "geom": {"MultiLineString"}, "required": ["osm", "length_km", "in_tg2022"],
@@ -116,19 +127,20 @@ def validate(spec: dict, path: Path, old: dict | None, allow_count_change: bool)
         if len(set(ids)) != len(ids):
             errs.append(f"{len(ids) - len(set(ids))} duplicate {spec['unique']} values")
     if old is not None and not allow_count_change:
-        n0 = len(old["features"])
-        if n0 and abs(len(feats) - n0) / n0 > MAX_COUNT_CHANGE:
+        n0, limit = len(old["features"]), spec.get("max_change", MAX_COUNT_CHANGE)
+        if n0 and abs(len(feats) - n0) / n0 > limit:
             errs.append(f"feature count {n0} -> {len(feats)} ({(len(feats) - n0) / n0:+.0%}) outside "
-                        f"+-{MAX_COUNT_CHANGE:.0%}; rerun with --allow-count-change after checking it")
+                        f"+-{limit:.0%}; rerun with --allow-count-change after checking it")
     return d, errs
 
 
 def osm_age_days(fc: dict | None, now: float | None = None) -> float | None:
-    """Days since the file's metadata.osmTimestamp (None if it has none)."""
+    """Days since the file's metadata.osmTimestamp (None if it has none). `now` is Unix time (UTC by definition);
+    the timestamp is parsed as UTC whatever the local time zone or daylight saving time."""
     ts = (fc or {}).get("metadata", {}).get("osmTimestamp")
     if not ts:
         return None
-    t = time.mktime(time.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")) - time.timezone
+    t = dt.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc).timestamp()
     return ((now if now is not None else time.time()) - t) / 86400
 
 
@@ -138,6 +150,8 @@ def main() -> None:
     ap.add_argument("--allow-count-change", action="store_true", help="skip the +-20 %% feature-count check")
     ap.add_argument("--no-fetch", action="store_true", help="use the cached API answers (local testing)")
     ap.add_argument("--pause", type=float, default=30, help="seconds between Overpass queries")
+    ap.add_argument("--overpass-budget", type=float, default=OVERPASS_BUDGET_S,
+                    help="seconds for all Overpass layers together, counted from the first Overpass query")
     ap.add_argument("--summary", type=Path, help="write a Markdown summary here")
     ap.add_argument("--commit-message", type=Path, help="write a git commit message here (only if changed)")
     args = ap.parse_args()
@@ -145,13 +159,22 @@ def main() -> None:
     unknown = set(names) - set(LAYERS)
     if unknown:
         sys.exit(f"unknown layers: {sorted(unknown)}")
+    # layers without Overpass first: they must not wait behind (or be starved by) a slow Overpass
+    names.sort(key=lambda n: LAYERS[n]["overpass"])
     STAGE.mkdir(parents=True, exist_ok=True)
 
     rows, changed, failed, unavailable = [], [], [], []
     last_overpass = 0.0
     overpass_down = False
+    deadline: float | None = None
     for name in names:
         spec = LAYERS[name]
+        if spec["overpass"] and deadline is None:
+            deadline = time.time() + args.overpass_budget
+        if spec["overpass"] and not overpass_down and deadline is not None \
+                and deadline - time.time() < max(args.pause, 0) + 120:
+            overpass_down = True  # not enough time left for even one more query
+            print(f"== {name}: Overpass time budget ({args.overpass_budget:.0f} s) spent", flush=True)
         if spec["overpass"] and overpass_down:
             # one outage answer is enough: do not hammer the instances again for each layer
             cur = DATA / spec["file"]
@@ -169,7 +192,10 @@ def main() -> None:
                 time.sleep(wait)
         print(f"== {name}: {' '.join(Path(c).name if i < 2 else c for i, c in enumerate(cmd))}", flush=True)
         t0 = time.time()
-        proc = subprocess.run(cmd, cwd=ROOT)
+        env = None
+        if spec["overpass"] and deadline is not None:
+            env = {**os.environ, DEADLINE_ENV: f"{deadline:.0f}"}
+        proc = subprocess.run(cmd, cwd=ROOT, env=env)
         if spec["overpass"]:
             last_overpass = time.time()
         cur = DATA / spec["file"]
@@ -202,6 +228,19 @@ def main() -> None:
         rows.append((name, n_old, n_new, "updated"))
         print(f"   updated {n_old} -> {n_new} features ({time.time() - t0:.0f} s)")
 
+    # an outage is tolerated only while the kept data is reasonably fresh (checked before the summary is written,
+    # so the summary shows why the run failed)
+    for i, (name, a, b, result) in enumerate(rows):
+        if name not in unavailable:
+            continue
+        cur = DATA / LAYERS[name]["file"]
+        age = osm_age_days(json.loads(cur.read_text())) if cur.exists() else None
+        if age is None or age > STALE_DAYS:
+            failed.append(name)
+            why = "of unknown age" if age is None else f"{age:.0f} days old (limit {STALE_DAYS})"
+            rows[i] = (name, a, b, f"FAILED: Overpass unavailable and the kept data is {why}")
+            print(f"   {name}: Overpass down and the kept data is {why}")
+
     fmt = lambda n: "-" if n is None else f"{n:,}"  # noqa: E731
     table = ["| Layer | Before | After | Result |", "|---|---:|---:|---|",
              *(f"| {n} | {fmt(a)} | {fmt(b)} | {r} |" for n, a, b, r in rows)]
@@ -215,13 +254,6 @@ def main() -> None:
             f"Refresh data {time.strftime('%Y-%m-%d', time.gmtime())}: {', '.join(n for n, _, _ in changed)}\n\n"
             + "\n".join(f"- {p} features" for p in parts)
             + "\n\nAutomatic weekly refresh (pipeline/refresh_overlays.py); each file validated before replacing.\n")
-    # an outage is tolerated only while the kept data is reasonably fresh
-    for name in unavailable:
-        cur = DATA / LAYERS[name]["file"]
-        age = osm_age_days(json.loads(cur.read_text())) if cur.exists() else None
-        if age is None or age > STALE_DAYS:
-            failed.append(name)
-            print(f"   {name}: Overpass down and the kept data is {'of unknown age' if age is None else f'{age:.0f} days old'}")
     gh_out = os.environ.get("GITHUB_OUTPUT")
     if gh_out:
         with open(gh_out, "a") as f:

@@ -30,7 +30,9 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # worst case: ~15 min GEBCO/EEZ fetch after a cache miss + wrecks (<= 8 min with retries) + Overpass layers
+    # (capped at 35 min together, refresh_overlays.OVERPASS_BUDGET_S) + npm ci, tests and the push
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -69,12 +71,15 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - name: Viewer tests on the new files
+      # The search index links rows to wrecks and cables by properties.id; rebuild it from the new files so the
+      # committed copy matches them (test/search-index.test.ts checks every row against the GeoJSON).
+      - name: Rebuild the search index and run the viewer tests on the new files
         if: steps.refresh.outputs.changed != ''
         working-directory: web
         run: |
           npm ci
-          npx vitest run test/overlays.test.ts
+          node scripts/search_index.mjs
+          npx vitest run test/overlays.test.ts test/search-index.test.ts
       - name: Commit and push
         id: commit
         if: steps.refresh.outputs.changed != ''
@@ -83,7 +88,7 @@ jobs:
           git config user.email 107093598+ismoilovdevml@users.noreply.github.com
           git add web/public/data/platforms.geojson web/public/data/pipelines.geojson \
             web/public/data/windfarms.geojson web/public/data/wrecks.geojson \
-            web/public/data/cables-osm.geojson docs/cables-osm.md
+            web/public/data/cables-osm.geojson web/public/data/search-index.json docs/cables-osm.md
           if git diff --cached --quiet; then
             echo "no content change"
             exit 0

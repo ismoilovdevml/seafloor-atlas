@@ -57,3 +57,21 @@
 /flow/*/manifest.json
   ! Cache-Control
   Cache-Control: public, max-age=300, must-revalidate
+
+# Same-path JSON that describes the tiles or files next to it (bounds, scales, legend values, the file list):
+# a rebuild changes it in place, so it must not outlive the data it describes by a day.
+/tiles/polar/polar.json
+  ! Cache-Control
+  Cache-Control: public, max-age=300, must-revalidate
+
+/tiles/*/legend.json
+  ! Cache-Control
+  Cache-Control: public, max-age=300, must-revalidate
+
+/data/obis/manifest.json
+  ! Cache-Control
+  Cache-Control: public, max-age=300, must-revalidate
+
+/data/obis/groups/index.json
+  ! Cache-Control
+  Cache-Control: public, max-age=300, must-revalidate

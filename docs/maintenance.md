@@ -22,21 +22,33 @@ GitHub release, so releases stay a manual decision of the owner.
 1. `pipeline/sea_inputs.py` restores the inputs the scripts need from the Actions cache
    (`sea-inputs-gebco2026-eez12-v1`, about 310 MB: the 1′ GEBCO elevation, the 15″ TID grid, the EEZ tiles). After a
    cache miss (caches unused for 7 days are evicted) it downloads them again: elevation from the COG mirror,
-   TID from BODC/CEDA, EEZ from the Marine Regions WMS, about 5–10 minutes. They never go into git.
-2. `pipeline/refresh_overlays.py` runs each layer on its own: `offshore.py --only platforms|pipelines|windfarms`,
-   `wrecks.py`, `cables_osm.py`, each with `--refresh`, writing into `data/derived/refresh/`. One query at a time,
-   30 s between Overpass queries, User-Agent with the project URL. Overpass goes to the first of several instances
+   TID from BODC/CEDA, EEZ from the Marine Regions WMS, about 5–15 minutes (14 min on 2026-11-16). They never go into git.
+2. `pipeline/refresh_overlays.py` runs each layer on its own: `wrecks.py` first (it does not use Overpass, so a
+   slow Overpass cannot starve it), then `offshore.py --only platforms|pipelines|windfarms` and `cables_osm.py`,
+   each with `--refresh`, writing into `data/derived/refresh/`. One query at a time, 30 s between Overpass
+   queries, User-Agent with the project URL. Overpass goes to the first of several instances
    (`offshore.OVERPASS_URLS`; overpass-api.de, overpass.private.coffee, maps.mail.ru; env `OVERPASS_URLS`
-   overrides) that answers a tiny probe query, in 3 rounds 2 and 5 minutes apart; a 200 answer carrying a
-   timeout or out-of-memory remark counts as no answer.
+   overrides) that answers a tiny probe query, in 3 rounds 2 and 5 minutes apart. A 200 answer carrying a
+   timeout or out-of-memory remark, or with far fewer elements than the layer always has
+   (`offshore.MIN_ELEMENTS`), counts as no answer; HTTP 403, 404, 429 and 5xx also move on to the next instance,
+   only a 400 (the query itself is wrong) stops at once. Time limits: one query gets at most 300 s
+   (`QUERY_TIMEOUT`, also sent as Overpass `[timeout:N]`; healthy answers take 50–100 s), and all Overpass layers
+   together get 35 minutes (`OVERPASS_BUDGET_S`, passed down as env `OVERPASS_DEADLINE`): no request starts after
+   that, the layers left are reported `unavailable`, and the job stays inside its 75-minute `timeout-minutes`.
+   Wikidata: each of the two shipwreck queries is checked against a `COUNT(DISTINCT ?item)` query on the same
+   patterns, and an answer cut short (incomplete last line, an appended Java exception, or fewer items than
+   counted) is retried and never cached.
 3. Each new file must pass: valid GeoJSON FeatureCollection, `metadata.attribution` and `licence` as in
    `docs/data-contract.md`, a minimum feature count, the expected geometry type, finite lon/lat in range,
    required properties, unique ids, a size limit (cables-osm < 3 MB), and **a feature count within ±20 % of the
-   current file**. A failing layer keeps its old file; the others still update.
+   current file** (±5 % for wrecks, which move about 0.1 % a week). A failing layer keeps its old file; the others
+   still update.
 4. A file whose features are identical to the current one is not rewritten (a new OSM timestamp alone is not a
    change), so most weeks end with "no content change" and no commit.
-5. `npx vitest run test/overlays.test.ts` runs on the new files (cards from real features, attribution text).
-   If it fails, nothing is committed.
+5. `node scripts/search_index.mjs` rebuilds `web/public/data/search-index.json` from the new files (rows point at
+   features by `properties.id`, never by array position), then `npx vitest run test/overlays.test.ts
+   test/search-index.test.ts` runs on them (cards from real features, attribution text, every search row opening
+   the feature of the same name). If it fails, nothing is committed.
 6. Commit as `ismoilovdevml <107093598+ismoilovdevml@users.noreply.github.com>` with a message such as
    `Refresh data 2026-11-23: platforms, wrecks` and the before → after counts; push to `main`; start `pages.yml`
    (a push made with `GITHUB_TOKEN` does not trigger other workflows, so the job dispatches the deploy itself).
@@ -44,7 +56,8 @@ GitHub release, so releases stay a manual decision of the owner.
 8. **Source down is not a failure.** When no Overpass instance answers (seen 2026-11-23: the main instance at
    capacity, the mirrors timing out, the runner unable to connect at all), that layer and the remaining Overpass
    layers are skipped with their old files, listed as `unavailable`, and the run stays green with a warning; the
-   next weekly run tries again. It still ends red once a skipped layer's `osmTimestamp` is older than 60 days.
+   next weekly run tries again. It still ends red once a skipped layer's `osmTimestamp` is older than 60 days; the
+   job summary then says so on that layer's row.
 
 **When the ±20 % check stops a layer** (a mass OSM edit, a Wikidata bulk import, a broken query): open the failed
 run's summary, compare the counts, look at the data if needed
