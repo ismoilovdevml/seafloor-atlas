@@ -40,7 +40,7 @@ import { MeasureTool } from './measure';
 import { STATUS, STATUS_ORDER, type StatusKey } from './palette';
 import { NOT_RATED_VERDICT, classify, pixelKm, pct, verdict } from './inspect';
 import { SAT_ATTRIBUTION, clearLand, hashWithLand, iceLand, initialSatLand, rampExpression, satLandFromHash, satSource, storeSatLand, storedSatLand } from './basemap';
-import { basinAt, farVerdictCapped, inlandVerdict, nearestText, searchKm, shownFraction, swotText, swotUnrated } from './point-info';
+import { basinAt, farVerdictCapped, lowLandVerdict, nearestText, searchKm, shownFraction, swotText } from './point-info';
 
 maplibregl.setWorkerUrl(workerUrl);
 
@@ -987,35 +987,34 @@ async function inspect(lon: number, lat: number) {
   const notRated = pt.note?.[0] ?? null;
   const swotAlpha = swotPx ? swotPx[3] : null;
   const swotLabel = swotPx && uncertaintyLg ? classFromAlpha(swotPx[3], uncertaintyLg)?.label ?? null : null;
-  // Inland basins below sea level (Caspian, Dead Sea, Death Valley, Qattara, Turpan, ...) are ocean cells in the
-  // coverage tiles (GEBCO TID not land, elevation below 0), so neither h nor the coverage mask can tell them from
-  // the sea. A point inside one of the dataset's inland-component boxes that the SWOT ocean model leaves unrated
-  // is shown as inland. Smaller basins (< 100 km², not listed) still read as seafloor.
+  // Land below sea level (inland basins such as the Caspian, Dead Sea or Death Valley, and polders such as
+  // Flevoland) is land in the coverage tiles (pipeline/viewer_land.py), so f is null there; the dataset's
+  // inland-component boxes give the basin its name.
+  const land = f === null;
+  const lowLand = land && Number.isFinite(h) && h < 0;
   let basin: { name: string } | null = null;
-  if (f !== null && Number.isFinite(h) && h < 0 && uncertaintyLg && swotUnrated(lat, swotAlpha, swotLabel)) {
+  if (lowLand) {
     basin = basinAt((await import('./inland-basins')).INLAND_BASINS, lon, lat);
     if (t !== inspToken) return;
   }
-  const inland = basin !== null;
   // the fine cell decides "this cell": a 1' cell with a sounding somewhere else in it is half a cell away
   const cellKm = pixelKm(lat, zFine, meta!.tileSize);
   let near = nearZ5;
   if (f !== null && f > 0) near = 0;
   else if (near === 0) near = Math.max(0.5, pixelKm(lat, staticMaxZoom, meta!.tileSize) / 2);
-  const s = inland ? 'land' : classify(f, near);
-  const land = f === null;
-  const noSurvey = land || inland || !!notRated; // the ocean survey status (and the nearest survey) does not apply
-  $('insp-title').textContent = land ? 'Land here' : inland ? 'Inland, below sea level' : 'Seafloor here';
+  const s = classify(f, near);
+  const noSurvey = land || !!notRated; // the ocean survey status (and the nearest survey) does not apply
+  $('insp-title').textContent = lowLand ? (basin ? 'Inland, below sea level' : 'Land below sea level') : land ? 'Land here' : 'Seafloor here';
   $('insp-meta').textContent = `${formatLat(lat)}, ${formatLon(lon)} · cell about ${cellKm < 1 ? cellKm.toFixed(1) : Math.round(cellKm)} km`;
   if (s) { ins.style.setProperty('--st', STATUS[s].color); ins.dataset.st = s; }
-  $('insp-badge-t').textContent = inland ? (basin!.name || 'Inland basin') : s ? STATUS[s].label : notRated ? 'Not rated' : 'No data here';
-  const hLabel = land ? 'Height' : inland ? 'Elevation' : 'Depth';
+  $('insp-badge-t').textContent = lowLand ? (basin?.name || 'Below sea level') : s ? STATUS[s].label : notRated ? 'Not rated' : 'No data here';
+  const hLabel = lowLand ? 'Elevation' : land ? 'Height' : 'Depth';
   $('it-depth-l').textContent = hLabel;
   $('it-depth').textContent = Number.isFinite(h) ? formatDepth(h) : 'n/a';
   $('it-meas').textContent = land ? 'land' : notRated ? 'not rated' : Number.isFinite(f) ? pct(f as number) : 'n/a';
   $('it-meas-s').textContent = land || notRated ? '' : 'of the cell, by ship';
   $('it-near').textContent = noSurvey ? '–' : nearestText(near, radiusKm, true);
-  $('insp-verdict').textContent = inland ? inlandVerdict(basin!.name) : notRated ? NOT_RATED_VERDICT
+  $('insp-verdict').textContent = lowLand ? lowLandVerdict(basin?.name ?? null) : notRated ? NOT_RATED_VERDICT
     : s ? (s === 'far' ? farVerdictCapped(near, radiusKm) : null) ?? verdict(s, f, near) : 'No tile covers this point.';
   inspMarker(lon, lat, s ? STATUS[s].color : '#ffffff');
   $('lg-status').hidden = noSurvey || !s;
@@ -1032,7 +1031,7 @@ async function inspect(lon: number, lat: number) {
     const m = px ? disagreeFromAlpha(px[3], disagreeLg) : null;
     rows.push(['Second model (AUST_2026) differs by', !px ? 'could not be loaded' : m === null ? 'under 50 m, or not compared here' : formatDisagree(m, disagreeLg.vmax)]);
   }
-  if (!land && uncertaintyLg) rows.push(['SWOT model confidence', inland ? 'not rated (inland)' : swotText(lat, swotAlpha, swotLabel, f)]);
+  if (!land && uncertaintyLg) rows.push(['SWOT model confidence', swotText(lat, swotAlpha, swotLabel, f)]);
   rows.push(['Latitude', formatLat(lat)], ['Longitude', formatLon(lon)]);
   if (t !== inspToken) return;
   $('insp-rows').replaceChildren(...rows.map(([k, v]) => {

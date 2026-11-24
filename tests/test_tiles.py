@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pipeline"))
-from tiles import VEIL_MAX, down2, terrarium, unterrarium, veil  # noqa: E402
+from tiles import LOW_LAND_ALPHA, VEIL_MAX, down2, terrarium, unterrarium, veil  # noqa: E402
 
 
 def test_terrarium_roundtrip_integer_and_fraction():
@@ -90,3 +90,14 @@ def test_fill_nearest_uses_neighbours_not_the_tile_mean():
     assert not np.isnan(f).any()
     b = np.full((2, 2), np.nan, dtype=np.float32)
     assert np.isnan(fill_nearest(b)).all()
+
+
+def test_veil_reserves_alpha_1_for_land_below_sea_level():
+    f = np.array([[np.nan, np.nan, 1 - 0.8 / VEIL_MAX, 1 - 1.2 / VEIL_MAX, 0.5]], np.float32)
+    low = np.array([[1.0, 0.0, 0.0, 0.0, 1.0]], np.float32)
+    a = veil(f, low)[0, :, 3]
+    assert a[0] == LOW_LAND_ALPHA                 # low land
+    assert a[1] == 0                              # ordinary land
+    assert a[2] == 0 and a[3] == 2                # ocean never lands on the reserved alpha
+    assert a[4] == round(VEIL_MAX * 0.5)          # ocean pixels ignore the low-land share
+    assert LOW_LAND_ALPHA not in veil(np.linspace(0, 1, 5001, dtype=np.float32)[None, :])[0, :, 3]

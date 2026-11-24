@@ -27,13 +27,25 @@ Official citation: GEBCO Compilation Group (2026) GEBCO 2026 Grid (doi:10.5285/4
 
 * `coverage_1arcmin.tif`: UInt8, same grid as the 1' elevation. Value = round(254 * direct / ocean) + 1 over ocean (1..255), 0 = land (no ocean sub-cell). Computed from the 4 x 4 block of 15" TID cells under each 1' cell.
 * `stats.json`: global and per-band numbers (area-weighted by cos(lat)), consumed by figures and the viewer.
+* `viewer_land_15s.tif` (`pipeline/viewer_land.py`): UInt8 on the 15" grid, 1 = draw as land in the viewer. Set where the
+  record's `inland_below_sea_level` = 1 (inland basins), or where the cell is dry ground on two maps and the TID is
+  not 10-17: its centre lies on OpenStreetMap land one 15" cell inside the coastline, and the JRC Global Surface Water
+  occurrence (v1.4, 1984-2021) averaged over the cell is below 25 %. This catches polders filled from a pre-generated
+  grid, e.g. Flevoland, which the connectivity test sees as ocean because it touches the Wadden Sea through the
+  IJsselmeer; lagoons, deltas, rivers and measured lakes stay water. No JRC tile (poleward of ~80 N) = no change.
+  `viewer_land.json` gives the areas inside the paper's ocean mask. `coverage_viewer_1arcmin.tif` (`coverage.py viewer`)
+  is `coverage_1arcmin.tif` with those cells counted as land; the viewer tiles use it, `stats.json` and the paper do not.
 
 ## Web tiles (web/public/tiles/, Web Mercator XYZ, 512 px, z0..maxzoom)
 
 * `dem/{z}/{x}/{y}.webp`: lossless WebP, **Terrarium** encoding: `h = R*256 + G + B/256 - 32768` (integer metres, so B = 0; GEBCO is integer and fractional B from averaging doubled tile size). Alpha 255 everywhere.
 * `coverage/{z}/{x}/{y}.webp`: lossless WebP RGBA "veil" over areas NOT directly measured.
   RGB = constant veil colour `#0b1424`; alpha = `round(VEIL_MAX * (1 - f))` over ocean where `f` = measured fraction; land alpha = 0.
-  Decode for readouts: alpha == 0 and DEM h > 0 -> land; otherwise `f = 1 - alpha / VEIL_MAX`.
+  Built from `coverage_viewer_1arcmin.tif`, so inland basins and polders below sea level are land here; they carry the
+  reserved alpha 1 (`LOW_LAND_ALPHA`, where at least half of the pixel is viewer land per
+  `viewer_lowland_1arcmin.tif`), because alpha 0 over a height below 0 means "fully measured". Ocean pixels that
+  would round to alpha 1 are written as 0 or 2.
+  Decode for readouts: alpha == 1, or alpha == 0 and DEM h >= 0 -> land; otherwise `f = 1 - alpha / VEIL_MAX`.
   `VEIL_MAX` is in `meta.json` (default 230).
 * `meta.json`:
   ```json
@@ -44,7 +56,7 @@ Official citation: GEBCO Compilation Group (2026) GEBCO 2026 Grid (doi:10.5285/4
 
 ## High-zoom archives (Hugging Face, z6-7)
 
-* `dem_z6-7.pmtiles`, `coverage_z6-7.pmtiles` in the HF dataset `ismoilovdev/seafloor-atlas-tiles`. Same encodings as `dem/` and `coverage/`, 512 px, built from the 15" grids (`pipeline/tiles_hires.py`; coverage from a 15" measured flag, not from codes averaged).
+* `dem_z6-7.pmtiles`, `coverage_z6-7.pmtiles` in the HF dataset `ismoilovdev/seafloor-atlas-tiles`. Same encodings as `dem/` and `coverage/`, 512 px, built from the 15" grids (`pipeline/tiles_hires.py`; coverage from a 15" measured flag with the viewer land mask applied, not from codes averaged).
 * `meta.json` -> `"hires": {"maxzoom": 7, "dem": url, "coverage": url, "revision": sha}`; URLs are pinned to the upload commit (`resolve/<sha>/...`). No `hires` = the viewer stays at z0-5.
 * Polar rows: values poleward of 84.92 deg are the cap mean (same as z0-5), so the pole has no radial artefact at any zoom.
 * The viewer reads both homes through one `sfa://<layer>/{z}/{x}/{y}` protocol (`web/src/tilesource.ts`); the depth readout and profiles use the same path.

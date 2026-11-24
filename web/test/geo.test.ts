@@ -28,6 +28,8 @@ describe('veil', () => {
     expect(decodeVeil(115, 230, -4000)).toBeCloseTo(0.5, 6);
     expect(decodeVeil(0, 230, 120)).toBeNull(); // land
     expect(decodeVeil(0, 230, -2)).toBe(1); // below-sea-level ocean cell, fully measured
+    expect(decodeVeil(1, 230, -3)).toBeNull(); // reserved alpha: land below sea level (Flevoland)
+    expect(decodeVeil(2, 230, -3)).toBeCloseTo(1 - 2 / 230, 6);
   });
 });
 

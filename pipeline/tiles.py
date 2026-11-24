@@ -23,6 +23,7 @@ from rasterio.warp import Resampling, reproject
 ROOT = Path(__file__).resolve().parents[1]
 MERC = 20037508.342789244
 VEIL_MAX = 230
+LOW_LAND_ALPHA = 1           # reserved: land below sea level (polders, inland basins); ocean pixels never use it
 VEIL_RGB = (0x0B, 0x14, 0x24)
 
 
@@ -39,12 +40,22 @@ def unterrarium(rgb: np.ndarray) -> np.ndarray:
     return rgb[..., 0] * 256.0 + rgb[..., 1] + rgb[..., 2] / 256.0 - 32768.0
 
 
-def veil(f: np.ndarray) -> np.ndarray:
-    """measured fraction (NaN = land) -> RGBA uint8."""
+def veil(f: np.ndarray, low: np.ndarray | None = None) -> np.ndarray:
+    """measured fraction (NaN = land) -> RGBA uint8.
+
+    Alpha 0 means "fully measured" over a DEM height below 0, so land below sea level (`low` = share of the
+    pixel that is viewer land, pipeline/viewer_land.py) gets the reserved alpha 1 instead: invisible on the
+    map, and decoded as land. Ocean pixels that would round to alpha 1 go to 0 or 2 (a 0.4 % shift).
+    """
     out = np.zeros(f.shape + (4,), dtype=np.uint8)
     out[..., 0], out[..., 1], out[..., 2] = VEIL_RGB
     ocean = ~np.isnan(f)
-    out[..., 3][ocean] = np.rint(VEIL_MAX * (1.0 - np.clip(f[ocean], 0, 1))).astype(np.uint8)
+    v = VEIL_MAX * (1.0 - np.clip(f[ocean], 0, 1))
+    a = np.rint(v)
+    a[a == LOW_LAND_ALPHA] = np.where(v[a == LOW_LAND_ALPHA] < LOW_LAND_ALPHA, 0, LOW_LAND_ALPHA + 1)
+    out[..., 3][ocean] = a.astype(np.uint8)
+    if low is not None:
+        out[..., 3][~ocean & (low >= 0.5)] = LOW_LAND_ALPHA
     return out
 
 
@@ -148,33 +159,41 @@ def down2(a: np.ndarray) -> np.ndarray:
         return np.where(n > 0, s / np.maximum(n, 1), np.nan).astype(np.float32)
 
 
-def write_pyramid(base: np.ndarray, out: Path, maxzoom: int, tile: int, encode) -> int:
-    level = base
+def write_pyramid(base: np.ndarray, out: Path, maxzoom: int, tile: int, encode,
+                  extra: np.ndarray | None = None) -> int:
+    """Tiles of `base` for z = maxzoom..0 (2x2 NaN-aware means); with `extra`, encode(block, extra_block)."""
+    level, xl = base, extra
     count = 0
     for z in range(maxzoom, -1, -1):
         n = 2 ** z
         assert level.shape == (n * tile, n * tile), (z, level.shape)
         for y in range(n):
             for x in range(n):
-                block = level[y * tile:(y + 1) * tile, x * tile:(x + 1) * tile]
+                sl = (slice(y * tile, (y + 1) * tile), slice(x * tile, (x + 1) * tile))
+                block = level[sl]
                 p = out / str(z) / str(x)
                 p.mkdir(parents=True, exist_ok=True)
-                Image.fromarray(encode(block)).save(p / f"{y}.webp", lossless=True, quality=100, method=4)
+                img = encode(block) if xl is None else encode(block, xl[sl])
+                Image.fromarray(img).save(p / f"{y}.webp", lossless=True, quality=100, method=4)
                 count += 1
         if z:
             level = down2(level)
+            xl = None if xl is None else down2(xl)
     return count
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--elev", type=Path, default=ROOT / "data/raw/gebco_2026/gebco_2026_elev_1arcmin.tif")
-    ap.add_argument("--coverage", type=Path, default=ROOT / "data/derived/coverage_1arcmin.tif")
+    ap.add_argument("--coverage", type=Path, default=ROOT / "data/derived/coverage_viewer_1arcmin.tif",
+                    help="1' coverage grid; the viewer one (coverage.py viewer) draws inland basins and polders as land")
     ap.add_argument("--stats", type=Path, default=ROOT / "data/derived/stats.json")
     ap.add_argument("--out", type=Path, default=ROOT / "web/public/tiles")
     ap.add_argument("--maxzoom", type=int, default=5)
     ap.add_argument("--tile", type=int, default=512)
     ap.add_argument("--source-arcsec", type=int, default=60)
+    ap.add_argument("--low-land", type=Path, default=ROOT / "data/derived/viewer_lowland_1arcmin.tif",
+                    help="viewer-land sub-cells per 1' cell (coverage.py viewer); drawn as reserved alpha 1")
     ap.add_argument("--only", choices=["dem", "coverage", "new2026", "all"], default="all")
     ap.add_argument("--new2026", type=Path, default=ROOT / "data/derived/new2026_1arcmin.tif")
     ap.add_argument("--change", type=Path, default=ROOT / "data/derived/change_2025_2026.json")
@@ -196,8 +215,12 @@ def main() -> None:
         cov = warp_to_merc(args.coverage, size, np.float32, src_nodata=np.nan, transform_values=tv)
         caps["coverage"] = polar_caps(args.coverage, None, tv)
         blend_poles(cov, *caps["coverage"])
-        write_pyramid(cov, args.out / "coverage", args.maxzoom, args.tile, veil)
-        del cov
+        low = None
+        if args.low_land.exists():               # 0..16 viewer-land sub-cells per 1' cell (coverage.py viewer)
+            low = warp_to_merc(args.low_land, size, np.float32, src_nodata=None, transform_values=lambda a: a / 16.0)
+            low = np.nan_to_num(low)
+        write_pyramid(cov, args.out / "coverage", args.maxzoom, args.tile, veil, extra=low)
+        del cov, low
     if args.only in ("new2026", "all") and args.new2026.exists():
         tv = lambda a: np.where(a == 0, np.nan, a / 255.0)
         nw = warp_to_merc(args.new2026, size, np.float32, src_nodata=np.nan, transform_values=tv)

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SEARCH_KM, searchRadiusPx } from '../src/inspect';
 import { INLAND_BASINS } from '../src/inland-basins';
-import { SEARCH_CAP_PX, basinAt, farVerdictCapped, inlandVerdict, nearestText, searchKm, shownFraction, swotText, swotUnrated } from '../src/point-info';
+import { SEARCH_CAP_PX, basinAt, farVerdictCapped, inlandVerdict, lowLandVerdict, nearestText, searchKm, shownFraction, swotText } from '../src/point-info';
 
 describe('searchKm', () => {
   it('keeps the full radius at low and mid latitudes', () => {
@@ -55,11 +55,12 @@ describe('swotText', () => {
     expect(swotText(10, 0, null, 0)).toBe('not rated (the model has a sounding or land here)');
     expect(swotText(10, 160, 'Medium confidence', 0)).toBe('Medium');
   });
-  it('unrated only inside the model coverage with its tile loaded', () => {
-    expect(swotUnrated(30, 0, null)).toBe(true);
-    expect(swotUnrated(30, null, null)).toBe(false);
-    expect(swotUnrated(30, 160, 'Medium confidence')).toBe(false);
-    expect(swotUnrated(82, 0, null)).toBe(false);
+});
+
+describe('land below sea level', () => {
+  it('names an inland basin, and calls other low land a polder-like place', () => {
+    expect(lowLandVerdict('Dead Sea and Jordan Valley')).toBe(inlandVerdict('Dead Sea and Jordan Valley'));
+    expect(lowLandVerdict(null)).toMatch(/land below sea level.*polder/);
   });
 });
 

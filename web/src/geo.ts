@@ -9,11 +9,15 @@ export function decodeTerrarium(r: number, g: number, b: number): number {
   return r * 256 + g + b / 256 - 32768;
 }
 
+/** Reserved veil alpha for land below sea level (pipeline/tiles.py LOW_LAND_ALPHA); no ocean pixel uses it. */
+export const LOW_LAND_ALPHA = 1;
+
 /**
- * Veil alpha -> measured fraction (data contract): alpha 0 over land (DEM h >= 0) means land (null);
- * otherwise f = 1 - alpha / veilMax.
+ * Veil alpha -> measured fraction (data contract): alpha 0 over land (DEM h >= 0) or the reserved alpha 1
+ * (land below sea level) means land (null); otherwise f = 1 - alpha / veilMax.
  */
 export function decodeVeil(alpha: number, veilMax: number, demHeight: number): number | null {
+  if (alpha === LOW_LAND_ALPHA) return null; // land below sea level (polders, inland basins), never an ocean value
   if (alpha === 0 && demHeight >= 0) return null;
   return Math.min(1, Math.max(0, 1 - alpha / veilMax));
 }

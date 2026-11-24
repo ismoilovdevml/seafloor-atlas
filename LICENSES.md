@@ -34,6 +34,8 @@ None of the depths here are for navigation. The data is provided as is, without 
 | `data/wrecks.geojson` | Wikidata | CC0 | Wikidata |
 | `data/cables.geojson`, `data/landing-points.geojson` | TeleGeography Submarine Cable Map, snapshot 2022-11-14 | **CC BY-NC-SA 3.0** (non-commercial, ShareAlike) | TeleGeography, submarinecablemap.com |
 | `data/cables-osm.geojson`, `data/platforms.geojson`, `data/pipelines.geojson`, `data/windfarms.geojson` | OpenStreetMap | **ODbL 1.0** (ShareAlike for the database) | © OpenStreetMap contributors |
+| `tiles/coverage/` and `coverage_z6-7.pmtiles` (land mask only: which below-sea-level cells are drawn as land) | OpenStreetMap land polygons (osmdata.openstreetmap.de), via `pipeline/viewer_land.py` | **ODbL 1.0** (produced work) | © OpenStreetMap contributors |
+| same land mask (which OSM-land cells are dry) | JRC Global Surface Water v1.4 occurrence, via `pipeline/viewer_land.py` | free use with attribution (Copernicus / EC JRC) | Pekel, Cottam, Gorelick & Belward (2016), doi:10.1038/nature20584 |
 | `data/sea-level-history.json` | Lambeck et al. 2014, PNAS, SI Table S3 | factual values reproduced with citation; no separate data licence | Lambeck, Rouby, Purcell, Sun & Sambridge (2014), doi:10.1073/pnas.1411762111 |
 | none stored: satellite land (`web/src/basemap.ts`) | Esri World Imagery, streamed from server.arcgisonline.com while Satellite land is on (default; off = no requests) | Esri terms of use; not redistributed | "Powered by Esri" plus the service's copyrightText, shown under the readout while it is on |
 | Marine Regions-derived tables in `docs/regions.md` | Flanders Marine Institute | **CC BY 4.0** | doi:10.14284/542, 10.14284/632, 10.14284/696 |

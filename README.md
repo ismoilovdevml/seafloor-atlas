@@ -217,7 +217,7 @@ Drawing the globe is limited by fill rate: the pixels drawn per frame grow with 
 | Shipping density | World Bank / IMF (Cerdeiro, Komaromi, Liu & Saeed 2020) | CC BY 4.0 |
 | Shipwrecks | Wikidata | CC0 |
 | Submarine cables | TeleGeography Submarine Cable Map, snapshot 2022-11-14 | CC BY-NC-SA 3.0 |
-| Platforms, pipelines, wind farms, OSM submarine cables | © OpenStreetMap contributors | ODbL |
+| Platforms, pipelines, wind farms, OSM submarine cables; land mask for polders in the coverage tiles | © OpenStreetMap contributors | ODbL |
 | Satellite land (streamed while the switch is on, not stored or redistributed) | Esri World Imagery (Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community) | Esri terms of use; "Powered by Esri" shown under the readout |
 
 **Code: MIT. Data and figures keep their source licences**: per-file table in [LICENSES.md](LICENSES.md). Some layers are non-commercial (CC BY-NC, CC BY-NC-SA) or ShareAlike (ODbL); the site is non-commercial. Depths are not for navigation; data is provided as is.

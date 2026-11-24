@@ -12,6 +12,7 @@ Polar rows are blended into the same caps as the low zooms (pipeline/tiles.py), 
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
 import io
 import json
 import sys
@@ -65,10 +66,12 @@ def fill_nearest(a: np.ndarray) -> np.ndarray:
     return a[tuple(idx)]
 
 
-def build_coverage_15s(elev15: Path, tid15: Path, out: Path) -> None:
-    """15" measured flag: 255 = direct (TID 10-17), 0 = other ocean, 128 = nodata (land / elev >= 0)."""
+def build_coverage_15s(elev15: Path, tid15: Path, out: Path, land15: Path | None = None) -> None:
+    """15" measured flag: 255 = direct (TID 10-17), 0 = other ocean, 128 = nodata (land / elev >= 0, and the
+    viewer land mask of pipeline/viewer_land.py when land15 is given)."""
     if out.exists():
         return
+    land = rasterio.open(land15) if land15 else None
     with rasterio.open(elev15) as e, rasterio.open(tid15) as t:
         assert e.shape == t.shape
         prof = t.profile.copy()
@@ -80,6 +83,8 @@ def build_coverage_15s(elev15: Path, tid15: Path, out: Path) -> None:
                 h = e.read(1, window=w)
                 o = np.full(tid.shape, 128, dtype=np.uint8)
                 ocean = (tid != 0) & (h < 0)
+                if land is not None:
+                    ocean &= land.read(1, window=w) == 0
                 o[ocean] = 0
                 o[ocean & (tid >= 10) & (tid <= 17)] = 255
                 dst.write(o, 1, window=w)
@@ -87,7 +92,9 @@ def build_coverage_15s(elev15: Path, tid15: Path, out: Path) -> None:
     print(file=sys.stderr)
 
 
-def run(kind: str, src_path: Path, caps: tuple[float, float], out_path: Path, limit: int | None) -> dict:
+def run(kind: str, src_path: Path, caps: tuple[float, float], out_path: Path, limit: int | None,
+        low_path: Path | None = None) -> dict:
+    """low_path (coverage only): 15" viewer land mask, averaged per pixel and drawn with the reserved alpha."""
     size = TILE * 2 ** ZMAX                       # z7 global pixels per side
     dst_t = from_bounds(-MERC, -MERC, MERC, MERC, size, size)
     n6 = 2 ** (ZMAX - 1)
@@ -96,15 +103,22 @@ def run(kind: str, src_path: Path, caps: tuple[float, float], out_path: Path, li
     with rasterio.open(src_path) as src, WarpedVRT(
             src, crs=CRS.from_epsg(3857), transform=dst_t, width=size, height=size,
             resampling=Resampling.average, src_nodata=src.nodata, nodata=np.nan, dtype="float32",
-            warp_mem_limit=1024, num_threads=8) as vrt, open(out_path, "wb") as f:
+            warp_mem_limit=1024, num_threads=8) as vrt, open(out_path, "wb") as f, \
+            (rasterio.open(low_path) if low_path else nullcontext()) as lsrc, \
+            (WarpedVRT(lsrc, crs=CRS.from_epsg(3857), transform=dst_t, width=size, height=size,
+                       resampling=Resampling.average, dtype="float32", warp_mem_limit=1024, num_threads=8)
+             if low_path else nullcontext()) as lvrt:
         w = Writer(f)
         done = 0
         for y6 in range(n6):
             for x6 in range(n6):
                 win = Window(x6 * 2 * TILE, y6 * 2 * TILE, 2 * TILE, 2 * TILE)
                 a = vrt.read(1, window=win).astype(np.float32)
+                low = None
                 if kind == "coverage":
                     a = a / 255.0                       # mean of 0/255 flags = measured fraction
+                    if lvrt is not None:
+                        low = lvrt.read(1, window=win).astype(np.float32)
                 lat = row_lat_global(np.arange(win.row_off, win.row_off + win.height), size)
                 if np.abs(lat).max() > BLEND_FROM:
                     blend_poles(a, *caps, lat=lat, edge_rows=(y6 == 0, y6 == n6 - 1))
@@ -115,12 +129,12 @@ def run(kind: str, src_path: Path, caps: tuple[float, float], out_path: Path, li
                     enc = veil
                 for dy in range(2):
                     for dx in range(2):
-                        blk = a[dy * TILE:(dy + 1) * TILE, dx * TILE:(dx + 1) * TILE]
-                        data = webp(enc(blk))
+                        sl = (slice(dy * TILE, (dy + 1) * TILE), slice(dx * TILE, (dx + 1) * TILE))
+                        data = webp(enc(a[sl]) if low is None else enc(a[sl], low[sl]))
                         w.write_tile(zxy_to_tileid(7, 2 * x6 + dx, 2 * y6 + dy), data)
                         stats["tiles"] += 1
                         stats["bytes"] += len(data)
-                data = webp(enc(down2(a)))
+                data = webp(enc(down2(a)) if low is None else enc(down2(a), down2(low)))
                 w.write_tile(zxy_to_tileid(6, x6, y6), data)
                 stats["tiles"] += 1
                 stats["bytes"] += len(data)
@@ -158,10 +172,10 @@ def main() -> None:
         res["dem"] = run("dem", elev15, tuple(np.nan if v is None else v for v in caps["dem"]),
                          OUT / "dem_z6-7.pmtiles", args.limit)
     if args.only in ("coverage", "all"):
-        cov15 = ROOT / "data/derived/coverage_15s.tif"
-        build_coverage_15s(elev15, RAW / "gebco_2026_tid.tif", cov15)
+        cov15 = ROOT / "data/derived/coverage_viewer_15s.tif"
+        build_coverage_15s(elev15, RAW / "gebco_2026_tid.tif", cov15, ROOT / "data/derived/viewer_land_15s.tif")
         res["coverage"] = run("coverage", cov15, tuple(np.nan if v is None else v for v in caps["coverage"]),
-                              OUT / "coverage_z6-7.pmtiles", args.limit)
+                              OUT / "coverage_z6-7.pmtiles", args.limit, ROOT / "data/derived/viewer_land_15s.tif")
     print(json.dumps(res, indent=1))
 
 

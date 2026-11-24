@@ -57,11 +57,6 @@ export function swotText(lat: number, alpha: number | null, label: string | null
   return 'not rated (the model has a sounding or land here)';
 }
 
-/** SWOT leaves this cell unrated within its coverage (transparent, tile loaded). */
-export function swotUnrated(lat: number, alpha: number | null, label: string | null): boolean {
-  return Math.abs(lat) <= SWOT_MAX_LAT && alpha !== null && !label;
-}
-
 export type Basin = [number, number, number, number, string?];
 /**
  * The inland basin whose bounding box holds lon/lat, smallest box first (a small basin inside the Caspian box
@@ -80,4 +75,10 @@ export function basinAt(basins: Basin[], lon: number, lat: number): { name: stri
 /** One sentence for a point in an inland basin below sea level. */
 export function inlandVerdict(name: string): string {
   return `This point is below sea level but not connected to the world ocean${name ? ` (${name})` : ''}: a lake bed or dry land below sea level, so the ocean survey status does not apply.`;
+}
+
+/** One sentence for land below sea level: a named inland basin, or otherwise reclaimed or dry land (a polder). */
+export function lowLandVerdict(basinName: string | null): string {
+  if (basinName !== null) return inlandVerdict(basinName);
+  return 'This point is land below sea level, such as a polder behind a dike: it is not seafloor, so the ocean survey status does not apply.';
 }
