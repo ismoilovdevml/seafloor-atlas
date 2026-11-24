@@ -12,7 +12,10 @@ doi:10.5285/5c39bf4e-5140-5546-e063-7086abc027bc. UK Open Government Licence v3.
 Units: Sv = 10^6 m^3/s, positive northward; PW = 10^15 W. The AMOC is the maximum of the overturning streamfunction
 in depth coordinates (amoc_depth_1m). Layer transports are the array's own decomposition: Florida Current, Ekman,
 upper mid-ocean (UMO) and the depth classes thermocline (< 800 m), intermediate (800-1100 m), upper deep
-(1100-3000 m), lower deep (3000-5000 m) and bottom water (> 5000 m). Annual means only for complete years.
+(1100-3000 m), lower deep (3000-5000 m) and bottom water (> 5000 m). Florida Current + Ekman + UMO is the
+northward limb down to the time-varying depth of the overturning maximum, so it is not a fixed-depth layer; the
+fixed-depth classes thermocline + intermediate (0-1100 m) are what balance the deep classes (sum ~0 every month).
+Annual means only for complete years.
 
 usage: .venv/bin/python pipeline/amoc.py [fetch|build|check|all]
 """
@@ -43,7 +46,8 @@ LINE = [[-80.05, 26.5], [-13.6, 26.5]]
 LAYERS = {  # output key: (variable in RAPID_layers, label)
     "florida_current": ("trans_FC_1m", "Florida Current"),
     "ekman": ("trans_ekm_1m", "Ekman (wind-driven surface layer)"),
-    "upper_mid_ocean": ("trans_UMO_1m", "Upper mid-ocean (gyre interior, < 1,100 m)"),
+    "upper_mid_ocean": ("trans_UMO_1m", "Upper mid-ocean (gyre interior, down to the time-varying depth of the "
+                                        "overturning maximum, about 1,100 m)"),
     "thermocline": ("trans_the_1m", "Thermocline, < 800 m"),
     "intermediate": ("trans_aiw_1m", "Intermediate water, 800-1,100 m"),
     "upper_deep": ("trans_ud_1m", "Upper North Atlantic Deep Water, 1,100-3,000 m"),

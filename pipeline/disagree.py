@@ -47,6 +47,9 @@ OUT = ROOT / "web/public/tiles/disagree"
 R_KM = 6371.0072
 DEPTH_BANDS = [0, 200, 1000, 2000, 3000, 4000, 5000, 6000, 12000]   # GEBCO depth (m, positive down)
 THRESH = [50, 100, 200, 500, 1000]
+# resolution of AUST - GEBCO: AUST_2026_BAT z is float32 in 0.1 m steps (checked on 3 slabs of the Zenodo file,
+# 2026-11-24: ~90 % of values non-integer, all multiples of 0.1), GEBCO 1' is Int16 metres
+DATA_STEP = 0.1
 # AUST is a deep-ocean gravity model: on shelves and upper slopes it is systematically too deep (e.g. Gulf of
 # Carpentaria: GEBCO median 54 m, AUST 196 m; in GEBCO 0-1000 m, >= 95 % of the |diff| > 500 m cells have AUST
 # deeper). Those differences are AUST errors, not genuine depth uncertainty, so the map and the headline use
@@ -116,16 +119,21 @@ def read_aust(nc: Path, lat_g: np.ndarray, lon_g: np.ndarray) -> np.ndarray:
 
 
 def wquantiles(values: np.ndarray, weights: np.ndarray, qs, lo: float, hi: float, step: float) -> list[float]:
-    """Weighted quantiles via a fine histogram. The inputs are whole metres (differences of integer grids), so a
-    bin [k, k + step) holds the value k: return the bin's lower edge, not its middle (which added step / 2)."""
-    edges = np.arange(lo, hi + step, step)
-    h, _ = np.histogram(np.clip(values, lo, hi - step / 2), bins=edges, weights=weights)
+    """Weighted quantiles via a fine histogram whose bins are CENTRED on the multiples of `step`, where `step` is the
+    resolution of the data. AUST_2026_BAT is stored in 0.1 m steps (float32, e.g. -4097.1) and the GEBCO 1' grid in
+    whole metres (Int16), so AUST - GEBCO lies on a 0.1 m grid: with step = 0.1 every bin holds exactly one possible
+    value and the result is that value (the smallest one whose weighted CDF reaches q), with no half-bin shift.
+    Bin lower edges (or middles) of whole-metre bins were off by up to 1 m (or 0.5 m) on 0.1 m data."""
+    n = round((hi - lo) / step) + 1
+    centres = lo + step * np.arange(n)
+    edges = np.append(centres - step / 2, centres[-1] + step / 2)
+    h, _ = np.histogram(np.clip(values, lo, hi), bins=edges, weights=weights)
     c = np.cumsum(h)
     if c[-1] <= 0:
         return [float("nan")] * len(qs)
     c /= c[-1]
-    lower = edges[:-1]
-    return [float(lower[min(np.searchsorted(c, q), lower.size - 1)]) for q in qs]
+    nd = max(0, -math.floor(math.log10(step)) + 1)     # drop float noise such as 60.300000000000004
+    return [round(float(centres[min(np.searchsorted(c, q), n - 1)]), nd) for q in qs]
 
 
 def summary(d: np.ndarray, w: np.ndarray, area_km2_per_w: float) -> dict:
@@ -133,8 +141,8 @@ def summary(d: np.ndarray, w: np.ndarray, area_km2_per_w: float) -> dict:
         return {"area_km2": 0}
     a = np.abs(d)
     W = w.sum()
-    med, p95, p99 = wquantiles(a, w, (0.5, 0.95, 0.99), 0, 15000, 1.0)
-    sm, = wquantiles(d, w, (0.5,), -15000, 15000, 1.0)
+    med, p95, p99 = wquantiles(a, w, (0.5, 0.95, 0.99), 0, 15000, DATA_STEP)
+    sm, = wquantiles(d, w, (0.5,), -15000, 15000, DATA_STEP)
     return {
         "area_km2": round(float(W * area_km2_per_w)),
         "cells": int(d.size),

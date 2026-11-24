@@ -56,10 +56,18 @@ Official citation: GEBCO Compilation Group (2026) GEBCO 2026 Grid (doi:10.5285/4
   Terrarium RGB in lossless WebP. Built by `pipeline/polar.py`.
 * Pixel (i, j) centre: X = (j + 0.5) * 2R / N - R, Y = R - (i + 0.5) * 2R / N, d = hypot(X, Y);
   north lat = 90 - d, lon = atan2(X, -Y); south lat = -90 + d, lon = atan2(X, Y). Pixels outside the disc hold one flat value.
-* `polar.json`: source, projection, encoding, size, radius_deg, pixel_km, per-pole min/max/mean and bytes.
-* The viewer (`web/src/polar-layer.ts`) drapes each image on a disc mesh over the globe, coloured with the depth ramp
-  and shaded in the shader, faded in between 83.05 and 83.3 deg where the Mercator tiles hold the same relief. This
-  replaces the flat cap MapLibre draws beyond 85.05 deg and the terraced rows of stretched tiles between ~83 and 85 deg.
+* `polar.json`: source, projection, encoding, size, radius_deg, pixel_km, per-pole min/max/mean and bytes;
+  `empty_pixels_filled` counts empty bins inside the disc only (0 in the current build).
+* The viewer (`web/src/polar-layer.ts`) drapes each image on an indexed radial disc mesh (clean circular edge,
+  alpha 0) over the globe, coloured with the depth ramp computed from the same colour stops in the shader (no LUT)
+  and shaded with the hillshade illumination direction in each point's local north frame. It replaces the flat cap
+  MapLibre draws beyond 85.05 deg and the terraced rows of stretched tiles. The fade band is 83.05-83.3 deg with plain
+  relief, and moves to 84.7-84.85 deg when a data layer between relief and hillshade is visible (Water,
+  Phytoplankton, Marine Life) so the cap does not cover it. The images are fetched only when the camera can see
+  |lat| >= 60 deg and drawn only when |lat| >= 75 deg is in view.
+* Sampling: the Mercator tiles blend rows into the cap mean from 84.8 deg (`tiles.py` `BLEND_FROM`), so the hover,
+  inspector and profile read depth from the polar grid poleward of 84.8 deg (bilinear, shared loader with the
+  layer) and report the measured fraction as "not rated" there; `nearestFlagged` never searches rows past 84.8 deg.
 
 ## Vector overlays (web/public/data/)
 
@@ -208,6 +216,17 @@ Density: TEOS-10 via `gsw`: `p = p_from_z(-z, lat)`, `SA = SA_from_SP(SP, p, lon
   bytes). `q = 0` no data (land, or seafloor shallower than the depth); otherwise `value = lo + (q − 1) · step`,
   `lo` and `step` per layer in `manifest.map.layers[key]` (`step` = 0.01 °C, 0.005 for S and σ0). Each layer
   entry also has `hi`, `p2`/`p98` (2nd/98th percentile, used by "stretch colours to this depth"), `bytes`, `ocean_cells`.
+* Monthly despike: a 0.25° cell more than 10 °C off its 5 x 5 median is blanked, and a cell above 33 °C that is
+  more than 4 °C warmer than that median is blanked too (coastal extrapolation spikes, e.g. Hormuz in October).
+  `python woa.py months` rebuilds only the monthly layers.
+* Seafloor stop: `map/t_bottom.bin`, `s_bottom.bin`, `d_bottom.bin`, `z_bottom.bin`, keys in `manifest.map.bottom.keys`.
+  Per 0.25° cell, the deepest WOA23 standard level with both T and S, **above** any jump of more than 2 °C or 0.2
+  in salinity between adjacent levels below 1,500 m (deeper levels there are WOA23 first-guess artefacts in
+  enclosed warm basins: Sulu, Red Sea, Andaman, Rhodes, Cayman; `manifest.map.bottom.deep_tail_cut_cells` = 111).
+  `t` is potential temperature θ (reference 0 dbar), `d` is **σ4** = ρ(SA, CT, 4000 dbar) − 1000, only where the
+  level is ≥ 2,000 m deep, `z` is the depth of the level used (shown on hover as "WOA level"). Bottom layer
+  entries also carry `p2_deep`/`p98_deep` (percentiles over cells ≥ 2,000 m), used by "stretch colours" on the
+  seafloor stop instead of the all-ocean `p2`/`p98`.
 * `col/<i>_<j>.bin`: 1° water columns in 30° x 30° regions, `i` = row block from the north (0..5), `j` = column
   block from 180° W (0..11); all-land blocks are not written. zlib-deflated little-endian **int16
   `[var t,s,d][level 0..101][row 0..29][col 0..29]`**, `value = offset[var] + q · 0.001`
@@ -897,5 +916,8 @@ Published Data Library download API. Monthly values April 2004 to November 2024 
                  "annual": [{"year", "mean"}] (complete calendar years only), "layer_means_sv"}}
 
 Sv = 10^6 m³/s, positive northward. `amoc` is the maximum of the overturning streamfunction in depth coordinates
-(`amoc_depth_1m`). The viewer's "0–1,100 m" is Florida Current + Ekman + upper mid-ocean.
+(`amoc_depth_1m`). The card's fixed-depth rows are thermocline (<800 m) + intermediate (800–1,100 m) for
+"0–1,100 m", then upper deep, lower deep and bottom; they sum to 0 Sv. Florida Current + Ekman + upper mid-ocean is
+not the same layer: upper mid-ocean integrates to the time-varying overturning-maximum depth. The 12-month curve is a
+centred 2x12 running mean (13 months, half weight at both ends).
 

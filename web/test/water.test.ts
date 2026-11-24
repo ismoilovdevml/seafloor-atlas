@@ -3,7 +3,7 @@ import { deflateSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import {
   buildLut, cellFor, CMAPS, columnFromChunk, decodeMapLayer, hashWithWater, inflate, layerKey, legendTicks, lutIndex,
-  mercRowLat, neighbours, renderMercator, sampleGrid, scaleRange, thermocline, waterFromHash, BOTTOM, depthLabel, waterStops,
+  mercRowLat, nearestGrid, neighbours, renderMercator, sampleGrid, scaleRange, thermocline, waterFromHash, BOTTOM, depthLabel, waterStops,
   type Column, type Grid, type WaterManifest,
 } from '../src/water';
 import { depthFrac, depthTicks } from '../src/water-chart';
@@ -155,10 +155,26 @@ describe('cells, profiles and links', () => {
     expect(waterFromHash('#water=t-bottom', [0, 5000, BOTTOM])).toEqual({ v: 't', depth: BOTTOM });
     expect(waterFromHash('#water=t-bottom', [0, 5000])).toBeNull();
     expect(scaleRange(man, 't', 't_bottom', false)).toEqual([-1, 4]);
-    expect(scaleRange(man, 't', 't_bottom', true)).toEqual([0, 20]);
+    // a seafloor layer never stretches over its all-ocean percentiles (shelves included): without deep
+    // percentiles it keeps its own range, with them it uses those
+    expect(scaleRange(man, 't', 't_bottom', true)).toEqual([-1, 4]);
+    const man2 = { variables: { t: { range: [-2, 32] } }, map: { depths: [0], layers: {
+      t_bottom: { p2: -1.32, p98: 16.21, range: [-1, 3], p2_deep: -0.96, p98_deep: 2.7 } } } } as never;
+    expect(scaleRange(man2, 't', 't_bottom', true)).toEqual([-0.96, 2.7]);
+    expect(scaleRange(man2, 't', 't_bottom', false)).toEqual([-1, 3]);
+    expect(scaleRange(man, 't', 't_0', true)).toEqual([0, 29]);
     expect(scaleRange(man, 't', 't_0', false)).toEqual([-2, 32]);
     expect(layerKey('t', 0, 3)).toBe('t_m03');
     expect(layerKey('s', 1000)).toBe('s_1000');
+  });
+  it('nearestGrid reads the containing cell without blending', () => {
+    const g: Grid = { values: new Float32Array([1, 2, 3, 4, 5, 6, 7, NaN]), width: 4, height: 2, north: 90, west: -180, res: 90 };
+    expect(nearestGrid(g, -170, 80)).toBe(1);
+    expect(nearestGrid(g, -1, 1)).toBe(2);
+    expect(nearestGrid(g, 1, 1)).toBe(3);        // the next cell east, not a blend of the two
+    expect(nearestGrid(g, 190, 1)).toBe(1);      // longitudes wrap
+    expect(nearestGrid(g, 179, -45)).toBeNaN();
+    expect(nearestGrid(g, -100, -89)).toBe(5);
   });
   it('stretches the top 1,000 m of the depth axis', () => {
     expect(depthFrac(1000, 5500)).toBeCloseTo(0.55);
@@ -193,6 +209,34 @@ describe.skipIf(!existsSync(MAN))('built WOA23 files', () => {
     expect(sampleGrid(t4000, -150, 30)).toBeGreaterThan(1);
     expect(sampleGrid(t4000, -150, 30)).toBeLessThan(2);
     expect(sampleGrid(s1000, -12, 37) - sampleGrid(s1000, -60, 37)).toBeGreaterThan(0.5); // Mediterranean tongue
+  });
+  it.skipIf(!man.map.bottom)('seafloor layers: no deep-basin artefacts, deep-only stretch, WOA level per cell', async () => {
+    const t = await grid('t_bottom'), d = await grid('d_bottom'), z = await grid('z_bottom');
+    // Rhodes Basin: Eastern Mediterranean deep water (~13.4 degC theta), not WOA's first-guess 0.98 degC at 4,400 m
+    expect(nearestGrid(t, 28.375, 35.875)).toBeGreaterThan(13);
+    expect(nearestGrid(z, 28.375, 35.875)).toBe(4100);
+    // the densest seafloor water is no longer a Mediterranean artefact (it was 46.685 there)
+    let max = -Infinity, at = -1;
+    d.values.forEach((x, i) => { if (x > max) { max = x; at = i; } });
+    const lat = man.map.north - (Math.floor(at / man.map.width) + 0.5) * man.map.res_deg;
+    expect(max).toBeLessThan(46.65);
+    expect(lat).toBeGreaterThan(60);                                          // Arctic deep water
+    // Sulu Sea floor stays ~10 degC (isolated basin), not 7 degC
+    expect(nearestGrid(t, 121.625, 7.875)).toBeGreaterThan(9.5);
+    // stretch in seafloor mode uses the deep floor only, inside the default deep range, not -1.3..16.2 degC
+    const L = man.map.layers.t_bottom;
+    const [lo, hi] = scaleRange(man, 't', 't_bottom', true);
+    expect([lo, hi]).toEqual([L.p2_deep, L.p98_deep]);
+    expect(lo).toBeGreaterThanOrEqual(L.range![0]); expect(hi).toBeLessThanOrEqual(L.range![1]);
+    for (const k of ['s_bottom', 'd_bottom']) {
+      const [a, b] = scaleRange(man, k[0] as 's' | 'd', k, true), r = man.map.layers[k].range!;
+      expect(b - a).toBeLessThanOrEqual(r[1] - r[0]);
+    }
+  });
+  it('monthly surface temperature has no hot coastal spikes', () => {
+    // Strait of Hormuz in October was 37.09 degC in 30.6 degC water
+    for (let m = 1; m <= 12; m++) expect(man.map.layers[layerKey('t', 0, m)].hi).toBeLessThan(37);
+    expect(man.map.layers.t_m10.hi).toBeLessThan(35.5);
   });
   it('monthly surface temperature shows the seasons', async () => {
     const feb = await grid('t_m02'), aug = await grid('t_m08');

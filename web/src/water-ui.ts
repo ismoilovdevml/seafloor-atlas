@@ -8,7 +8,8 @@ import type { CanvasSource, Map as MlMap } from 'maplibre-gl';
 import { formatDepth, formatLat, formatLon } from './geo';
 import {
   BOTTOM, buildLut, cellFor, CMAPS, columnFromChunk, decimalsFor, decodeMapLayer, formatWater, gradientCss, hashWithWater, inflate,
-  depthLabel, layerKey, layerStep, legendTicks, MERC_WORLD, neighbours, renderMercator, sampleGrid, scaleRange, thermocline, waterFromHash, waterStops,
+  depthLabel, layerKey, layerStep, legendTicks, MERC_WORLD, nearestGrid, neighbours, renderMercator, sampleGrid, scaleRange, thermocline,
+  waterFromHash, waterStops,
   type CellRef, type Column, type Grid, type WaterManifest, type WaterVar,
 } from './water';
 import { WaterChart, type PanelSpec } from './water-chart';
@@ -80,7 +81,8 @@ export class WaterUI {
     }
     const depths = waterStops(this.man);
     $<HTMLInputElement>('water-depth').max = String(depths.length - 1);
-    const show = [0, 200, 1000, 2000, 5000, BOTTOM];
+    // with the seafloor stop after 5,000 m the two labels would touch ("5 kmfloor"), so label 4 km instead
+    const show = this.man.map.bottom ? [0, 200, 1000, 2000, 4000, BOTTOM] : [0, 200, 1000, 2000, 5000];
     const tick = (d: number) => (d === BOTTOM ? 'floor' : d >= 1000 ? `${d / 1000} km` : d === 0 ? '0' : `${d} m`);
     $('water-depth-ticks').innerHTML = depths.map((d, i) => show.includes(d)
       ? `<span style="left:${((100 * i) / (depths.length - 1)).toFixed(2)}%">${tick(d)}</span>` : '').join('');
@@ -127,6 +129,8 @@ export class WaterUI {
   /** month controls apply only to surface temperature (the monthly files) */
   get monthly(): boolean { return this.v === this.man.map.monthly.var && this.depth === this.man.map.monthly.depth; }
   get key(): string { return layerKey(this.v, this.depth, this.monthly ? this.month : 0); }
+  /** depth of the WOA level behind each seafloor value (z_bottom), when built */
+  get levelKey(): string | null { const k = this.man.map.bottom?.keys.z; return k && this.man.map.layers[k] ? k : null; }
 
   async show(opts: { v?: WaterVar; depth?: number } = {}) {
     if (!this.man) return;
@@ -290,7 +294,8 @@ export class WaterUI {
     const vr = this.man.variables[this.v].range;
     let note: string;
     const floorMin = (this.man.map.bottom?.sigma4_min_depth_m ?? 2000).toLocaleString('en-US');
-    if (this.atFloor && !this.stretch) {
+    if (this.atFloor) {
+      // the seafloor notes hold with stretched colours too (the stretch there covers the deep floor only)
       note = this.v === 'd'
         ? `Density of the water at the seafloor, referenced to 4,000 m (σ₄), shown where the floor is deeper than ${floorMin} m. The densest water, formed around Antarctica, spreads north along the bottom.`
         : this.v === 's' ? 'Salinity of the deepest measured water in each cell. Water from the North Atlantic is saltier than the bottom water from Antarctica.'
@@ -314,6 +319,8 @@ export class WaterUI {
       [a, b] = await Promise.all([this.grid(layerKey('t', 0, m0 + 1)), this.grid(layerKey('t', 0, m1 + 1))]);
     } else {
       a = await this.grid(this.key);
+      // the hover readout names the WOA level each seafloor value comes from
+      if (this.atFloor && this.levelKey) void this.grid(this.levelKey);
     }
     if (t !== this.drawToken || !a) return;
     const [lo, hi] = scaleRange(this.man, this.v, m !== null ? layerKey('t', 0) : this.key, this.stretch);
@@ -398,7 +405,8 @@ export class WaterUI {
     if (!this.open && !this.headless) return null;
     const meta = this.man.variables[this.v];
     const where = this.atFloor ? 'seafloor' : this.depth === 0 ? 'surface' : `${this.depth.toLocaleString('en-US')} m`;
-    const label = `${this.atFloor && this.v === 't' ? 'Potential temperature' : TITLES[this.v]}, ${where}`;
+    const title = this.atFloor && this.v === 't' ? 'Potential temperature' : this.atFloor && this.v === 'd' ? 'Density σ₄' : TITLES[this.v];
+    const label = `${title}, ${where}`;
     let v = NaN;
     let L = this.man.map.layers[this.key];
     let loaded = false;
@@ -418,7 +426,10 @@ export class WaterUI {
       if (g) v = sampleGrid(g, lon, lat);
     }
     if (!Number.isFinite(v)) return { label, value: loaded ? 'no water' : '…' };
-    return { label, value: formatWater(v, Math.min(2, decimalsFor(layerStep(L))), meta.units) };
+    const value = formatWater(v, Math.min(2, decimalsFor(layerStep(L))), meta.units);
+    const zg = this.atFloor && this.levelKey ? this.ready.get(this.levelKey) : null;
+    const z = zg ? nearestGrid(zg, lon, lat) : NaN;
+    return { label, value: Number.isFinite(z) ? `${value} · WOA level ${Math.round(z).toLocaleString('en-US')} m` : value };
   }
 
   // ---------- water column ----------

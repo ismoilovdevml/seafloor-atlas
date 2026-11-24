@@ -13,7 +13,9 @@ Climatology: WOA23 "decav91C0" = the 1991-2020 climate normal, objectively analy
           col/<i>_<j>.bin               1 deg water columns of a 30 x 30 deg region: int16 T, S, sigma0 at all
                                         102 levels, deflate compressed (lazily fetched by the viewer on click)
   fetch-bottom : annual 0.25 deg t_an + s_an at all 102 levels, in slabs -> data/raw/woa23/levels/  ~ 850 MB
-  bottom : the "at the seafloor" layers from the deepest level with both T and S in each cell:
+  months : rebuild only map/t_m<MM>.bin from the raw monthly files and merge them into manifest.json
+  bottom : the "at the seafloor" layers from the deepest level with both T and S in each cell (above any deep-tail
+          artefact, see bottom_fields):
           t_bottom = potential temperature theta (TEOS-10 pt0), s_bottom = practical salinity,
           d_bottom = potential density sigma4 (referenced to 4,000 dbar) where that level is >= 2,000 m deep,
           z_bottom = depth of that level; merged into web/public/woa/manifest.json (map.bottom, map.layers)
@@ -26,7 +28,7 @@ At the seafloor, theta and sigma4 replace in-situ T and sigma0: in-situ T at 5,0
 compression alone, and sigma0 can rank abyssal waters in the wrong order (Antarctic Bottom Water lighter than
 North Atlantic Deep Water in sigma0, heavier in sigma4).
 
-usage: .venv/bin/python pipeline/woa.py [fetch|build|fetch-bottom|bottom|check|all]
+usage: .venv/bin/python pipeline/woa.py [fetch|build|months|fetch-bottom|bottom|check|all]
 """
 from __future__ import annotations
 
@@ -56,6 +58,9 @@ MAP_STEP = {"t": 0.01, "s": 0.005, "d": 0.005, "z": 1.0}
 LEVELS = RAW / "levels"
 SLAB = 6                      # levels per OPeNDAP request in fetch_bottom (6 x 720 x 1440 float32 = 25 MB)
 BOTTOM_SIGMA4_MIN_Z = 2000.0  # sigma4 is the usual reference for abyssal water; shallower bottoms get no density
+DEEP_JUMP_MIN_Z = 1500.0      # deep-tail rule of bottom_fields: jumps between adjacent levels below this depth ...
+DEEP_JUMP_T = 2.0             # ... of more than 2 degC ...
+DEEP_JUMP_S = 0.2             # ... or 0.2 in salinity end the column for the seafloor layers
 # int16 water-column encoding: value = OFFSET + q * SCALE, q = -32768 means no data
 COL_SCALE = 0.001
 COL_OFFSET = {"t": 10.0, "s": 20.0, "d": 15.0}
@@ -200,16 +205,25 @@ def decode_i16(q: np.ndarray, offset: float) -> np.ndarray:
 
 
 SPIKE_C = 10.0  # a surface cell this far from the median of its wet 5 x 5 neighbourhood is an extrapolation artefact
+HOT_C = 33.0       # ... and so is a cell above this temperature that is more than HOT_SPIKE_C warmer than that median
+HOT_SPIKE_C = 4.0
 
 
-def despike(a: np.ndarray, limit: float = SPIKE_C) -> tuple[np.ndarray, int]:
-    """Blank cells that differ from the median of their wet 5 x 5 neighbourhood by more than `limit`.
+def despike(a: np.ndarray, limit: float = SPIKE_C, hot: float = HOT_C, hot_limit: float = HOT_SPIKE_C) -> tuple[np.ndarray, int]:
+    """Blank cells that differ from the median of their wet 5 x 5 neighbourhood by more than `limit`, and cells
+    warmer than `hot` that are more than `hot_limit` warmer than that median.
 
     WOA23's monthly objective analysis leaves a few coastal cells far outside the physical range (44.0 degC in the
     Red Sea in February, a patch of 12-43 degC in 3-5 degC water in the Sea of Okhotsk in October). A 5 x 5 window
     (not 3 x 3) keeps a patch of several bad cells from hiding behind itself, and 10 degC keeps real fronts such as
     the cold upwelling in the Gulf of California's Canal de Ballenas (21 vs 30 degC in August). Neighbourhoods with
-    fewer than 6 wet cells are left alone. Returns the cleaned copy and the number of cells blanked."""
+    fewer than 6 wet cells are left alone.
+
+    The second, warm-only rule catches hot coastal patches too small for 10 degC to see: a 3-cell patch at the
+    Strait of Hormuz in October (35.8-37.1 degC in 30.6 degC water; 36.9 in 32.5 in August) and one cell off Guaymas
+    in July (34.4 in 30.4). No monthly climatological mean of open water sits 4 degC above its surroundings at
+    more than 33 degC; in the shipped 2026-11 monthly layers this rule blanks those 5 cells and nothing else.
+    Returns the cleaned copy and the number of cells blanked."""
     out = a.copy()
     H, W = a.shape
     pad = np.pad(a, 2, constant_values=np.nan)
@@ -220,7 +234,8 @@ def despike(a: np.ndarray, limit: float = SPIKE_C) -> tuple[np.ndarray, int]:
             warnings.simplefilter("ignore", RuntimeWarning)
             med = np.nanmedian(nb, axis=0)
     wet = np.sum(np.isfinite(nb), axis=0)
-    bad = np.isfinite(a) & (wet >= 6) & (np.abs(a - med) > limit)
+    dev = a - med
+    bad = np.isfinite(a) & (wet >= 6) & ((np.abs(dev) > limit) | ((a > hot) & (dev > hot_limit)))
     out[bad] = np.nan
     return out, int(bad.sum())
 
@@ -240,6 +255,40 @@ def load(name: str) -> np.ndarray:
     return np.load(RAW / name)
 
 
+def write_map_layer(key: str, a: np.ndarray) -> dict:
+    """Write map/<key>.bin (south -> north input) and return its manifest entry."""
+    step = MAP_STEP[key[0]]
+    q, lo = quantise_u16(north_up(a), step)
+    blob = deflate(byte_planes(q))
+    (OUT / "map").mkdir(parents=True, exist_ok=True)
+    (OUT / "map" / f"{key}.bin").write_bytes(blob)
+    ok = np.isfinite(a)
+    hi = float(np.nanmax(a)) if ok.any() else lo
+    pct = np.nanpercentile(a, [2, 98]).tolist() if ok.any() else [lo, hi]
+    return {"lo": round(lo, 6), "step": step, "hi": round(hi, 5), "p2": round(pct[0], 4), "p98": round(pct[1], 4),
+            "bytes": len(blob), "ocean_cells": int(ok.sum())}
+
+
+def monthly_sst(m: int) -> np.ndarray:
+    sst, nbad = despike(load(f"t_an_025_m{m:02d}_0000m.npy"))
+    if nbad:
+        print(f"month {m:02d}: {nbad} surface cell(s) blanked as spikes (> {SPIKE_C} degC from their neighbours, "
+              f"or > {HOT_C} degC and > {HOT_SPIKE_C} degC warmer)")
+    return sst
+
+
+def months() -> None:
+    """Rebuild only the twelve monthly surface-temperature layers and merge them into the existing manifest."""
+    man_p = OUT / "manifest.json"
+    man = json.loads(man_p.read_text())
+    for m in range(1, 13):
+        key = f"t_m{m:02d}"
+        man["map"]["layers"][key] = write_map_layer(key, monthly_sst(m))
+        print(f"{key}: max {man['map']['layers'][key]['hi']} degC", flush=True)
+    man_p.write_text(json.dumps(man, ensure_ascii=False, separators=(",", ":")))
+    print(f"merged monthly layers into {man_p}")
+
+
 def build() -> None:
     c = json.loads((RAW / "coords.json").read_text())
     latq, lonq = np.array(c["q"]["lat"]), np.array(c["q"]["lon"])
@@ -251,16 +300,8 @@ def build() -> None:
     sizes = {"map": 0, "col": 0}
 
     def put_map(key: str, a: np.ndarray) -> None:
-        step = MAP_STEP[key[0]]
-        q, lo = quantise_u16(north_up(a), step)
-        hi = float(np.nanmax(a))
-        blob = deflate(byte_planes(q))
-        (OUT / "map" / f"{key}.bin").write_bytes(blob)
-        sizes["map"] += len(blob)
-        ok = np.isfinite(a)
-        pct = np.nanpercentile(a, [2, 98]).tolist() if ok.any() else [lo, hi]
-        layers[key] = {"lo": round(lo, 6), "step": step, "hi": round(hi, 5), "p2": round(pct[0], 4), "p98": round(pct[1], 4),
-                       "bytes": len(blob), "ocean_cells": int(ok.sum())}
+        layers[key] = write_map_layer(key, a)
+        sizes["map"] += layers[key]["bytes"]
 
     for d in MAP_DEPTHS:
         t = load(f"t_an_025_annual_{d:04d}m.npy")
@@ -274,10 +315,7 @@ def build() -> None:
         print(f"map {d:>5} m: T {np.nanmin(t):.2f}..{np.nanmax(t):.2f}  S {np.nanmin(s):.2f}..{np.nanmax(s):.2f}  "
               f"sigma0 {np.nanmin(dens):.2f}..{np.nanmax(dens):.2f}", flush=True)
     for m in range(1, 13):
-        sst, nbad = despike(load(f"t_an_025_m{m:02d}_0000m.npy"))
-        if nbad:
-            print(f"month {m:02d}: {nbad} surface cell(s) blanked as spikes (> {SPIKE_C} degC from their neighbours)")
-        put_map(f"t_m{m:02d}", sst)
+        put_map(f"t_m{m:02d}", monthly_sst(m))
 
     # 1 deg water columns, 30 x 30 deg regions
     T = load("t_an_1deg_annual_all.npy")  # (102, 180, 360), south -> north
@@ -373,19 +411,39 @@ def fetch_bottom() -> None:
     print(f"WOA23 0.25 deg levels: {total / 1e6:.0f} MB in {LEVELS}")
 
 
-def bottom_fields(slabs, depths) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Deepest level where both T and S exist, per cell. `slabs` yields (k0, T[l, y, x], S[l, y, x]) in increasing
-    k0 order; returns (T, S, depth) at that level, NaN where no level has both."""
-    tb = sb = zb = None
+def bottom_fields(slabs, depths, jump_min_z: float = DEEP_JUMP_MIN_Z, jump_t: float = DEEP_JUMP_T,
+                  jump_s: float = DEEP_JUMP_S) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Deepest level where both T and S exist, per cell, above any deep-tail artefact. `slabs` yields
+    (k0, T[l, y, x], S[l, y, x]) in increasing k0 order; returns (T, S, depth) at that level, NaN where no level
+    has both, and the mask of cells whose deep tail was cut.
+
+    Deep-tail rule: going down a column, the first pair of adjacent levels whose upper level is >= jump_min_z deep
+    and whose temperature differs by more than jump_t or salinity by more than jump_s ends the column for the
+    seafloor layers; that level and everything below it are ignored. Below 1,500 m real water changes by
+    hundredths of a degree between standard levels (50-100 m apart). The jumps come from WOA23's analysis falling
+    back to its first guess in deep levels with no data, which in isolated basins is water from outside the basin:
+    Rhodes Basin 14.13 degC / 38.74 at 4,100 m, then 4.68 / 35.75 at 4,200 m and 1.36 / 35.70 at 4,400 m (a fake
+    global sigma4 maximum, 46.685); the same in the Ionian and Hellenic trenches, Red Sea, Sulu, Banda and Andaman
+    seas, Cayman Trench, and Atlantic-salinity water at the bottom of Pacific trenches and the Molloy Deep.
+    2 degC and 0.2 leave alone the smaller (1-1.5 degC) steps at real deep fronts and sills (Walvis Ridge,
+    Kerguelen, Bransfield Strait, Romanche Fracture Zone), where WOA's values may be right."""
+    tb = sb = zb = cut = pt = ps = None
     for k0, T, S in slabs:
         if tb is None:
             tb = np.full(T.shape[1:], np.nan, np.float32)
             sb = np.full(T.shape[1:], np.nan, np.float32)
             zb = np.full(T.shape[1:], np.nan, np.float32)
+            cut = np.zeros(T.shape[1:], bool)
         for j in range(T.shape[0]):
+            k = k0 + j
             ok = np.isfinite(T[j]) & np.isfinite(S[j])
-            tb[ok], sb[ok], zb[ok] = T[j][ok], S[j][ok], depths[k0 + j]
-    return tb, sb, zb
+            if pt is not None and depths[k - 1] >= jump_min_z:
+                with np.errstate(invalid="ignore"):
+                    cut |= ok & ((np.abs(T[j] - pt) > jump_t) | (np.abs(S[j] - ps) > jump_s))
+            use = ok & ~cut
+            tb[use], sb[use], zb[use] = T[j][use], S[j][use], depths[k]
+            pt, ps = T[j], S[j]
+    return tb, sb, zb, cut
 
 
 def bottom_properties(t: np.ndarray, sp: np.ndarray, z: np.ndarray, lon: np.ndarray, lat: np.ndarray,
@@ -404,6 +462,12 @@ def bottom_properties(t: np.ndarray, sp: np.ndarray, z: np.ndarray, lon: np.ndar
     s4[z[ok] < min_z_sigma4] = np.nan
     sig4[ok] = s4
     return theta, sig4
+
+
+def deep_percentiles(a: np.ndarray, z: np.ndarray) -> list[float]:
+    """2nd and 98th percentile over cells whose bottom level is >= 2,000 m (the "stretch colours" range)."""
+    v = a[np.isfinite(a) & (z >= BOTTOM_SIGMA4_MIN_Z)]
+    return [round(float(x), 4) for x in np.percentile(v, [2, 98])]
 
 
 def deep_range(a: np.ndarray, z: np.ndarray, step: float, grain: float | None = None) -> list[float]:
@@ -427,7 +491,9 @@ def bottom() -> None:
         for k0 in starts:
             yield k0, np.load(LEVELS / f"t_an_025_annual_L{k0:03d}.npy"), np.load(LEVELS / f"s_an_025_annual_L{k0:03d}.npy")
 
-    tb, sb, zb = bottom_fields(slabs(), depths)
+    tb, sb, zb, cut = bottom_fields(slabs(), depths)
+    print(f"deep-tail rule: {int(cut.sum())} cells end above a jump of > {DEEP_JUMP_T} degC or > {DEEP_JUMP_S} "
+          f"between levels below {DEEP_JUMP_MIN_Z:.0f} m", flush=True)
     LON, LAT = np.meshgrid(lonq, latq)
     theta, sig4 = bottom_properties(tb, sb, zb, LON, LAT)
     man_p = OUT / "manifest.json"
@@ -444,16 +510,21 @@ def bottom() -> None:
                        "p98": round(pct[1], 4), "bytes": len(blob), "ocean_cells": int(ok.sum())}
         if key != "z_bottom":
             layers[key]["range"] = deep_range(a, zb, step, 1.0 if key == "t_bottom" else None)
+            layers[key]["p2_deep"], layers[key]["p98_deep"] = deep_percentiles(a, zb)
         print(f"{key}: {np.nanmin(a):.3f}..{np.nanmax(a):.3f}, cells {int(ok.sum())}, range {layers[key].get('range')}, "
               f"{len(blob) / 1e6:.2f} MB", flush=True)
     man["map"]["bottom"] = {
         "keys": {"t": "t_bottom", "s": "s_bottom", "d": "d_bottom", "z": "z_bottom"},
-        "level": "deepest WOA23 standard level with both temperature and salinity in the 0.25 deg cell",
+        "level": "deepest WOA23 standard level with both temperature and salinity in the 0.25 deg cell, above any "
+                 f"jump of more than {DEEP_JUMP_T:g} degC or {DEEP_JUMP_S:g} in salinity between adjacent levels below "
+                 f"{DEEP_JUMP_MIN_Z:.0f} m (deeper levels there are WOA23 first-guess artefacts)",
+        "deep_tail_cut_cells": int(cut.sum()),
         "t": "potential temperature theta (TEOS-10 pt0_from_t, reference 0 dbar), degC",
         "s": "practical salinity (PSS-78) at that level",
         "d": f"potential density anomaly sigma4 = rho(SA, CT, 4000 dbar) - 1000 kg/m3, only where that level is "
              f">= {BOTTOM_SIGMA4_MIN_Z:.0f} m deep",
-        "z": "depth of that level, m (the WOA23 levels stop at 5,500 m; the seafloor can be deeper or between levels)",
+        "z": "depth of the level used, m (the WOA23 levels stop at 5,500 m; the seafloor can be deeper or between "
+             "levels)",
         "sigma4_min_depth_m": BOTTOM_SIGMA4_MIN_Z,
     }
     man_p.write_text(json.dumps(man, ensure_ascii=False, separators=(",", ":")))
@@ -531,7 +602,8 @@ def check() -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("step", nargs="?", default="all", choices=["fetch", "build", "fetch-bottom", "bottom", "check", "all"])
+    ap.add_argument("step", nargs="?", default="all",
+                    choices=["fetch", "build", "months", "fetch-bottom", "bottom", "check", "all"])
     step = ap.parse_args().step
     if step in ("fetch", "all"):
         fetch()
@@ -539,6 +611,8 @@ if __name__ == "__main__":
         fetch_bottom()
     if step in ("build", "all"):
         build()  # merges the seafloor layers too when the levels are fetched
+    if step == "months":
+        months()
     if step == "bottom":
         bottom()
     if step in ("check", "all"):

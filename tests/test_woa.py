@@ -110,11 +110,58 @@ def test_bottom_fields_take_the_deepest_level_with_both_variables():
     S = np.array([[[35.0, 35.0, nan]], [[35.0, 35.0, nan]], [[34.9, 34.9, nan]], [[34.7, 34.7, nan]]], np.float32)
     # two slabs, as fetch_bottom stores them
     slabs = [(0, T[:2], S[:2]), (2, T[2:], S[2:])]
-    tb, sb, zb = woa.bottom_fields(iter(slabs), depths)
+    tb, sb, zb, cut = woa.bottom_fields(iter(slabs), depths)
+    assert not cut.any()
     assert tb[0].tolist()[:2] == [1.0, 4.0]
     assert zb[0].tolist()[:2] == [4000.0, 1000.0]   # second cell stops where T stops
     assert sb[0, 1] == pytest.approx(34.9)
     assert np.isnan(tb[0, 2]) and np.isnan(zb[0, 2])
+
+
+def test_bottom_fields_cut_deep_tail_artefacts_but_keep_real_steps():
+    depths = np.array([1000.0, 2000.0, 3000.0, 4000.0, 4100.0, 4200.0, 4300.0, 4400.0])
+    nan = np.nan
+    # cells: Rhodes Basin column as WOA23 has it (Mediterranean water, then first-guess Atlantic water below 4,100 m);
+    # a Pacific trench with Atlantic-salinity water in its last level; a real 1.3 degC step at a deep front
+    # (kept); a jump above 1,500 m (not a deep-tail jump, kept)
+    T = np.array([
+        [13.9, 2.5, 2.4, 9.0],
+        [14.2, 1.9, 2.3, 4.0],
+        [14.2, 1.6, 2.3, 3.8],
+        [14.1, 1.5, 2.25, 3.0],
+        [14.1, 1.5, 1.0, 2.9],
+        [4.7, 1.5, 0.9, 2.8],
+        [4.7, 1.5, 0.9, nan],
+        [1.4, 1.6, nan, nan],
+    ], np.float32)[:, None, :]
+    S = np.array([
+        [38.8, 34.6, 34.9, 35.0],
+        [38.8, 34.65, 34.87, 34.95],
+        [38.8, 34.67, 34.86, 34.92],
+        [38.75, 34.68, 34.85, 34.9],
+        [38.74, 34.68, 34.73, 34.9],
+        [35.75, 34.68, 34.72, 34.9],
+        [35.75, 34.69, 34.72, nan],
+        [35.7, 34.95, nan, nan],
+    ], np.float32)[:, None, :]
+    slabs = [(0, T[:3], S[:3]), (3, T[3:], S[3:])]   # the jumps fall inside and across slabs
+    tb, sb, zb, cut = woa.bottom_fields(iter(slabs), depths)
+    assert cut[0].tolist() == [True, True, False, False]
+    assert zb[0].tolist() == [4100.0, 4300.0, 4300.0, 4200.0]
+    assert tb[0, 0] == pytest.approx(14.1) and sb[0, 0] == pytest.approx(38.74)
+    assert sb[0, 1] == pytest.approx(34.69)            # last level before the salinity jump
+    assert tb[0, 2] == pytest.approx(0.9)              # the real 1.3 degC step is not cut
+
+
+def test_despike_hot_rule_catches_small_warm_patches_only():
+    a = np.full((12, 12), 30.6)
+    a[4, 4:7] = [35.8, 35.9, 37.1]                   # the October Hormuz patch: 3 cells, 5-6.5 degC too warm
+    a[9, 9] = 32.5                                    # warm but under 33 degC: kept
+    out, n = woa.despike(a)
+    assert n == 3 and np.isnan(out[4, 4:7]).all() and out[9, 9] == 32.5
+    b = np.full((12, 12), 31.0)
+    b[:, 6:] = 34.0                                   # a warm shallow area 3 degC above the rest: kept
+    assert woa.despike(b)[1] == 0
 
 
 def test_bottom_properties_theta_cooler_than_in_situ_and_sigma4_only_deep():
@@ -150,6 +197,13 @@ def test_seafloor_layers_when_built():
     # Antarctic Bottom Water: the Weddell Sea floor is colder than the Canary Basin floor and denser in sigma4
     assert woa.map_value("t_bottom", -30.0, -65.0) < 0.0 < woa.map_value("t_bottom", -25.0, 30.0)
     assert woa.map_value("d_bottom", -30.0, -65.0) > woa.map_value("d_bottom", -25.0, 30.0)
+    # deep-tail rule: Rhodes Basin keeps its ~13.4 degC Mediterranean bottom water, and no Mediterranean cell holds
+    # the global sigma4 maximum any more (WOA23's first guess gave 0.98 degC, sigma4 46.685 there)
+    assert woa.map_value("t_bottom", 28.375, 35.875) > 13.0
+    assert man["map"]["layers"]["d_bottom"]["hi"] < 46.65
+    for k in ("t_bottom", "s_bottom", "d_bottom"):
+        L = man["map"]["layers"][k]
+        assert L["range"][0] <= L["p2_deep"] < L["p98_deep"] <= L["range"][1]
 
 
 def test_despike_removes_isolated_and_patchy_artefacts_but_keeps_fronts():

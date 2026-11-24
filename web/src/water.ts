@@ -8,7 +8,9 @@ export const WATER_VARS: WaterVar[] = ['t', 's', 'd'];
 
 export interface LayerInfo { lo: number; step: number; hi: number; p2: number; p98: number; bytes: number; ocean_cells: number;
   /** default colour range of this layer when it differs from the variable's (the seafloor layers) */
-  range?: [number, number] }
+  range?: [number, number];
+  /** seafloor layers: 2nd-98th percentile over cells whose WOA level is >= 2,000 m (the "stretch" range there) */
+  p2_deep?: number; p98_deep?: number }
 /** The "at the seafloor" layers (pipeline/woa.py bottom): theta, salinity, sigma4 at the deepest WOA level. */
 export interface BottomInfo { keys: Record<string, string>; sigma4_min_depth_m: number; level: string; t: string; s: string; d: string; z: string }
 export interface WaterManifest {
@@ -77,10 +79,17 @@ export function gradientCss(v: WaterVar): string {
   return s.map((c, i) => `${c} ${((100 * i) / (s.length - 1)).toFixed(1)}%`).join(', ');
 }
 
-/** Scale used for colouring: the fixed range of the variable, or the 2nd-98th percentile of this layer. */
+/**
+ * Scale used for colouring: the fixed range of the variable (or the layer's own default range), or with `stretch`
+ * the 2nd-98th percentile of this layer. A seafloor layer stretches over the deep floor only (>= 2,000 m): its
+ * all-ocean percentiles include the shelves (e.g. -1.3..16.2 degC for theta) and would flatten the abyss.
+ */
 export function scaleRange(man: WaterManifest, v: WaterVar, key: string, stretch: boolean): [number, number] {
   const L = man.map.layers[key];
-  if (stretch && L && L.p98 > L.p2) return [L.p2, L.p98];
+  if (stretch && L) {
+    if (L.p2_deep !== undefined && L.p98_deep !== undefined) { if (L.p98_deep > L.p2_deep) return [L.p2_deep, L.p98_deep]; }
+    else if (!L.range && L.p98 > L.p2) return [L.p2, L.p98];
+  }
   return L?.range ?? man.variables[v].range;
 }
 
@@ -114,6 +123,14 @@ export function decodeMapLayer(planes: Uint8Array, lo: number, step: number): Fl
     out[i] = q === 0 ? NaN : lo + (q - 1) * step;
   }
   return out;
+}
+
+/** Value of the cell containing lon/lat, no interpolation (NaN = no data); for level depths, which must not blend. */
+export function nearestGrid(g: Grid, lon: number, lat: number): number {
+  const x = Math.floor((((lon - g.west) % 360) + 360) % 360 / g.res);
+  const y = Math.floor((g.north - lat) / g.res);
+  if (y < 0 || y >= g.height) return NaN;
+  return g.values[y * g.width + Math.min(g.width - 1, x)];
 }
 
 /** Quantisation step of a layer (the readout does not show more digits than this supports). */

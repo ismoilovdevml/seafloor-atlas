@@ -17,16 +17,33 @@ export interface AmocData {
   };
 }
 
-/** Centred running mean over `w` values; null where the window is not full or holds a gap. */
+/**
+ * Centred running mean over a `w`-month span; null where the window is not full or holds a gap.
+ * Odd w: plain mean of v[i - h .. i + h]. Even w (the 12-month mean): the centred "2 x w" filter, w + 1 values
+ * v[i - w/2 .. i + w/2] with half weight on the two ends, so the mean is centred on month i, not half a month late.
+ */
 export function runningMean(v: (number | null)[], w = 12): (number | null)[] {
-  const h = Math.floor(w / 2);
+  const h = Math.floor(w / 2), even = w % 2 === 0;
   return v.map((_, i) => {
-    const a = i - h, b = a + w;
-    if (a < 0 || b > v.length) return null;
+    if (i - h < 0 || i + h >= v.length) return null;
     let s = 0;
-    for (let j = a; j < b; j++) { const x = v[j]; if (x === null || !Number.isFinite(x)) return null; s += x; }
+    for (let j = i - h; j <= i + h; j++) {
+      const x = v[j];
+      if (x === null || !Number.isFinite(x)) return null;
+      s += even && (j === i - h || j === i + h) ? x / 2 : x;
+    }
     return s / w;
   });
+}
+
+/** The card's depth layers (Sv, positive north): RAPID's fixed-depth classes, which sum to zero (mass balance). */
+export function depthLayers(L: Record<string, number>): [string, number][] {
+  return [
+    ['0–1,100 m', L.thermocline + L.intermediate],
+    ['1,100–3,000 m', L.upper_deep],
+    ['3,000–5,000 m', L.lower_deep],
+    ['Below 5,000 m', L.bottom],
+  ];
 }
 
 /** Decimal year of month index i counted from "YYYY-MM" (mid-month). */
@@ -39,9 +56,14 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 export const monthName = (ym: string) => { const [y, m] = ym.split('-').map(Number); return `${MONTHS[m - 1]} ${y}`; };
 export const shortMonth = (ym: string) => { const [y, m] = ym.split('-').map(Number); return `${MONTHS[m - 1].slice(0, 3)} ${y}`; };
 
-/** Line chart of the monthly AMOC (thin) and its 12-month running mean (thick), 0-30 Sv. Returns SVG markup. */
-export function amocChartSvg(d: AmocData, w = 560, h = 230): string {
-  const M = { l: 40, r: 12, t: 14, b: 26 }, pw = w - M.l - M.r, ph = h - M.t - M.b;
+/**
+ * Line chart of the monthly AMOC (thin) and its 12-month running mean (thick), 0-30 Sv. Returns SVG markup.
+ * Sized for the card, which shows the image ~376 px wide on desktop and ~290 px on a 375 px phone: a 380-unit
+ * viewBox with 13-unit labels renders them at ~13 px and ~10 px (a 560-unit box shrank 11-unit labels to 7 and 6 px).
+ */
+export const AMOC_CHART = { w: 380, h: 210, font: 13 };
+export function amocChartSvg(d: AmocData, w = AMOC_CHART.w, h = AMOC_CHART.h): string {
+  const M = { l: 30, r: 10, t: 20, b: 26 }, pw = w - M.l - M.r, ph = h - M.t - M.b;
   const v = d.monthly.amoc, n = v.length;
   const y0 = monthYear(d.months.first, 0), y1 = monthYear(d.months.first, n - 1);
   const X = (t: number) => M.l + ((t - y0) / (y1 - y0)) * pw, Y = (s: number) => M.t + ph - (Math.max(0, Math.min(30, s)) / 30) * ph;
@@ -53,14 +75,14 @@ export function amocChartSvg(d: AmocData, w = 560, h = 230): string {
     });
     return out;
   };
-  const grid = [0, 10, 20, 30].map((s) => `<line x1="${M.l}" x2="${w - M.r}" y1="${Y(s)}" y2="${Y(s)}" stroke="#2a3a52" stroke-width="1"/><text x="${M.l - 6}" y="${Y(s) + 4}" text-anchor="end">${s}</text>`).join('');
+  const grid = [0, 10, 20, 30].map((s) => `<line x1="${M.l}" x2="${w - M.r}" y1="${Y(s)}" y2="${Y(s)}" stroke="#2a3a52" stroke-width="1"/><text x="${M.l - 5}" y="${Y(s) + 4.5}" text-anchor="end">${s}</text>`).join('');
   const years: number[] = [];
   for (let y = Math.ceil(y0 / 5) * 5; y <= y1; y += 5) years.push(y);
-  const xt = years.map((y) => `<line x1="${X(y)}" x2="${X(y)}" y1="${M.t + ph}" y2="${M.t + ph + 4}" stroke="#8a9ea8"/><text x="${X(y)}" y="${h - 8}" text-anchor="middle">${y}</text>`).join('');
+  const xt = years.map((y) => `<line x1="${X(y)}" x2="${X(y)}" y1="${M.t + ph}" y2="${M.t + ph + 4}" stroke="#8a9ea8"/><text x="${X(y)}" y="${h - 7}" text-anchor="middle">${y}</text>`).join('');
   const mean = d.stats.mean_sv;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" font-family="system-ui, sans-serif" font-size="11" fill="#b0c1c9">`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" font-family="system-ui, sans-serif" font-size="${AMOC_CHART.font}" fill="#b0c1c9">`
     + `<rect width="${w}" height="${h}" fill="#0b1626"/>${grid}${xt}`
-    + `<text x="${M.l}" y="${M.t - 3}" fill="#8a9ea8">Sv (million m³/s), northward</text>`
+    + `<text x="${M.l}" y="${M.t - 6}" fill="#8a9ea8">Sv (million m³/s), northward</text>`
     + `<line x1="${M.l}" x2="${w - M.r}" y1="${Y(mean)}" y2="${Y(mean)}" stroke="#a8e0c2" stroke-dasharray="4 4" stroke-width="1"/>`
     + `<path d="${path(v)}" fill="none" stroke="#5c7fb3" stroke-width="1"/>`
     + `<path d="${path(runningMean(v))}" fill="none" stroke="#e6eef0" stroke-width="2.2" stroke-linejoin="round"/>`
@@ -71,7 +93,6 @@ const sv = (x: number) => `${x > 0 ? '+' : x < 0 ? '−' : ''}${Math.abs(x).toFi
 
 export function amocCard(d: AmocData): CardModel {
   const s = d.stats, L = s.layer_means_sv;
-  const upper = L.florida_current + L.ekman + L.upper_mid_ocean;
   const svg = amocChartSvg(d);
   return {
     kind: 'Ocean circulation, measured',
@@ -83,10 +104,7 @@ export function amocCard(d: AmocData): CardModel {
       ['Weakest month', `${s.min.sv.toFixed(1)} Sv, ${shortMonth(s.min.month)}`],
       ['Strongest month', `${s.max.sv.toFixed(1)} Sv, ${shortMonth(s.max.month)}`],
       ['Heat carried north', `${s.heat_mean_pw.toFixed(2)} PW`],
-      ['0–1,100 m', sv(upper)],
-      ['1,100–3,000 m', sv(L.upper_deep)],
-      ['3,000–5,000 m', sv(L.lower_deep)],
-      ['Below 5,000 m', sv(L.bottom)],
+      ...depthLayers(L).map(([k, x]): [string, string] => [k, sv(x)]),
     ],
     links: [{ label: 'Data: BODC', href: `https://doi.org/${d.doi}` }, { label: 'RAPID project', href: 'https://rapid.ac.uk/' }],
     image: { src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, alt: `Monthly AMOC at 26.5° N, ${d.months.first} to ${d.months.last}, with a 12-month running mean around ${s.mean_sv.toFixed(1)} Sv`, credit: 'Thin: monthly; thick: 12-month running mean; dashed: long-term mean' },
