@@ -2,7 +2,7 @@
 // classify() turns the measured fraction of the cell and the distance to the nearest measured cell into one of the
 // STATUS classes (palette.ts); nearestFlagged() finds that distance on a Web Mercator pixel grid; the text helpers
 // say it in plain words. Pure functions, so they are unit-tested without tiles or a map.
-import { haversineKm, lonLatToWorldPx, wrapPx } from './geo';
+import { haversineKm, lonLatToWorldPx, MAX_MERC_LAT, wrapPx } from './geo';
 import type { StatusKey } from './palette';
 
 /** A cell with no sounding still counts as "survey nearby" when measured seafloor is at most this far (km). */
@@ -10,6 +10,17 @@ export const NEAR_KM = 10;
 /** How far the inspector looks for measured seafloor (km). */
 export const SEARCH_KM = 200;
 const R_KM = 6371.0088;
+/**
+ * The coverage (and DEM) tiles are real data only equatorward of this latitude: pipeline/tiles.py BLEND_FROM fades the
+ * rows beyond it into one polar-cap mean (fully the mean from 84.92°, the measured fraction 0.186 in the north), so a
+ * measured fraction or a distance read there would be invented. Poleward of it the atlas does not rate coverage.
+ */
+export const RATED_TO_LAT = 84.8;
+/** Short label for the measured fraction where coverage is not rated (|lat| > RATED_TO_LAT). */
+export const NOT_RATED = `poleward of ${RATED_TO_LAT}° — not rated`;
+/** One sentence for the inspector at an ocean point poleward of RATED_TO_LAT. */
+export const NOT_RATED_VERDICT = `This atlas does not rate ship coverage poleward of ${RATED_TO_LAT}°: its coverage grid ends there. ` +
+  'The depth shown comes from the GEBCO grid itself, resampled to cells of about 0.8 km around the pole.';
 
 /**
  * f: measured fraction of the cell (0..1), null = land, NaN = no tile; nearestKm: distance to the nearest cell with
@@ -34,31 +45,40 @@ export function pixelKm(lat: number, z: number, tileSize: number): number {
   return (2 * Math.PI * R_KM * Math.cos((Math.min(85.06, Math.abs(lat)) * Math.PI) / 180)) / (tileSize * 2 ** z);
 }
 
-/** Pixel radius of the square window that holds every pixel within maxKm of a point at latitude lat. */
-export function searchRadiusPx(lat: number, z: number, tileSize: number, maxKm: number): number {
+/**
+ * Pixel radius of the square window that holds every pixel within maxKm of a point at latitude lat (pixels poleward
+ * of maxLat are never searched, so the window need not reach past it).
+ */
+export function searchRadiusPx(lat: number, z: number, tileSize: number, maxKm: number, maxLat = MAX_MERC_LAT): number {
   const n = tileSize * 2 ** z;
   // pixels are narrowest at the window's poleward edge: size the window with that width so nothing is missed
-  const edge = Math.min(85.05, Math.abs(lat) + maxKm / 111.2);
+  const edge = Math.min(maxLat, 85.05, Math.abs(lat) + maxKm / 111.2);
   return Math.min(Math.ceil(maxKm / pixelKm(edge, z, tileSize)) + 1, Math.floor(n / 2));
 }
 
 /**
  * Great-circle distance (km) from lon/lat to the centre of the nearest pixel where flag(ix, iy) is true, searching
- * square rings outward; 0 when the point's own pixel is flagged; null when none lies within maxKm.
- * flag receives a wrapped column and a row inside [0, n).
+ * square rings outward; 0 when the point's own pixel is flagged; null when none lies within maxKm, and null for a point
+ * poleward of maxLat (it has no pixel of its own: Web Mercator would clamp it onto the edge row, hundreds of km away).
+ * Rows whose centre lies poleward of maxLat are never tested. flag receives a wrapped column and a row inside [0, n).
  */
 export function nearestFlagged(flag: (ix: number, iy: number) => boolean, lon: number, lat: number, z: number,
-  tileSize: number, maxKm: number): number | null {
+  tileSize: number, maxKm: number, maxLat = MAX_MERC_LAT): number | null {
+  if (!(Math.abs(lat) <= maxLat)) return null;
   const n = tileSize * 2 ** z;
   const [cx, cy] = lonLatToWorldPx(lon, lat, z, tileSize);
+  // rows [rowMin, rowMax] have their centre within +-maxLat
+  const yN = lonLatToWorldPx(0, maxLat, z, tileSize)[1], yS = lonLatToWorldPx(0, -maxLat, z, tileSize)[1];
+  const rowMin = Math.max(0, Math.ceil(yN - 0.5)), rowMax = Math.min(n - 1, Math.floor(yS - 0.5));
+  const ok = (iy: number) => iy >= rowMin && iy <= rowMax;
   const ix0 = Math.floor(cx), iy0 = Math.min(n - 1, Math.max(0, Math.floor(cy)));
-  if (flag(wrapPx(ix0, n), iy0)) return 0;
-  const edge = Math.min(85.05, Math.abs(lat) + maxKm / 111.2);
+  if (ok(iy0) && flag(wrapPx(ix0, n), iy0)) return 0;
+  const edge = Math.min(maxLat, 85.05, Math.abs(lat) + maxKm / 111.2);
   const pxMin = pixelKm(edge, z, tileSize);
-  const R = searchRadiusPx(lat, z, tileSize, maxKm);
+  const R = searchRadiusPx(lat, z, tileSize, maxKm, maxLat);
   let best = Infinity;
   const test = (ix: number, iy: number) => {
-    if (iy < 0 || iy >= n || !flag(wrapPx(ix, n), iy)) return;
+    if (!ok(iy) || !flag(wrapPx(ix, n), iy)) return;
     const d = haversineKm([lon, lat], worldPxToLonLat(ix + 0.5, iy + 0.5, z, tileSize));
     if (d < best) best = d;
   };

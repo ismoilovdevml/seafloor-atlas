@@ -10,7 +10,8 @@ Grid: azimuthal equidistant around the pole, distance in degrees of latitude fro
 square of half-width RADIUS_DEG. Pixel (i, j) centre: X = (j + 0.5) * 2R / N - R, Y = R - (i + 0.5) * 2R / N;
 d = hypot(X, Y); north: lat = 90 - d, lon = atan2(X, -Y); south: lat = -90 + d, lon = atan2(X, Y). Each pixel is
 the area-weighted mean (cos lat) of the 15" cells falling into it (bin average); the few empty pixels take their
-nearest neighbour. Encoded as Terrarium RGB in lossless WebP, like the depth tiles.
+nearest neighbour (polar.json empty_pixels_filled counts those inside the disc). Encoded as Terrarium RGB in
+lossless WebP, like the depth tiles.
 
 Input : data/raw/gebco_2026/GEBCO_2026_15s.tif (ice-surface grid, the same elevation as the depth tiles)
 Output: web/public/tiles/polar/north.webp, south.webp, polar.json
@@ -69,6 +70,17 @@ def bin_average(lat: np.ndarray, lon: np.ndarray, z: np.ndarray, n: int, north: 
     return out.reshape(n, n)
 
 
+def disc_mask(n: int, north: bool, radius: float = RADIUS_DEG) -> np.ndarray:
+    """True for the pixels whose centre lies inside the disc (the ones the viewer draws), shape (n, n)."""
+    plat, _ = pixel_latlon(n, north, radius)
+    return np.abs(plat) >= 90 - radius
+
+
+def count_empty(g: np.ndarray, disc: np.ndarray) -> int:
+    """Pixels inside the disc that no source cell fell into (the square's corners outside the disc do not count)."""
+    return int((~np.isfinite(g) & disc).sum())
+
+
 def fill_nearest(a: np.ndarray) -> np.ndarray:
     from scipy import ndimage
 
@@ -102,10 +114,10 @@ def build(size: int) -> None:
             LAT = np.broadcast_to(lat_c[:, None], z.shape)
             LON = np.broadcast_to(lon_c[None, :], z.shape)
             g = bin_average(LAT.ravel(), LON.ravel(), z.ravel(), size, north)
-            empty = int((~np.isfinite(g)).sum())
-            g = fill_nearest(g)
             plat, _ = pixel_latlon(size, north)
-            disc = np.abs(plat) >= 90 - RADIUS_DEG
+            disc = disc_mask(size, north)
+            empty = count_empty(g, disc)
+            g = fill_nearest(g)
             # the square's corners lie outside the disc and are never drawn: one flat value compresses to nothing
             g[np.abs(plat) < 90 - RADIUS_DEG - 0.05] = float(np.median(g[disc & (np.abs(plat) < 90 - RADIUS_DEG + 0.1)]))
             # whole metres: the averages' fractions would fill the B channel with noise that does not compress

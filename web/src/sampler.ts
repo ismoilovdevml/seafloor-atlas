@@ -8,19 +8,37 @@ import { fetchTile } from './tilesource';
 // still stores premultiplied pixels internally, which can perturb RGB where alpha < 255, but alpha itself
 // round-trips exactly. DEM tiles have alpha 255 everywhere (RGB exact), and from the veil only alpha is
 // read, so both decodes are lossless.
+//
+// Poles: the tiles are real only equatorward of 84.8° (inspect.ts RATED_TO_LAT; pipeline/tiles.py fades the rows
+// beyond into one cap mean, and Web Mercator clamps everything past 85.05° onto that edge row). Poleward of it the
+// depth comes from the polar grid the globe draws there (polar-layer.ts loadPolarGrid, GEBCO 15" binned to ~0.76 km),
+// and the measured fraction is not rated: NaN with a note, never the cap's invented value.
 import { bilinear, decodeTerrarium, decodeVeil, lonLatToWorldPx, wrapPx } from './geo';
-import { nearestFlagged, searchRadiusPx } from './inspect';
+import { nearestFlagged, NOT_RATED, RATED_TO_LAT, searchRadiusPx } from './inspect';
+import { loadPolarGrid, polarDepth } from './polar-layer';
 
 type Kind = 'dem' | 'coverage';
 type Grid = Float32Array | Uint8Array;
 
 export interface SamplerMeta { tileSize: number; maxzoom: number; veilMax: number }
 
+/**
+ * h: depth/height (m), NaN = unknown. f: measured fraction 0..1, null = land, NaN = unknown. note: why f is unknown
+ * when the atlas does not rate it (poleward of RATED_TO_LAT: NOT_RATED), else null.
+ */
+export interface SampleResult { h: number[]; f: (number | null)[]; note: (string | null)[] }
+
+/** True where the tiles stop being real data and the polar grid answers instead. */
+export const isPolar = (lat: number) => Math.abs(lat) > RATED_TO_LAT;
+
 export class TileSampler {
   private cache = new Map<string, Promise<Grid | null>>();
   private ready = new Map<string, Grid | null>();
-  // tiles come from tilesource.fetchTile (static or PMTiles); the first argument is kept for call-site compatibility
-  constructor(_base: string, private meta: SamplerMeta, private capacity = 96) {}
+  private polarBase: string;
+  // tiles come from tilesource.fetchTile (static or PMTiles); `base` (the tiles folder) locates the polar grids
+  constructor(base: string, private meta: SamplerMeta, private capacity = 96) {
+    this.polarBase = `${base.replace(/\/+$/, '')}/polar/`;
+  }
 
   private key(kind: Kind, z: number, x: number, y: number) { return `${kind}/${z}/${x}/${y}`; }
 
@@ -95,9 +113,31 @@ export class TileSampler {
 
   /**
    * Sample depth (bilinear) and measured fraction (nearest) at many lon/lat points at zoom z.
-   * NaN = tile missing (unknown); fraction null = land.
+   * NaN = tile missing (unknown); fraction null = land. Poleward of RATED_TO_LAT: depth from the polar grid, fraction
+   * null on land, else NaN with note NOT_RATED.
    */
-  async sample(lonlats: [number, number][], z = this.meta.maxzoom): Promise<{ h: number[]; f: (number | null)[] }> {
+  async sample(lonlats: [number, number][], z = this.meta.maxzoom): Promise<SampleResult> {
+    const polar = lonlats.map(([, lat]) => isPolar(lat));
+    const [tiles, north, south] = await Promise.all([
+      this.sampleTiles(lonlats.filter((_, i) => !polar[i]), z),
+      polar.some((p, i) => p && lonlats[i][1] > 0) ? loadPolarGrid(this.polarBase, true) : null,
+      polar.some((p, i) => p && lonlats[i][1] < 0) ? loadPolarGrid(this.polarBase, false) : null,
+    ]);
+    const h: number[] = [], f: (number | null)[] = [], note: (string | null)[] = [];
+    let k = 0;
+    lonlats.forEach(([lon, lat], i) => {
+      if (!polar[i]) { h.push(tiles.h[k]); f.push(tiles.f[k]); note.push(null); k++; return; }
+      const g = lat > 0 ? north : south;
+      const d = g ? polarDepth(g, lat, lon) : NaN;
+      h.push(d);
+      // land is land (the ice surface on Antarctica); over the sea the measured fraction is not rated here
+      if (d >= 0) { f.push(null); note.push(null); } else { f.push(NaN); note.push(NOT_RATED); }
+    });
+    return { h, f, note };
+  }
+
+  private async sampleTiles(lonlats: [number, number][], z: number): Promise<{ h: number[]; f: (number | null)[] }> {
+    if (!lonlats.length) return { h: [], f: [] };
     const S = this.meta.tileSize, n = S * 2 ** z;
     const world = lonlats.map(([lon, lat]) => lonLatToWorldPx(lon, lat, z, S));
     const tiles = this.tilesFor(world, z);
@@ -126,13 +166,15 @@ export class TileSampler {
 
   /**
    * Distance (km) from lon/lat to the nearest ocean cell with any direct measurement at zoom z (inspect.ts
-   * nearestFlagged over the coverage + DEM tiles of a window maxKm wide); 0 = this cell; null = none within maxKm
-   * or tiles missing.
+   * nearestFlagged over the coverage + DEM tiles of a window maxKm wide); 0 = this cell; null = none within maxKm,
+   * tiles missing, or a point poleward of RATED_TO_LAT (not rated: sample() says so in its note). Cells poleward of
+   * RATED_TO_LAT are never counted as measured (their fraction is the invented cap mean).
    */
   async nearestMeasured(lon: number, lat: number, maxKm: number, z = this.meta.maxzoom): Promise<number | null> {
+    if (isPolar(lat)) return null;
     const S = this.meta.tileSize, T = 2 ** z;
     const [cx, cy] = lonLatToWorldPx(lon, lat, z, S);
-    const R = searchRadiusPx(lat, z, S, maxKm);
+    const R = searchRadiusPx(lat, z, S, maxKm, RATED_TO_LAT);
     const tx0 = Math.floor((cx - R) / S), tx1 = Math.floor((cx + R) / S);
     const ty0 = Math.max(0, Math.floor((cy - R) / S)), ty1 = Math.min(T - 1, Math.floor((cy + R) / S));
     const set = new Set<string>();
@@ -149,7 +191,7 @@ export class TileSampler {
       const f = decodeVeil(a[i], this.meta.veilMax, d[i]);
       return f !== null && f > 0;
     };
-    const km = nearestFlagged(flag, lon, lat, z, S, maxKm);
+    const km = nearestFlagged(flag, lon, lat, z, S, maxKm, RATED_TO_LAT);
     this.evict(this.capacity);
     return km;
   }

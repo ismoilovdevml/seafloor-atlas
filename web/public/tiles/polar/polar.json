@@ -10,14 +10,14 @@
    "min_m": -5412.0,
    "max_m": 1627.0,
    "mean_m": -2926.0,
-   "empty_pixels_filled": 817052,
+   "empty_pixels_filled": 0,
    "bytes": 1897650
   },
   "south": {
    "min_m": 1.0,
    "max_m": 4388.0,
    "mean_m": 2293.8,
-   "empty_pixels_filled": 817052,
+   "empty_pixels_filled": 0,
    "bytes": 1136820
   }
  }
