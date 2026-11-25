@@ -11,6 +11,12 @@ export type TourTool =
   | { kind: 'water'; v: 't' | 's' | 'd'; depth: number; column?: [number, number] }
   | { kind: 'time'; state: TimeState; play?: boolean };
 
+/**
+ * Something a chapter opens beside the map once its layers are on: a layer's card (the AMOC line's), or the point
+ * inspector at a place. Optional for the host (TourHost.open): without it the chapter only describes the click.
+ */
+export type TourOpen = { kind: 'card'; id: 'amoc' } | { kind: 'inspect'; at: [number, number] };
+
 export interface TourCamera { center: [number, number]; zoom: number; pitch: number; bearing: number }
 
 /** A chapter's scene: language-independent (the words live in tour-text-*.ts, keyed by id). */
@@ -23,6 +29,8 @@ export interface TourScene {
    *  marine, and the #layers= tokens (quakes, seamounts, chl, winds, currents, cables, shipping, wrecks, ...) */
   layers: string[];
   tool: TourTool;
+  /** a card or the point inspector to open (desktop only: on a phone it would cover the map under the tour sheet) */
+  open?: TourOpen;
   /** element ids of the control the chapter talks about; the first one visible on screen is spotlit */
   spotlight: string[];
 }

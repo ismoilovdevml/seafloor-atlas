@@ -4,13 +4,14 @@
 // Back / Next / Pause / Exit, chapter dots, keys (Left / Right, Space, Esc), optional read-aloud (Web Speech,
 // off by default), #tour=N deep link. Exiting restores the layers, tool, exaggeration and drawers the viewer
 // had before. Loaded on demand (main.ts); scenes in tour-chapters.ts, words in tour-text-en.ts / tour-text-uz.ts.
+// A chapter may also open a card or the point inspector through the optional host.open (desktop only).
 // The EN / UZ switch in the card changes the words in place and writes #lang= (so a shared link keeps it); a
 // #lang= typed into the address later, or a new start, is followed too, so the one cached Tour never goes stale.
 import './tour.css';
 import { CHAPTERS } from './tour-chapters';
 import { TEXT_EN } from './tour-text-en';
 import { hashWithLang, langFromHash, tourLang, type TourLang } from './tour-lang';
-import { cameraFor, hashWithTour, nearCamera, readingMs, type TourCamera, type TourScene, type TourText, type TourTool } from './tour-model';
+import { cameraFor, hashWithTour, nearCamera, readingMs, type TourCamera, type TourOpen, type TourScene, type TourText, type TourTool } from './tour-model';
 
 export interface TourHost {
   phone(): boolean;
@@ -39,6 +40,12 @@ export interface TourHost {
   timePlay(on: boolean): void;
   /** gives focus back to the Tour button */
   focusStart(): void;
+  /**
+   * Optional: opens a chapter's card or the point inspector (null closes what the last call opened). Opening must do
+   * its layout synchronously (the tour pads the map and flies after it) and may finish filling in later. A host
+   * without it simply shows those chapters without the card or inspector; their words describe the click.
+   */
+  open?(o: TourOpen | null): void | Promise<void>;
 }
 interface Snapshot { layers: string[]; tool: TourTool; exaggeration: number | 'auto'; drawers: { explore: boolean; layers: boolean } }
 
@@ -98,6 +105,8 @@ export class Tour {
   /** the language picked with the switch this session (it wins over the browser's when #lang= is absent) */
   private chosen: TourLang | null = null;
   private langSeq = 0;
+  /** a card or the inspector a chapter opened through host.open (closed when a chapter without one runs, and on exit) */
+  private opened = false;
 
   constructor(private host: TourHost, readonly chapters: TourScene[] = CHAPTERS, private t: TourText = TEXT_EN) {
     this.canSpeak = Tour.voiced(t.lang);
@@ -267,6 +276,7 @@ export class Tour {
     this.host.setTouring(false);
     this.host.stop(); // ends a flight in progress, so the chapter being left gives up at once
     await this.applying;
+    this.openFor(null);
     const s = this.snap;
     this.snap = null;
     if (s) {
@@ -329,6 +339,9 @@ export class Tour {
       await this.host.setTool(ch.tool);
       if (tok !== this.token) return;
       await this.host.setLayers(ch.layers);
+      if (tok !== this.token) return;
+      // after the layers (the AMOC card needs its data) and before the flight (the panel takes its room first)
+      this.openFor(ch.open && !this.host.phone() ? ch.open : null);
     } catch { /* a layer that failed to load: the chapter still runs */ } finally { release(); }
     if (tok !== this.token) return;
     this.host.setExaggeration(ch.exaggeration ?? 'auto');
@@ -357,6 +370,13 @@ export class Tour {
     this.lastTick = performance.now();
     this.setSpot(ch.spotlight);
     if (this.voice && this.playing) this.speak();
+  }
+
+  /** Opens o through the host (when it can), or closes what an earlier chapter opened. */
+  private openFor(o: TourOpen | null) {
+    if (!this.host.open || (!o && !this.opened)) return;
+    this.opened = !!o;
+    try { void Promise.resolve(this.host.open(o)).catch(() => {}); } catch { /* the chapter still runs without it */ }
   }
 
   // ---------- timer, spotlight ----------
@@ -450,7 +470,7 @@ export class Tour {
     this.$('tour-count').textContent = u.count(i + 1, n);
     this.$('tour-title').textContent = tx.title;
     // a number stays on the line of its unit ("10,935 m", "361.7 million km²") and of its thousands ("10 927")
-    this.$('tour-text').textContent = tx.text.replace(/(\d) (?=(m|km|cm|sm|mg|million|years|yil|foiz|foizi|ta)\b|\d{3}\b)/g, '$1\u00a0');
+    this.$('tour-text').textContent = tx.text.replace(/(\d) (?=(m|km|cm|sm|mg|Sv|million|years|yil|foiz|foizi|ta)\b|\d{3}\b)/g, '$1\u00a0');
     this.$('tour-src').textContent = `${u.sourcePrefix}${tx.source}`;
     this.root.dataset.chapter = ch.id;
     this.$('tour-dots').querySelectorAll<HTMLButtonElement>('button').forEach((b, k) => {

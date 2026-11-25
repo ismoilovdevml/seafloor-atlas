@@ -80,9 +80,24 @@ export const TEXT_EN: TourText = {
       text: 'The Time panel’s Years mode steps through the GEBCO releases. In GEBCO_2019, 12.4% of the ocean floor was measured directly by this atlas’s count; in GEBCO_2026, 30.8%. Amber marks what each release added. Seabed 2030 announced 15% and 28.7%: it counts cells of a depth-dependent grid, so the two figures differ.',
       source: 'GEBCO_2019 to GEBCO_2026 type identifier grids (history/manifest.json); official figures from Seabed 2030 / GEBCO announcements.',
     },
+    inspector: {
+      title: 'What is known at one point',
+      text: 'Click any point of the ocean and the point inspector opens: the depth, how much of that cell ships have measured, and the distance to the nearest measured seafloor, searched to 200 km. Its colour sums it up: green is measured, red means no sounding within 10 km. Where those layers exist it adds the SWOT model’s confidence and how much a second model, AUST_2026, differs. Land below sea level, a polder or the Dead Sea basin, is labelled as land, not seafloor.',
+      source: 'GEBCO 2026 grid and type identifier grid (tiles/); depth-certainty layers (SWOT confidence, AUST_2026 comparison); inland basins (dataset/tables/inland_components.csv).',
+    },
+    polar: {
+      title: 'The poles, drawn for real',
+      text: 'Web Mercator map tiles stop at 85.05°, so a globe made of them ends each pole in a flat disc of one average value. Here the real GEBCO relief poleward of 83° is drawn on its own polar disc, in cells of 0.76 km: the Arctic seafloor down to 5,412 m and, at the other end, the Antarctic ice sheet. Depths read true right up to the pole, but the share measured by ship is not rated poleward of 84.8°, where the coverage grid ends.',
+      source: 'GEBCO 2026 15″ grid poleward of 83° on an azimuthal-equidistant grid (tiles/polar/polar.json); coverage rated to 84.8° (inspect.ts).',
+    },
+    amoc: {
+      title: 'The Atlantic overturning at 26.5° N',
+      text: 'The dashed line is the RAPID array, moorings across the Atlantic at 26.5° N. Since April 2004 they have measured the overturning: warm water flows north near the surface, sinks in the far north and returns south at depth, 17.1 million m³ a second on average to November 2024. Click the line for its card: the monthly record with a 12-month running mean, and fixed-depth layers that balance to 0 Sv, 17.0 Sv north in the top 1,100 m and the same back south below.',
+      source: 'RAPID-MOCHA-WBTS v2024-2, NOC, University of Miami and NOAA AOML (data/amoc.json).',
+    },
     'your-turn': {
       title: 'Your turn',
-      text: 'Search finds 5,412 named undersea features, cables and wrecks, and Explore holds 11 guided views. The address always describes what you see (story, layers, sea level, time, even this tour as #tour=12), so a link shares the exact view. About this map lists every source and licence, with DOIs for citing. Happy exploring!',
+      text: 'Search finds 5,412 named undersea features, cables and wrecks, and Explore holds 11 guided views. The address always describes what you see (story, layers, sea level, time, even this tour as #tour=15), so a link shares the exact view. About this map lists every source and licence, with DOIs for citing. Happy exploring!',
       source: 'IHO-IOC GEBCO Gazetteer (data/features.geojson); guided views (data/stories.json).',
     },
   },

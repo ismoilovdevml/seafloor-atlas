@@ -70,6 +70,25 @@ export const CHAPTERS: TourScene[] = [
     layers: [], tool: { kind: 'time', state: { mode: 'years', set: 'mapping', year: 2019, only: false }, play: true },
     spotlight: ['time-play', 'time'],
   },
+  // 12-14 came after the first release of the tour: added before "your-turn" so links to #tour=1..11 keep their chapter
+  {
+    id: 'inspector', // the point the README's inspector screenshot uses (scripts/readme_shots.mjs)
+    camera: { center: [-27.2, -21.6], zoom: 3.2, pitch: 0, bearing: 0, phoneZoom: 2.6 },
+    layers: [], tool: { kind: 'none' }, open: { kind: 'inspect', at: [-27.2, -21.6] },
+    spotlight: ['inspector', 'readout-hint', 'legend'], // the phone's readout keeps only its attribution line while touring
+  },
+  {
+    id: 'polar',
+    camera: { center: [20, 84], zoom: 1.8, pitch: 0, bearing: 0, phoneZoom: 1.1 }, // the whole Arctic, the pole in view
+    layers: [], tool: { kind: 'none' },
+    spotlight: ['depth-legend', 'legend'],
+  },
+  {
+    id: 'amoc',
+    camera: { center: [-47, 24], zoom: 2.9, pitch: 0, bearing: 0, phoneZoom: 2.1 },
+    layers: ['amoc'], tool: { kind: 'none' }, open: { kind: 'card', id: 'amoc' },
+    spotlight: ['feature-card', 'layers-btn', 'legend'],
+  },
   {
     id: 'your-turn',
     camera: { center: [-150, 8], zoom: 2.05, pitch: 0, bearing: 0, phoneZoom: 0.75 },

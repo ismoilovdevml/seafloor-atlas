@@ -83,9 +83,24 @@ export const TEXT_UZ: TourText = {
       text: '“Time” panelidagi “Years” rejimi GEBCO relizlarini birma-bir koʻrsatadi. Bu atlas hisobiga koʻra GEBCO_2019 da okean tubining 12,4 foizi toʻgʻridan-toʻgʻri oʻlchangan edi, GEBCO_2026 da esa 30,8 foizi. Sariq rang har bir reliz qoʻshgan joyni belgilaydi. Seabed 2030 15% va 28,7% deb eʼlon qilgan: u chuqurlikka bogʻliq gridning kataklarini sanaydi, shuning uchun ikki raqam farq qiladi.',
       source: src('mapping'),
     },
+    inspector: {
+      title: 'Bitta nuqtada nima maʼlum',
+      text: 'Okeanning istalgan nuqtasini bossangiz, nuqta inspektori ochiladi: chuqurlik, shu katakning qancha qismini kemalar oʻlchagani va eng yaqin oʻlchangan okean tubigacha masofa (200 km gacha qidiriladi). Rangi xulosani aytadi: yashil oʻlchanganini, qizil esa 10 km ichida birorta ham oʻlchov yoʻqligini bildiradi. Bu qatlamlar bor joyda SWOT modelining ishonchliligi va ikkinchi model, AUST_2026, qanchalik farq qilishi ham qoʻshiladi. Dengiz sathidan past quruqlik, masalan polder yoki Oʻlik dengiz botigʻi, okean tubi emas, quruqlik deb belgilanadi.',
+      source: src('inspector'),
+    },
+    polar: {
+      title: 'Qutblar, haqiqiy relyefi bilan',
+      text: 'Web Mercator xarita plitkalari 85,05° da tugaydi, shuning uchun ulardan yasalgan globusda har bir qutb bitta oʻrtacha qiymatli tekis disk boʻlib qoladi. Bu yerda 83° dan qutbgacha boʻlgan haqiqiy GEBCO relyefi alohida qutb diskida, 0,76 km li kataklarda chizilgan: 5 412 m gacha chuqur Arktika okean tubi va narigi chekkada Antarktida muz qatlami. Chuqurlik qutbning oʻzigacha toʻgʻri oʻqiladi, lekin 84,8° dan qutb tomonda kema oʻlchagan ulush baholanmaydi: qamrov gridi shu yerda tugaydi.',
+      source: src('polar'),
+    },
+    amoc: {
+      title: 'Atlantika aylanmasi, 26,5° shimoliy kenglikda',
+      text: 'Shtrixli chiziq RAPID tizimi: Atlantika boʻylab 26,5° shimoliy kenglikda qoʻyilgan langarli oʻlchov stansiyalari. Ular 2004-yil apreldan beri meridional aylanmani oʻlchab keladi: iliq suv sirtga yaqin shimolga oqadi, uzoq shimolda choʻkadi va chuqurlikda janubga qaytadi; 2024-yil noyabrgacha oʻrtacha har soniyada 17,1 million m³. Kartochkasi uchun chiziqni bosing: oylik yozuv va uning 12 oylik sirpanuvchi oʻrtachasi, hamda yigʻindisi 0 Sv boʻlgan qatʼiy chuqurlik qatlamlari: yuqori 1 100 m da 17,0 Sv shimolga oqadi, xuddi shuncha pastda janubga qaytadi.',
+      source: src('amoc'),
+    },
     'your-turn': {
       title: 'Endi navbat sizda',
-      text: '“Search” 5 412 ta nomlangan suv osti obyekti, kabel va choʻkkan kemani topadi, “Explore” esa 11 ta tayyor koʻrinishni saqlaydi. Manzil satri doim siz koʻrayotgan narsani yozib boradi (hikoya, qatlamlar, dengiz sathi, vaqt, hatto shu sayohat #tour=12 koʻrinishida), shuning uchun havola aynan shu koʻrinishni ulashadi. “About this map” har bir manba va litsenziyani iqtibos uchun DOI bilan sanab beradi. Maroqli sayohat!',
+      text: '“Search” 5 412 ta nomlangan suv osti obyekti, kabel va choʻkkan kemani topadi, “Explore” esa 11 ta tayyor koʻrinishni saqlaydi. Manzil satri doim siz koʻrayotgan narsani yozib boradi (hikoya, qatlamlar, dengiz sathi, vaqt, hatto shu sayohat #tour=15 koʻrinishida), shuning uchun havola aynan shu koʻrinishni ulashadi. “About this map” har bir manba va litsenziyani iqtibos uchun DOI bilan sanab beradi. Maroqli sayohat!',
       source: src('your-turn'),
     },
   },
