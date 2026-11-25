@@ -30,6 +30,7 @@ describe('veil', () => {
     expect(decodeVeil(0, 230, -2)).toBe(1); // below-sea-level ocean cell, fully measured
     expect(decodeVeil(1, 230, -3)).toBeNull(); // reserved alpha: land below sea level (Flevoland)
     expect(decodeVeil(2, 230, -3)).toBeCloseTo(1 - 2 / 230, 6);
+    expect(decodeVeil(3, 230, -400)).toBeNull(); // reserved alpha: inland water (Caspian bed)
   });
 });
 

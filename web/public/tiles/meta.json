@@ -48,9 +48,9 @@
  },
  "hires": {
   "maxzoom": 7,
-  "dem": "https://huggingface.co/datasets/ismoilovdev/seafloor-atlas-tiles/resolve/29434ddfea02a7c7544684d5a91f6575f56be4d6/dem_z6-7.pmtiles",
-  "coverage": "https://huggingface.co/datasets/ismoilovdev/seafloor-atlas-tiles/resolve/29434ddfea02a7c7544684d5a91f6575f56be4d6/coverage_z6-7.pmtiles",
-  "revision": "29434ddfea02a7c7544684d5a91f6575f56be4d6",
+  "dem": "https://huggingface.co/datasets/ismoilovdev/seafloor-atlas-tiles/resolve/8fd445d48a889ace2dfd375f5f901b998e09e9e6/dem_z6-7.pmtiles",
+  "coverage": "https://huggingface.co/datasets/ismoilovdev/seafloor-atlas-tiles/resolve/8fd445d48a889ace2dfd375f5f901b998e09e9e6/coverage_z6-7.pmtiles",
+  "revision": "8fd445d48a889ace2dfd375f5f901b998e09e9e6",
   "sourceResolutionArcsec": 15
  }
 }

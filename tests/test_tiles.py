@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pipeline"))
-from tiles import LOW_LAND_ALPHA, VEIL_MAX, down2, terrarium, unterrarium, veil  # noqa: E402
+from tiles import LAKE_ALPHA, LOW_LAND_ALPHA, VEIL_MAX, down2, terrarium, unterrarium, veil  # noqa: E402
 
 
 def test_terrarium_roundtrip_integer_and_fraction():
@@ -101,3 +101,13 @@ def test_veil_reserves_alpha_1_for_land_below_sea_level():
     assert a[2] == 0 and a[3] == 2                # ocean never lands on the reserved alpha
     assert a[4] == round(VEIL_MAX * 0.5)          # ocean pixels ignore the low-land share
     assert LOW_LAND_ALPHA not in veil(np.linspace(0, 1, 5001, dtype=np.float32)[None, :])[0, :, 3]
+
+
+def test_veil_marks_inland_water_apart_from_dry_low_land():
+    f = np.full((1, 3), np.nan, np.float32)
+    low = np.array([[0.7, 0.1, 0.0]], np.float32)
+    lake = np.array([[0.2, 0.6, 0.3]], np.float32)
+    a = veil(f, low, lake)[0, :, 3]
+    assert a.tolist() == [LOW_LAND_ALPHA, LAKE_ALPHA, 0]  # the larger share wins; under half a pixel stays land
+    v = veil(np.linspace(0, 1, 5001, dtype=np.float32)[None, :])[0, :, 3]
+    assert LAKE_ALPHA not in v and LOW_LAND_ALPHA not in v

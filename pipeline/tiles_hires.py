@@ -94,7 +94,8 @@ def build_coverage_15s(elev15: Path, tid15: Path, out: Path, land15: Path | None
 
 def run(kind: str, src_path: Path, caps: tuple[float, float], out_path: Path, limit: int | None,
         low_path: Path | None = None) -> dict:
-    """low_path (coverage only): 15" viewer land mask, averaged per pixel and drawn with the reserved alpha."""
+    """low_path (coverage only): 15" viewer land mask (and its viewer_lake_15s.tif sibling), averaged per pixel and
+    drawn with the reserved alphas: dry share = land - lake, lake share = lake."""
     size = TILE * 2 ** ZMAX                       # z7 global pixels per side
     dst_t = from_bounds(-MERC, -MERC, MERC, MERC, size, size)
     n6 = 2 ** (ZMAX - 1)
@@ -107,18 +108,23 @@ def run(kind: str, src_path: Path, caps: tuple[float, float], out_path: Path, li
             (rasterio.open(low_path) if low_path else nullcontext()) as lsrc, \
             (WarpedVRT(lsrc, crs=CRS.from_epsg(3857), transform=dst_t, width=size, height=size,
                        resampling=Resampling.average, dtype="float32", warp_mem_limit=1024, num_threads=8)
-             if low_path else nullcontext()) as lvrt:
+             if low_path else nullcontext()) as lvrt, \
+            (rasterio.open(low_path.with_name("viewer_lake_15s.tif")) if low_path else nullcontext()) as ksrc, \
+            (WarpedVRT(ksrc, crs=CRS.from_epsg(3857), transform=dst_t, width=size, height=size,
+                       resampling=Resampling.average, dtype="float32", warp_mem_limit=1024, num_threads=8)
+             if low_path else nullcontext()) as kvrt:
         w = Writer(f)
         done = 0
         for y6 in range(n6):
             for x6 in range(n6):
                 win = Window(x6 * 2 * TILE, y6 * 2 * TILE, 2 * TILE, 2 * TILE)
                 a = vrt.read(1, window=win).astype(np.float32)
-                low = None
+                low = lake = None
                 if kind == "coverage":
                     a = a / 255.0                       # mean of 0/255 flags = measured fraction
                     if lvrt is not None:
-                        low = lvrt.read(1, window=win).astype(np.float32)
+                        lake = kvrt.read(1, window=win).astype(np.float32)
+                        low = lvrt.read(1, window=win).astype(np.float32) - lake
                 lat = row_lat_global(np.arange(win.row_off, win.row_off + win.height), size)
                 if np.abs(lat).max() > BLEND_FROM:
                     blend_poles(a, *caps, lat=lat, edge_rows=(y6 == 0, y6 == n6 - 1))
@@ -130,11 +136,11 @@ def run(kind: str, src_path: Path, caps: tuple[float, float], out_path: Path, li
                 for dy in range(2):
                     for dx in range(2):
                         sl = (slice(dy * TILE, (dy + 1) * TILE), slice(dx * TILE, (dx + 1) * TILE))
-                        data = webp(enc(a[sl]) if low is None else enc(a[sl], low[sl]))
+                        data = webp(enc(a[sl]) if low is None else enc(a[sl], low[sl], lake[sl]))
                         w.write_tile(zxy_to_tileid(7, 2 * x6 + dx, 2 * y6 + dy), data)
                         stats["tiles"] += 1
                         stats["bytes"] += len(data)
-                data = webp(enc(down2(a)) if low is None else enc(down2(a), down2(low)))
+                data = webp(enc(down2(a)) if low is None else enc(down2(a), down2(low), down2(lake)))
                 w.write_tile(zxy_to_tileid(6, x6, y6), data)
                 stats["tiles"] += 1
                 stats["bytes"] += len(data)

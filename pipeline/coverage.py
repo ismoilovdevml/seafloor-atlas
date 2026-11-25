@@ -7,8 +7,9 @@ Output: data/derived/coverage_1arcmin.tif  (UInt8: 0 = no ocean sub-cell, 1..255
 
 `python coverage.py viewer` writes data/derived/coverage_viewer_1arcmin.tif for the viewer tiles: the same grid
 with the 15" cells of data/derived/viewer_land_15s.tif (pipeline/viewer_land.py) counted as land, and
-data/derived/viewer_lowland_1arcmin.tif (UInt8 0..16: how many of the 16 sub-cells are that viewer land), which the
-tiles draw with the reserved "land below sea level" alpha. stats.json and the paper's numbers always use the
+data/derived/viewer_lowland_1arcmin.tif (UInt8 0..16: how many of the 16 sub-cells are that viewer land and dry) and
+data/derived/viewer_lakes_1arcmin.tif (the same count for inland water, viewer_lake_15s.tif), which the tiles draw
+with the two reserved alphas. stats.json and the paper's numbers always use the
 unmodified mask.
 
 "Direct" = TID 10..17, "ocean" = TID != 0 and the 1' elevation < 0 (excludes ice sheet / ice shelves). Areas weight every 15" cell by cos(latitude),
@@ -57,9 +58,11 @@ def run(tid_path: Path, elev_path: Path, out_dir: Path, band_rows_1m: int = 270,
         prof.update(dtype="uint8", nodata=None, compress="deflate", predictor=2, tiled=True,
                     blockxsize=512, blockysize=512)
         cov_path = out_dir / cov_name
-        low_dst = None
+        low_dst = lake_dst = lake_src = None
         if exclude is not None:
             low_dst = rasterio.open(out_dir / "viewer_lowland_1arcmin.tif", "w", **prof)
+            lake_dst = rasterio.open(out_dir / "viewer_lakes_1arcmin.tif", "w", **prof)
+            lake_src = rasterio.open(Path(exclude_path).with_name("viewer_lake_15s.tif"))
 
         code_area = np.zeros(128, dtype=np.float64)      # area per TID code (all cells)
         nbins = len(DEPTH_EDGES) - 1
@@ -83,8 +86,10 @@ def run(tid_path: Path, elev_path: Path, out_dir: Path, band_rows_1m: int = 270,
                 t = np.where(sea15, t, 0)
                 if exclude is not None:
                     x = exclude.read(1, window=win15) == 1
-                    low_dst.write(x.reshape(n1, 4, W1, 4).sum(axis=(1, 3)).astype(np.uint8), 1,
-                                  window=rasterio.windows.Window(0, r0, W1, n1))
+                    lk = lake_src.read(1, window=win15) == 1
+                    w1 = rasterio.windows.Window(0, r0, W1, n1)
+                    low_dst.write((x & ~lk).reshape(n1, 4, W1, 4).sum(axis=(1, 3)).astype(np.uint8), 1, window=w1)
+                    lake_dst.write(lk.reshape(n1, 4, W1, 4).sum(axis=(1, 3)).astype(np.uint8), 1, window=w1)
                     t = np.where(x, 0, t)
                 # latitude of each 15" row centre (row 0 = north edge)
                 rows15 = np.arange(4 * r0, 4 * r1)
@@ -121,7 +126,8 @@ def run(tid_path: Path, elev_path: Path, out_dir: Path, band_rows_1m: int = 270,
         print(file=sys.stderr)
     if exclude is not None:
         exclude.close()
-        low_dst.close()
+        for f in (low_dst, lake_dst, lake_src):
+            f.close()
         return {"coverage": str(cov_path)}
 
     ocean_area = code_area[1:].sum()

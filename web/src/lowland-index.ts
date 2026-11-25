@@ -2,10 +2,10 @@
 // sea level (coverage alpha 1): one bit per tile, row-major (y * 2^z + x), least significant bit first. src/lowland.ts.
 export const LOWLAND_INDEX = {
   /** meta.json hires.revision of the tile build this index was made from (the PMTiles zooms are looked up through it) */
-  revision: "29434ddfea02a7c7544684d5a91f6575f56be4d6",
+  revision: "8fd445d48a889ace2dfd375f5f901b998e09e9e6",
   /** sha256 over the static coverage tiles and the z5 DEM tiles (scripts/lowland_hash.mjs) */
-  sha256: '31d5349ac0ac85a59003e5746df5709e2c97f57d3e0e02637a6829c9d2022866',
+  sha256: 'c32483718001e602d369651400fd383fb8221ac6588140e0fdf6f96fd0ed17a2',
   maxzoom: 5,
-  low: ["AQ==","Aw==","5gA=","DK91MoQAiQA=","UAC4AJhAfUwxgBhfHCeAAgAAIEEQAAAAoAGDgACAAAA=","AAAAAAA/AACAZyAAgEd2AeBHBgPwT7Q39mv0Pv8f/sDTf0/AHp8H8DKHE3Kwh78YMIM/HOBDfgXAQ8gHAM/BDwAfAn4IEhp8ABgOdAAOBLwBBgDgAAZAAAAAAAAAAAADAIZ7ZMBHAIBMaABABxAAwAAAAMAAAABAAAAAAAAAAAA="],
+  low: ["AQ==","Ag==","QAA=","DAgwMoAAiQA=","UAC4AIAAAAAAABAPBCeAAgAAIEEQAAAAoAGDgACAAAA=","AAAAAAA/AACAZyAAgEd2AeBHBgPwRQAhkGMEAJkONMADSgkADhADwACAE3Cwj78YMIM/HOBBfgWAR0gXAA7BTgAfAn4FEgp4AAoKdAAOALAABgDgAAJBAAAAAAAAAAADAIZ7ZMBHAIBMaABABxAAwAAAAMAAAABAAAAAAAAAAAA="],
   near: 'AAAAAAB/AACAfzABwH//A+B/5yPwf/Y39//2//9//v///////5////eP///wj/8/8Of/H+PD/x/G5/+fhM/f/4xff38Pvj78XR8efADPTvwBBljwABZBwAA+AAAADLBfgIb/f/Dn///87/9///////////////////////////8=',
 };

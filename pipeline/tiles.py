@@ -23,7 +23,9 @@ from rasterio.warp import Resampling, reproject
 ROOT = Path(__file__).resolve().parents[1]
 MERC = 20037508.342789244
 VEIL_MAX = 230
-LOW_LAND_ALPHA = 1           # reserved: land below sea level (polders, inland basins); ocean pixels never use it
+LOW_LAND_ALPHA = 1           # reserved: dry land below sea level (polders, dry basins); ocean pixels never use it
+LAKE_ALPHA = 3               # reserved: inland water below sea level (Caspian, Dead Sea, Great Lakes beds)
+RESERVED = (LOW_LAND_ALPHA, LAKE_ALPHA)
 VEIL_RGB = (0x0B, 0x14, 0x24)
 
 
@@ -40,22 +42,29 @@ def unterrarium(rgb: np.ndarray) -> np.ndarray:
     return rgb[..., 0] * 256.0 + rgb[..., 1] + rgb[..., 2] / 256.0 - 32768.0
 
 
-def veil(f: np.ndarray, low: np.ndarray | None = None) -> np.ndarray:
+def veil(f: np.ndarray, low: np.ndarray | None = None, lake: np.ndarray | None = None) -> np.ndarray:
     """measured fraction (NaN = land) -> RGBA uint8.
 
-    Alpha 0 means "fully measured" over a DEM height below 0, so land below sea level (`low` = share of the
-    pixel that is viewer land, pipeline/viewer_land.py) gets the reserved alpha 1 instead: invisible on the
-    map, and decoded as land. Ocean pixels that would round to alpha 1 go to 0 or 2 (a 0.4 % shift).
+    Alpha 0 means "fully measured" over a DEM height below 0, so land below sea level gets reserved alphas
+    instead, invisible on the map and decoded as land (pipeline/viewer_land.py): `low` = share of the pixel that
+    is dry viewer land (alpha 1; the viewer draws it as land), `lake` = share that is inland water (alpha 3; the
+    viewer keeps its bed relief). Ocean pixels that would round to a reserved alpha move one step away
+    (a 0.4 % shift).
     """
     out = np.zeros(f.shape + (4,), dtype=np.uint8)
     out[..., 0], out[..., 1], out[..., 2] = VEIL_RGB
     ocean = ~np.isnan(f)
     v = VEIL_MAX * (1.0 - np.clip(f[ocean], 0, 1))
     a = np.rint(v)
-    a[a == LOW_LAND_ALPHA] = np.where(v[a == LOW_LAND_ALPHA] < LOW_LAND_ALPHA, 0, LOW_LAND_ALPHA + 1)
+    for r in RESERVED:
+        hit = a == r
+        a[hit] = np.where(v[hit] < r, r - 1, r + 1)
     out[..., 3][ocean] = a.astype(np.uint8)
-    if low is not None:
-        out[..., 3][~ocean & (low >= 0.5)] = LOW_LAND_ALPHA
+    lo = np.zeros(f.shape, np.float32) if low is None else low
+    lk = np.zeros(f.shape, np.float32) if lake is None else lake
+    reserved = ~ocean & (lo + lk >= 0.5)
+    out[..., 3][reserved & (lo >= lk)] = LOW_LAND_ALPHA
+    out[..., 3][reserved & (lk > lo)] = LAKE_ALPHA
     return out
 
 
@@ -160,9 +169,9 @@ def down2(a: np.ndarray) -> np.ndarray:
 
 
 def write_pyramid(base: np.ndarray, out: Path, maxzoom: int, tile: int, encode,
-                  extra: np.ndarray | None = None) -> int:
-    """Tiles of `base` for z = maxzoom..0 (2x2 NaN-aware means); with `extra`, encode(block, extra_block)."""
-    level, xl = base, extra
+                  extra: tuple[np.ndarray, ...] = ()) -> int:
+    """Tiles of `base` for z = maxzoom..0 (2x2 NaN-aware means); extra arrays are passed as encode(block, *extra)."""
+    level, xl = base, list(extra)
     count = 0
     for z in range(maxzoom, -1, -1):
         n = 2 ** z
@@ -173,12 +182,12 @@ def write_pyramid(base: np.ndarray, out: Path, maxzoom: int, tile: int, encode,
                 block = level[sl]
                 p = out / str(z) / str(x)
                 p.mkdir(parents=True, exist_ok=True)
-                img = encode(block) if xl is None else encode(block, xl[sl])
+                img = encode(block, *(x[sl] for x in xl))
                 Image.fromarray(img).save(p / f"{y}.webp", lossless=True, quality=100, method=4)
                 count += 1
         if z:
             level = down2(level)
-            xl = None if xl is None else down2(xl)
+            xl = [down2(x) for x in xl]
     return count
 
 
@@ -194,6 +203,8 @@ def main() -> None:
     ap.add_argument("--source-arcsec", type=int, default=60)
     ap.add_argument("--low-land", type=Path, default=ROOT / "data/derived/viewer_lowland_1arcmin.tif",
                     help="viewer-land sub-cells per 1' cell (coverage.py viewer); drawn as reserved alpha 1")
+    ap.add_argument("--lakes", type=Path, default=ROOT / "data/derived/viewer_lakes_1arcmin.tif",
+                    help="inland-water sub-cells per 1' cell (coverage.py viewer); drawn as reserved alpha 3")
     ap.add_argument("--only", choices=["dem", "coverage", "new2026", "all"], default="all")
     ap.add_argument("--new2026", type=Path, default=ROOT / "data/derived/new2026_1arcmin.tif")
     ap.add_argument("--change", type=Path, default=ROOT / "data/derived/change_2025_2026.json")
@@ -215,12 +226,14 @@ def main() -> None:
         cov = warp_to_merc(args.coverage, size, np.float32, src_nodata=np.nan, transform_values=tv)
         caps["coverage"] = polar_caps(args.coverage, None, tv)
         blend_poles(cov, *caps["coverage"])
-        low = None
-        if args.low_land.exists():               # 0..16 viewer-land sub-cells per 1' cell (coverage.py viewer)
-            low = warp_to_merc(args.low_land, size, np.float32, src_nodata=None, transform_values=lambda a: a / 16.0)
-            low = np.nan_to_num(low)
-        write_pyramid(cov, args.out / "coverage", args.maxzoom, args.tile, veil, extra=low)
-        del cov, low
+        extra = []
+        for path in (args.low_land, args.lakes):   # 0..16 sub-cells per 1' cell (coverage.py viewer)
+            if not path.exists():
+                break
+            extra.append(np.nan_to_num(warp_to_merc(path, size, np.float32, src_nodata=None,
+                                                    transform_values=lambda a: a / 16.0)))
+        write_pyramid(cov, args.out / "coverage", args.maxzoom, args.tile, veil, extra=tuple(extra))
+        del cov, extra
     if args.only in ("new2026", "all") and args.new2026.exists():
         tv = lambda a: np.where(a == 0, np.nan, a / 255.0)
         nw = warp_to_merc(args.new2026, size, np.float32, src_nodata=np.nan, transform_values=tv)

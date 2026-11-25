@@ -9,15 +9,17 @@ export function decodeTerrarium(r: number, g: number, b: number): number {
   return r * 256 + g + b / 256 - 32768;
 }
 
-/** Reserved veil alpha for land below sea level (pipeline/tiles.py LOW_LAND_ALPHA); no ocean pixel uses it. */
+/** Reserved veil alphas (pipeline/tiles.py); no ocean pixel uses them. Dry land below sea level (polders, dry
+ *  basins) is drawn as land by the relief (lowland.ts); inland water below sea level keeps its bed relief. */
 export const LOW_LAND_ALPHA = 1;
+export const LAKE_ALPHA = 3;
 
 /**
- * Veil alpha -> measured fraction (data contract): alpha 0 over land (DEM h >= 0) or the reserved alpha 1
- * (land below sea level) means land (null); otherwise f = 1 - alpha / veilMax.
+ * Veil alpha -> measured fraction (data contract): alpha 0 over land (DEM h >= 0) or a reserved alpha (1 dry land,
+ * 3 inland water below sea level) means not ocean (null); otherwise f = 1 - alpha / veilMax.
  */
 export function decodeVeil(alpha: number, veilMax: number, demHeight: number): number | null {
-  if (alpha === LOW_LAND_ALPHA) return null; // land below sea level (polders, inland basins), never an ocean value
+  if (alpha === LOW_LAND_ALPHA || alpha === LAKE_ALPHA) return null; // land or inland water below sea level, never ocean
   if (alpha === 0 && demHeight >= 0) return null;
   return Math.min(1, Math.max(0, 1 - alpha / veilMax));
 }

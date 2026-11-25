@@ -18,7 +18,7 @@ def test_erode1_drops_the_edge_and_wraps_columns():
 
 
 def test_polders_become_land_but_measured_lakes_and_open_sea_do_not():
-    tid = np.array([[44, 10, 40, 40, 44, 0]], np.int16)   # polder, surveyed lake, open sea, lagoon, no JRC, land
+    tid = np.array([[44, 10, 40, 40, 44, 0]], np.int16)   # polder, surveyed lake (wet), open sea, lagoon, no JRC, land
     inland = np.zeros_like(tid, np.int8)
     osm = np.array([[True, True, False, True, True, True]])
     occ = np.array([[0.3, 98, 0, 90, np.nan, 0]], np.float32)
@@ -27,12 +27,23 @@ def test_polders_become_land_but_measured_lakes_and_open_sea_do_not():
     assert reason.tolist() == [[2, 0, 0, 0, 0, 0]]
 
 
-def test_inland_basins_are_land_even_when_measured_or_off_osm_land():
-    tid = np.array([[11, 40, 40]], np.int16)
-    inland = np.array([[1, 1, -1]], np.int8)              # 1 = inland, -1 = outside the ocean mask
-    land, reason = vl.viewer_land(tid, inland, np.zeros((1, 3), bool), np.full((1, 3), np.nan, np.float32))
-    assert land.tolist() == [[True, True, False]]
-    assert reason.tolist() == [[1, 1, 0]]
+def test_dry_polder_cells_flip_even_when_singlebeam_coded_or_gebco_land():
+    tid = np.array([[11, 0, 0, 0]], np.int16)             # polder ditch survey, GEBCO land below 0, wet, above 0
+    inland = np.zeros_like(tid, np.int8)
+    osm = np.array([[True, False, False, False]])
+    occ = np.array([[1, 2, 90, 0]], np.float32)
+    h15 = np.array([[-3, -4, -2, 5]], np.int16)
+    land, reason = vl.viewer_land(tid, inland, osm, occ, h15)
+    assert land.tolist() == [[True, True, False, False]]
+
+
+def test_inland_basins_are_land_and_split_into_dry_ground_and_lakes():
+    tid = np.array([[11, 40, 40, 40]], np.int16)
+    inland = np.array([[1, 1, 1, -1]], np.int8)           # 1 = inland, -1 = outside the ocean mask
+    occ = np.array([[95, 2, np.nan, 95]], np.float32)     # lake, dry basin, no JRC tile, outside
+    land, reason = vl.viewer_land(tid, inland, np.zeros((1, 4), bool), occ)
+    assert land.tolist() == [[True, True, True, False]]
+    assert reason.tolist() == [[3, 1, 1, 0]]              # 3 = inland water, 1 = dry (unknown counts as dry)
 
 
 def test_jrc_tile_names_follow_the_west_and_north_edges():
