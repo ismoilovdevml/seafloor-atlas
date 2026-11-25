@@ -1,7 +1,8 @@
 // Point inspector helpers that main.ts adds on top of inspect.ts: the nearest-survey search radius capped near the
 // poles, the true reason when the SWOT confidence raster has no class for a point, an unknown measured share when
 // the DEM tile is missing, and inland basins below sea level. Pure functions (unit-tested without tiles or a map).
-import { SEARCH_KM, formatNearest, pixelKm, searchRadiusPx } from './inspect';
+import { RATED_TO_LAT, SEARCH_KM, formatNearest, pixelKm, searchRadiusPx } from './inspect';
+import { polarPixelKm, type PolarMeta } from './polar-layer';
 
 /**
  * Widest search window (pixels from the point) for the nearest measured cell. Near the poles the Mercator pixels
@@ -81,4 +82,23 @@ export function inlandVerdict(name: string): string {
 export function lowLandVerdict(basinName: string | null): string {
   if (basinName !== null) return inlandVerdict(basinName);
   return 'This point is land below sea level, such as a polder behind a dike: it is not seafloor, so the ocean survey status does not apply.';
+}
+
+/**
+ * The hover readout's "Measured by ship" cell: 'land', 'not rated' where the sampler gives a note (poleward of
+ * inspect.RATED_TO_LAT, as the inspector says), 'n/a' when unknown, else a whole percentage.
+ */
+export function measuredText(f: number | null, note: string | null): string {
+  if (f === null) return 'land';
+  if (note) return 'not rated';
+  return Number.isNaN(f) ? 'n/a' : `${Math.round(f * 100)}%`;
+}
+
+/**
+ * Size of the cell the inspector's depth comes from (km): the Mercator tile pixel at zoom z, or poleward of
+ * RATED_TO_LAT the polar grid's pixel (sampler.ts reads the depth there), when that grid's metadata is known.
+ */
+export function inspectedCellKm(lat: number, z: number, tileSize: number, polar: PolarMeta | null): { km: number; polar: boolean } {
+  if (polar && Math.abs(lat) > RATED_TO_LAT) return { km: polarPixelKm(polar), polar: true };
+  return { km: pixelKm(lat, z, tileSize), polar: false };
 }

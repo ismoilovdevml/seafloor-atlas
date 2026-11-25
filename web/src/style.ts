@@ -4,6 +4,7 @@ import type { LayerSpecification, StyleSpecification } from 'maplibre-gl';
 import { maxZoomFor, tileTemplate, type HiresMeta } from './tilesource';
 import { colorReliefExpression, plateColorExpression, SURVEY_LINE } from './palette';
 import { overlayLayers, overlaySources, shippingLayer } from './overlays';
+import { reliefTemplate } from './lowland';
 import labelFontUrl from '@fontsource-variable/atkinson-hyperlegible-next/files/atkinson-hyperlegible-next-latin-wght-normal.woff2?url';
 
 export interface Meta {
@@ -78,10 +79,11 @@ export function buildStyle(tilesBase: string, _dataBase: string, meta: Meta, opt
       'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 0.85, 4, 0.6, 7, 0],
     },
     // Two DEM sources pointing at the same tiles: one feeds the 3D mesh, the other the colour/hillshade
-    // passes, so the two don't evict each other's tiles (MapLibre's recommendation).
+    // passes, so the two don't evict each other's tiles (MapLibre's recommendation). The colour/hillshade one reads
+    // them through lowland.ts, which writes land below sea level (coverage alpha 1) as 0 m so the ramp draws it as land.
     sources: {
       'dem-terrain': { ...dem, tileSize: opts.terrainTileSize },
-      'dem-relief': { ...dem },
+      'dem-relief': { ...dem, tiles: [reliefTemplate()] },
       veil: { type: 'raster', tiles: [tileTemplate('coverage')], tileSize: opts.tileSize, minzoom: meta.minzoom, maxzoom: maxZoomFor('coverage') },
       new2026: { type: 'raster', tiles: [`${tiles}new2026/{z}/{x}/{y}.webp`], tileSize: opts.tileSize, minzoom: meta.minzoom, maxzoom: meta.maxzoom },
       // Empty initially: `plates` loads lazily on first toggle (saves ~3.97 MB at startup), and `features` is

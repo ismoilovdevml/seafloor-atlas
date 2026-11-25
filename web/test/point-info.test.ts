@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { SEARCH_KM, searchRadiusPx } from '../src/inspect';
 import { INLAND_BASINS } from '../src/inland-basins';
-import { SEARCH_CAP_PX, basinAt, farVerdictCapped, inlandVerdict, lowLandVerdict, nearestText, searchKm, shownFraction, swotText } from '../src/point-info';
+import { SEARCH_CAP_PX, basinAt, farVerdictCapped, inlandVerdict, inspectedCellKm, lowLandVerdict, measuredText, nearestText, searchKm, shownFraction, swotText } from '../src/point-info';
+import { NOT_RATED, RATED_TO_LAT, pixelKm } from '../src/inspect';
+import { polarPixelKm } from '../src/polar-layer';
 
 describe('searchKm', () => {
   it('keeps the full radius at low and mid latitudes', () => {
@@ -88,5 +90,30 @@ describe('inland basins', () => {
   it('says what the point is', () => {
     expect(inlandVerdict('Dead Sea and Jordan Valley')).toContain('(Dead Sea and Jordan Valley)');
     expect(inlandVerdict('')).not.toContain('()');
+  });
+});
+
+describe('measuredText (hover readout)', () => {
+  it('says "not rated" where the sampler notes it, like the inspector', () => {
+    expect(measuredText(NaN, NOT_RATED)).toBe('not rated');
+    expect(measuredText(NaN, null)).toBe('n/a');
+    expect(measuredText(null, null)).toBe('land');
+    expect(measuredText(0.426, null)).toBe('43%');
+    expect(measuredText(0, null)).toBe('0%');
+  });
+});
+
+describe('inspectedCellKm', () => {
+  const polar = { size: 2048, radius_deg: 7 };
+  it('is the polar grid pixel (0.76 km, data contract) poleward of RATED_TO_LAT', () => {
+    expect(polarPixelKm(polar)).toBeCloseTo(0.76, 2);
+    for (const lat of [RATED_TO_LAT + 0.01, 86, 89.9, -85, -88]) expect(inspectedCellKm(lat, 7, 512, polar)).toEqual({ km: polarPixelKm(polar), polar: true });
+  });
+  it('is the Mercator tile pixel elsewhere, or when the polar grid is unknown', () => {
+    expect(inspectedCellKm(RATED_TO_LAT, 7, 512, polar)).toEqual({ km: pixelKm(RATED_TO_LAT, 7, 512), polar: false });
+    expect(inspectedCellKm(30, 5, 512, polar).km).toBeCloseTo(pixelKm(30, 5, 512), 9);
+    expect(inspectedCellKm(87, 7, 512, null)).toEqual({ km: pixelKm(87, 7, 512), polar: false });
+    // the clamped Mercator pixel at 87 degrees and z7 was ~0.05 km: 15x finer than the grid really read there
+    expect(pixelKm(87, 7, 512)).toBeLessThan(0.1);
   });
 });

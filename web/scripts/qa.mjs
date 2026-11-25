@@ -795,7 +795,7 @@ for (const [w, h] of [[1440, 900], [1280, 720], [1920, 1080]]) {
 // ---------------- guided tour: drives the real UI, spotlights real controls, restores what was on ----------------
 // Map layer ids behind each layer token, and the panel each tool opens.
 const TOUR_LAYER_IDS = { veil: 'veil', plates: 'plates', new2026: 'new2026', quakes: 'quakes', seamounts: 'seamounts', chl: 'chl', winds: 'flow-wind', currents: 'flow-currents',
-  cables: 'cables', shipping: 'shipping', wrecks: 'wrecks', platforms: 'platforms', pipelines: 'pipelines', wind: 'wind' };
+  cables: 'cables', shipping: 'shipping', wrecks: 'wrecks', platforms: 'platforms', pipelines: 'pipelines', wind: 'wind', amoc: 'amoc-line' };
 const TOUR_CHUNK = /\/tour-[\w-]{8}\.(js|css)(\?|$)/;
 const sorted = (xs) => [...xs].sort().join(',');
 /** One chapter's expected state against what the page shows: layers, tool panel, camera, spotlight. */

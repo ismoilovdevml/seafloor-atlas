@@ -1,7 +1,7 @@
 // Guided tour: chapter schema, reading time, deep link, spotlight targets, and every number in the tour's words
 // checked against the project's own files (the data the viewer loads, its UI text, docs/trenches.md).
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { CHAPTERS } from '../src/tour-chapters';
 import { TEXT_EN } from '../src/tour-text-en';
@@ -11,6 +11,9 @@ import { READ_MIN_MS, TOUR_LAYER_TOKENS, cameraFor, hashWithTour, nearCamera, re
 import { PRESETS, SEA_MAX, SEA_MIN, landAreaAt, type Hypsometry } from '../src/sealevel';
 import { BATHY_STOPS } from '../src/palette';
 import { MONTH_LONG, timeToken } from '../src/timeline';
+import { amocCard, depthLayers, monthName, type AmocData } from '../src/amoc';
+import { NEAR_KM, RATED_TO_LAT, SEARCH_KM } from '../src/inspect';
+import { MAX_MERC_LAT } from '../src/geo';
 
 const WEB = join(__dirname, '..'), PUB = join(WEB, 'public');
 const read = (p: string) => readFileSync(p, 'utf8');
@@ -23,9 +26,9 @@ const NUM = /\d+(?:,\d{3})*(?:\.\d+)?/g;
 const numbersIn = (s: string) => s.match(NUM) ?? [];
 
 describe('tour chapters', () => {
-  it('has 10-12 chapters with unique ids, each with words in English', () => {
+  it('has 10-15 chapters with unique ids, each with words in English', () => {
     expect(CHAPTERS.length).toBeGreaterThanOrEqual(10);
-    expect(CHAPTERS.length).toBeLessThanOrEqual(12);
+    expect(CHAPTERS.length).toBeLessThanOrEqual(15);
     const ids = CHAPTERS.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(Object.keys(TEXT_EN.chapters).sort()).toEqual([...ids].sort());
@@ -51,12 +54,20 @@ describe('tour chapters', () => {
       if (c.tool.kind === 'sea') { expect(c.tool.level).toBeGreaterThanOrEqual(SEA_MIN); expect(c.tool.level).toBeLessThanOrEqual(SEA_MAX); }
       if (c.tool.kind === 'time') expect(timeToken(c.tool.state)).toMatch(/^(month-\d+|ago-\d+|\w+-\d{4}(-only)?)$/);
       if (c.tool.kind === 'water') expect(json('woa/manifest.json').map.depths).toContain(c.tool.depth);
+      if (c.open?.kind === 'card') expect(c.layers, `${c.id}: the card's layer is on`).toContain(c.open.id);
+      if (c.open?.kind === 'inspect') { expect(Math.abs(c.open.at[1]), c.id).toBeLessThanOrEqual(85); expect(c.tool.kind, c.id).toBe('none'); }
       expect(c.spotlight.length, c.id).toBeGreaterThan(0);
     }
   });
   it('every spotlight target is a real control in index.html', () => {
     const ids = new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
     for (const c of CHAPTERS) for (const id of c.spotlight) expect(ids.has(id), `${c.id}: #${id}`).toBe(true);
+  });
+  it('old #tour=N links keep their chapter: new chapters go before "your-turn", which stays last', () => {
+    const FIRST = ['globe', 'measured', 'detail', 'profile', 'plates', 'sea-level', 'water', 'monsoon', 'quakes', 'human', 'mapping'];
+    expect(CHAPTERS.slice(0, FIRST.length).map((c) => c.id)).toEqual(FIRST);
+    expect(CHAPTERS[CHAPTERS.length - 1].id).toBe('your-turn');
+    expect(CHAPTERS.slice(FIRST.length, -1).map((c) => c.id)).toEqual(['inspector', 'polar', 'amoc']);
   });
   it('the UI strings are complete', () => {
     for (const [k, v] of Object.entries(TEXT_EN.ui)) expect(typeof v === 'function' ? (v as (a: number, b: unknown) => string)(1, 'x') : v, k).toBeTruthy();
@@ -124,6 +135,11 @@ const cables = json('data/cables.geojson');
 const landing = json('data/landing-points.geojson');
 const features = json('data/features.geojson');
 const shipping = json('tiles/shipping/legend.json');
+const amoc = json('data/amoc.json') as AmocData;
+const polar = json('tiles/polar/polar.json');
+const amocTop = depthLayers(amoc.stats.layer_means_sv);
+/** all viewer source (the inspector's labels live in main.ts or the modules split from it) */
+const SRC = readdirSync(join(WEB, 'src')).filter((f) => f.endsWith('.ts')).map((f) => read(join(WEB, 'src', f))).join('\n');
 const trenches = read(join(WEB, '..', 'docs', 'trenches.md'));
 const pct1 = (f: number) => (100 * f).toFixed(1);
 const int = (n: number) => Math.round(n).toLocaleString('en-US');
@@ -176,6 +192,21 @@ const FACTS: Record<string, string> = {
   'named features (features.geojson)': int(features.features.length),
   'guided views (stories.json)': String(stories.length),
   'tour chapters': String(CHAPTERS.length),
+  'AMOC array latitude (amoc.json line)': String(amoc.line.coordinates[0][1]),
+  'AMOC first year (amoc.json)': amoc.months.first.slice(0, 4),
+  'AMOC last year (amoc.json)': amoc.months.last.slice(0, 4),
+  'AMOC mean, Sv (amoc.json)': amoc.stats.mean_sv.toFixed(1),
+  'AMOC running-mean window, months (card credit)': (/(\d+)-month running mean/.exec(amocCard(amoc).image!.credit) ?? [])[1],
+  'AMOC top layer depth, m (card rows)': (/–([\d,]+) m$/.exec(amocTop[0][0]) ?? [])[1],
+  'AMOC top layer, Sv (card rows)': amocTop[0][1].toFixed(1),
+  'AMOC layer sum, Sv (card rows)': Math.abs(amocTop.reduce((a, [, x]) => a + x, 0)).toFixed(0),
+  'inspector search radius, km (inspect.ts)': String(SEARCH_KM),
+  'inspector "near" distance, km (inspect.ts)': String(NEAR_KM),
+  'Web Mercator edge, degrees (geo.ts)': MAX_MERC_LAT.toFixed(2),
+  'polar disc edge, degrees (polar.json)': String(90 - polar.radius_deg),
+  'polar cell, km (polar.json)': String(polar.pixel_km),
+  'deepest polar-disc cell, north, m (polar.json)': int(-polar.poles.north.min_m),
+  'coverage rated to, degrees (inspect.ts)': String(RATED_TO_LAT),
 };
 /** Numbers that appear in the project's own UI text and attributions (names like PB2002, MH370 included). */
 const UI_NUMBERS = new Set([
@@ -223,6 +254,49 @@ describe('tour numbers match their sources', () => {
     has('your-turn', `${FACTS['named features (features.geojson)']} named undersea features`);
     has('your-turn', `${FACTS['guided views (stories.json)']} guided views`);
     has('your-turn', `#tour=${CHAPTERS.length}`);
+    has('inspector', `searched to ${SEARCH_KM} km`); expect(html).toContain(`searched to ${SEARCH_KM} km`);
+    has('inspector', `no sounding within ${NEAR_KM} km`);
+    has('polar', `stop at ${FACTS['Web Mercator edge, degrees (geo.ts)']}°`);
+    has('polar', `poleward of ${FACTS['polar disc edge, degrees (polar.json)']}°`);
+    has('polar', `cells of ${polar.pixel_km} km`);
+    has('polar', `down to ${FACTS['deepest polar-disc cell, north, m (polar.json)']} m`);
+    has('polar', `not rated poleward of ${RATED_TO_LAT}°`);
+  });
+  it('the AMOC chapter quotes amoc.json and the card exactly', () => {
+    const has = (s: string) => expect(words('amoc').text, `amoc should say ${s}`).toContain(s);
+    const lat = FACTS['AMOC array latitude (amoc.json line)'];
+    expect(amoc.line.coordinates.every(([, y]) => String(y) === lat)).toBe(true);
+    expect(words('amoc').title).toContain(`${lat}° N`); has(`${lat}° N`);
+    has(`Since ${monthName(amoc.months.first)}`);
+    has(`to ${monthName(amoc.months.last)}`);
+    expect(amoc.months.first).toBe('2004-04'); expect(amoc.months.last).toBe('2024-11');
+    has(`${amoc.stats.mean_sv.toFixed(1)} million m³ a second on average`);
+    expect(amocCard(amoc).lead).toContain(`${amoc.stats.mean_sv.toFixed(1)} million m³ of water per second`);
+    has(`${FACTS['AMOC running-mean window, months (card credit)']}-month running mean`);
+    // the card's fixed-depth rows balance (RAPID's mass balance): top layer north, the same back south below it
+    const [top, ...below] = amocTop;
+    expect(top[0]).toBe('0–1,100 m');
+    expect(Math.abs(top[1] + below.reduce((a, [, x]) => a + x, 0))).toBeLessThan(0.05);
+    has(`balance to ${FACTS['AMOC layer sum, Sv (card rows)']} Sv, ${top[1].toFixed(1)} Sv north in the top 1,100 m and the same back south below`);
+    // what the chapter tells the viewer to click is what the line does
+    expect(html).toContain('Click the line for the monthly record');
+    const uz = TEXT_UZ.chapters.amoc.text;
+    for (const s of [`${lat.replace('.', ',')}° shimoliy kenglikda`, '2004-yil apreldan', '2024-yil noyabrgacha', `${amoc.stats.mean_sv.toFixed(1).replace('.', ',')} million m³`, '12 oylik', '0 Sv', `${top[1].toFixed(1).replace('.', ',')} Sv shimolga`]) expect(uz).toContain(s);
+  });
+  it('the inspector and polar chapters describe what the viewer shows', () => {
+    // inspector rows and labels (main.ts or its modules)
+    for (const s of ['Nearest measured seafloor', 'SWOT model confidence', 'Second model (AUST_2026) differs by', 'Land below sea level', "'land'"]) expect(SRC, s).toContain(s);
+    expect(read(join(WEB, 'src', 'inland-basins.ts'))).toContain('Dead Sea');
+    expect(read(join(WEB, 'src', 'point-info.ts'))).toContain('such as a polder');
+    // the polar layer's disc starts at 83° and the Mercator tiles stop at 85.05°
+    expect(read(join(WEB, 'src', 'polar-layer.ts'))).toMatch(/FADE_FROM = 83\.\d+/);
+    expect(polar.poles.north.min_m).toBeLessThan(0);
+    expect(read(join(WEB, '..', 'docs', 'data-contract.md'))).toContain('poleward of 84.8 deg');
+    // chapter scenes: the inspector opens at its camera centre; the AMOC chapter turns the line on and opens its card
+    const ins = CHAPTERS.find((c) => c.id === 'inspector')!, am = CHAPTERS.find((c) => c.id === 'amoc')!, po = CHAPTERS.find((c) => c.id === 'polar')!;
+    expect(ins.open).toEqual({ kind: 'inspect', at: ins.camera.center });
+    expect(am.layers).toEqual(['amoc']); expect(am.open).toEqual({ kind: 'card', id: 'amoc' });
+    expect(po.camera.center[1]).toBeGreaterThanOrEqual(80);
   });
   it('the mapping chapter starts at the first release and the time panel can reach the last', () => {
     const t = CHAPTERS.find((c) => c.id === 'mapping')!.tool;
@@ -230,8 +304,8 @@ describe('tour numbers match their sources', () => {
     if (t.kind === 'time' && t.state.mode === 'years') { expect(t.state.set).toBe('mapping'); expect(t.state.year).toBe(years[0].year); }
   });
   it('the measured-share figure the tour quotes matches the one the layer note shows', () => {
-    // main.ts writes the layer note from meta.stats.measured_fraction_area with one decimal, as FACTS does
-    expect(read(join(WEB, 'src', 'main.ts'))).toContain('Seabed 2030 counts 28.7% for GEBCO 2026');
+    // layers-ui.ts (split from main.ts) writes the layer note from meta.stats.measured_fraction_area with one decimal, as FACTS does
+    expect(read(join(WEB, 'src', 'layers-ui.ts'))).toContain('Seabed 2030 counts 28.7% for GEBCO 2026');
     expect(FACTS['Seabed 2030 figure 2026 (manifest)']).toBe('28.7');
   });
 });
@@ -240,7 +314,8 @@ describe('Uzbek tour text', () => {
   // English "10,935" / "361.7" and Uzbek "10 935" / "361,7" are the same number
   const enNums = (s: string) => numbersIn(s.replace(/(\d),(\d{3})\b/g, '$1$2')).sort();
   const uzNums = (s: string) => (s.replace(/(\d)[  ](\d{3})\b/g, '$1$2').replace(/(\d),(\d)/g, '$1.$2').match(/\d+(?:\.\d+)?/g) ?? []).sort();
-  it('has every chapter and every UI string', () => {
+  it('has every chapter, the new ones included, and every UI string', () => {
+    for (const id of ['inspector', 'polar', 'amoc']) { expect(TEXT_UZ.chapters[id]?.title.length, id).toBeGreaterThan(3); expect(TEXT_EN.chapters[id]?.title.length, id).toBeGreaterThan(3); }
     expect(Object.keys(TEXT_UZ.chapters).sort()).toEqual(Object.keys(TEXT_EN.chapters).sort());
     for (const [k, v] of Object.entries(TEXT_UZ.ui)) expect(typeof v === 'function' ? (v as (a: number, b: unknown) => string)(1, 'x') : v, k).toBeTruthy();
     expect(TEXT_UZ.ui.count(3, 12)).toBe('3 / 12');

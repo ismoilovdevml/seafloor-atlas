@@ -28,6 +28,10 @@
 import type { CustomLayerInterface, CustomRenderMethodInput, Map as MlMap } from 'maplibre-gl';
 
 export interface PolarMeta { size: number; radius_deg: number }
+/** Ground width of one polar-grid pixel (km): 2 * radius_deg degrees of latitude over `size` pixels (0.76 km for 2048 px, 7 deg). */
+export function polarPixelKm(m: PolarMeta): number {
+  return (2 * m.radius_deg * Math.PI * 6371.0088) / 180 / m.size;
+}
 /** Plain relief: the disc starts (alpha 0, mesh edge) at FADE_FROM and is opaque from FADE_TO; see the header. */
 export const FADE_FROM = 83.05;
 export const FADE_TO = 83.3;
