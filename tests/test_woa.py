@@ -215,3 +215,60 @@ def test_despike_removes_isolated_and_patchy_artefacts_but_keeps_fronts():
     assert np.isnan(out[3, 3]) and np.isnan(out[10:12, 4:6]).all()
     assert np.isfinite(out[:, 9:]).all()             # both sides of the front kept
     assert n == 5
+
+
+def _seasons(h: int = 14, w: int = 14, mean: float = 12.0, amp: float = 13.0) -> np.ndarray:
+    """Twelve months of a smooth annual cycle with a very large range (Bohai / North Caspian: ~26 degC peak to
+    peak), warmest in August, plus a gentle spatial gradient."""
+    m = np.arange(12)[:, None, None]
+    x = np.linspace(0, 1, w)[None, None, :]
+    return mean + amp * np.cos(2 * np.pi * (m - 7) / 12) + x + np.zeros((12, h, w))
+
+
+def test_cycle_despike_keeps_large_smooth_seasons_and_sub_seed_bumps():
+    a = _seasons()
+    out, bad = woa.cycle_despike(a)
+    assert not bad.any() and np.array_equal(out, a)        # the warmest month is only 0.13 x 13 = 1.7 degC above
+    b = a.copy()
+    b[7, 2:4, 2:4] += 3.0                                   # a 3 degC warm August bump (Gulf of Gabes is ~4-5): kept
+    assert not woa.cycle_despike(b)[1].any()
+
+
+def test_cycle_despike_blanks_the_greenland_january_patch_with_its_rim():
+    a = np.full((12, 20, 20), -1.8)                         # NE Greenland shelf under sea ice: at freezing ...
+    a[5:9] = [[[0.7]], [[0.0]], [[-0.3]], [[-0.6]]]         # ... a little warmer in summer
+    a[0, 6:14, 6:14] = 9.0                                  # January core: 9 degC between -1.8 and -1.8
+    a[0, 5, 5:15] = a[0, 14, 5:15] = 1.5                    # rim: 3.3 degC above both neighbours, joined to the core
+    a[0, 1, 1] = 1.5                                        # the same excess, but not joined to a seed: kept
+    a[0, 17:19, 17:19] = -1.8 + 4.5                         # a 4.5 degC bump of its own (below the 5 degC seed): kept
+    out, bad = woa.cycle_despike(a)
+    assert bad[0, 6:14, 6:14].all() and bad[0, 5, 5:15].all() and bad[0, 14, 5:15].all()
+    assert not bad[0, 1, 1] and not bad[0, 17:19, 17:19].any()
+    assert not bad[1:].any()                                # December and February are not touched
+    assert np.isnan(out[0, 10, 10]) and out[1, 10, 10] == -1.8
+    assert int(bad.sum()) == 64 + 20
+
+
+def test_cycle_despike_cold_spikes_missing_neighbours_and_two_month_artefacts():
+    a = _seasons(8, 8)
+    a[7, 3, 3] -= 12.0                                      # a cold August hole (Lake Michigan: 3.5 between 15.9 and 25.2)
+    a[1, 5, 5] += 8.0                                       # a warm February spike whose January is missing: left alone
+    a[0, 5, 5] = np.nan
+    a[3:5, 1, 1] += 9.0                                     # two consecutive bad months are not a one-month spike
+    out, bad = woa.cycle_despike(a)
+    assert bad[7, 3, 3] and np.isnan(out[7, 3, 3])
+    assert not bad[1, 5, 5] and not bad[3:5, 1, 1].any()
+    assert int(bad.sum()) == 1
+
+
+@pytest.mark.skipif(not BUILT.exists(), reason="web/public/woa not built (pipeline/woa.py build)")
+def test_built_monthly_layers_have_no_greenland_january_patch():
+    man = json.loads(BUILT.read_text())["map"]
+    assert sum(man["monthly"]["blanked_cells"]["annual_cycle"]) > 0
+    L = man["layers"]["t_m01"]
+    q = woa.from_byte_planes(zlib.decompress((woa.OUT / "map" / "t_m01.bin").read_bytes()), (720, 1440))
+    jan = woa.dequantise_u16(q, L["lo"], L["step"])
+    box = jan[int((90 - 82) / 0.25):int((90 - 74) / 0.25), int((180 - 30) / 0.25):int(180 / 0.25)]  # 74-82 N, 30-0 W
+    assert np.nanmax(box) < 2.0                       # was 13.36 degC at 18.125 W 78.625 N between -1.3 and -1.8
+    assert np.isnan(woa.map_value("t_m01", -18.125, 78.625))
+    assert woa.map_value("t_m02", -18.125, 78.625) < -1.0   # February there is untouched sea-ice water

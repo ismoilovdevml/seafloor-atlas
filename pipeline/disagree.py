@@ -357,9 +357,19 @@ def main() -> None:
     ap.add_argument("--quality", type=int, default=50)
     ap.add_argument("--no-tiles", action="store_true")
     ap.add_argument("--figure-only", action="store_true", help="only redraw fig7 from the derived files")
+    ap.add_argument("--legend-only", action="store_true",
+                    help="only rewrite legend.json from disagree_stats.json, keeping the tile counts of the existing "
+                         "legend.json (for a change of the statistics that leaves the tiles alone)")
     args = ap.parse_args()
     if args.figure_only:
         print(figure(json.loads(STATS.read_text())))
+        return
+    if args.legend_only:
+        old = json.loads((OUT / "legend.json").read_text())
+        info = {k: old[k] for k in ("tiles", "emptyTiles", "bytes")}
+        (OUT / "legend.json").write_text(json.dumps(legend(info, old["maxzoom"], old["tileSize"],
+                                                           json.loads(STATS.read_text())), indent=1, ensure_ascii=False))
+        print(f"rewrote {OUT / 'legend.json'}")
         return
 
     with rasterio.open(ELEV) as s:

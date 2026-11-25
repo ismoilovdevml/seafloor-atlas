@@ -216,6 +216,11 @@ means only (`t_an` in-situ temperature ITS-90, `s_an` practical salinity). Subse
 OPeNDAP server (`https://www.ncei.noaa.gov/thredds-ocean/dodsC/woa23/DATA/...`, ~0.5 MB/s here), so only the
 needed variable and levels are downloaded (194 MB in `data/raw/woa23/`, gitignored):
 annual 0.25° T and S at the 11 map depths, monthly 0.25° T at 0 m (t01-t12), annual 1° T and S at all 102 levels.
+When THREDDS is down (502 on 2026-11-24, connection timeouts on 2026-11-25), `woa.py fetch --source http` reads the
+same files from the NCEI HTTPS file server (`https://www.ncei.noaa.gov/data/oceans/woa/WOA23/DATA/...`) with
+netCDF-C byte-range requests, which download only the chunks that hold the slice (~30 MB of a 584 MB monthly file);
+`--months-only` limits the fetch to t01-t12. The 2026-11-25 rebuild of the monthly layers this way is bit-identical
+to the earlier OPeNDAP build in every cell neither despike rule touches.
 
 Density: TEOS-10 via `gsw`: `p = p_from_z(-z, lat)`, `SA = SA_from_SP(SP, p, lon, lat)`, `CT = CT_from_t(SA, t, p)`,
 **σ0 = ρ(SA, CT, 0) − 1000 kg/m³** (potential density anomaly, surface reference). Computed only where both T and S exist.
@@ -228,9 +233,25 @@ Density: TEOS-10 via `gsw`: `p = p_from_z(-z, lat)`, `SA = SA_from_SP(SP, p, lon
   bytes). `q = 0` no data (land, or seafloor shallower than the depth); otherwise `value = lo + (q − 1) · step`,
   `lo` and `step` per layer in `manifest.map.layers[key]` (`step` = 0.01 °C, 0.005 for S and σ0). Each layer
   entry also has `hi`, `p2`/`p98` (2nd/98th percentile, used by "stretch colours to this depth"), `bytes`, `ocean_cells`.
-* Monthly despike: a 0.25° cell more than 10 °C off its 5 x 5 median is blanked, and a cell above 33 °C that is
-  more than 4 °C warmer than that median is blanked too (coastal extrapolation spikes, e.g. Hormuz in October).
-  `python woa.py months` rebuilds only the monthly layers.
+* Monthly despike, two rules (both blank, never fill; counts in `manifest.map.monthly.blanked_cells`):
+  (1) spatial, per month: a 0.25° cell more than 10 °C off its 5 x 5 median is blanked, and a cell above 33 °C that
+  is more than 4 °C warmer than that median is blanked too (coastal extrapolation spikes, e.g. Hormuz in October;
+  14 cells in all). (2) annual cycle, per cell: a month more than **5 °C above both adjacent months or below both**
+  (December and January are adjacent) is a seed, and same-month cells 8-connected to a seed through cells more than
+  2.5 °C off both neighbours are blanked with it. A 30-year monthly mean follows a smooth cycle: for a sinusoid the
+  warmest month exceeds its neighbours by 0.13 × the amplitude (< 2 °C even for Bohai or the North Caspian), and
+  the largest one-month excess in well-sampled seas is 2.0-4.9 °C (North Sea 2.0, Gulf Stream 2.5, Baltic 3.2,
+  Kuroshio 3.3, Peru 4.4, Yellow Sea/Bohai 4.6, Gulf of Gabès 4.8, Black Sea 4.9); none of those is blanked.
+  Rule (2) blanks 5,503 of 8.13 M cell-months (0.07 %, per month 960 / 44 / 336 / 242 / 87 / 1567 / 1202 / 527 / 204 /
+  21 / 51 / 262) in 64 patches at ice edges and in data-poor shelf seas. The main one is the NE Greenland shelf in
+  January (548 cells, 75.9-80.6° N, 20.9-9.1° W): 3-13.4 °C under sea ice whose December and February are −1.3 to
+  −1.8 °C; after the rule the warmest January cell there is 1.75 °C. Others: north of Svalbard in June (892 cells),
+  Barents Sea off Novaya Zemlya in January, North Caspian June-August, Hudson Bay April and July, Patagonian shelf in
+  December (20.7 °C between 7.3 and 11.6), upper Gulf of California in July (cold, 9.7 °C between 19.2 and 24.5).
+  Not caught: an artefact lasting two consecutive months. The annual `t_0` layer is not changed, although WOA23's
+  annual surface mean is the mean of its months (|t_0 − mean of the 12 monthly layers| ≤ 0.006 °C in 99 % of cells),
+  so the January patch also warms the annual mean there by up to ~1.2 °C (−0.15 instead of about −0.9 °C at 17° W
+  79° N). `python woa.py months` rebuilds only the monthly layers.
 * Seafloor stop: `map/t_bottom.bin`, `s_bottom.bin`, `d_bottom.bin`, `z_bottom.bin`, keys in `manifest.map.bottom.keys`.
   Per 0.25° cell, the deepest WOA23 standard level with both T and S, **above** any jump of more than 2 °C or 0.2
   in salinity between adjacent levels below 1,500 m (deeper levels there are WOA23 first-guess artefacts in
@@ -540,15 +561,18 @@ Every `legend.json` / GeoJSON `metadata` carries `citation`, `licence` and `attr
   clipped; alpha 110 → 235 along `t`; transparent below 50 m, on land, measured-majority cells, shelves, and beyond
   75° (polar caps blank). z4..z0 are NaN-aware 2 × 2 means of |diff| (mean disagreement of the shown pixels).
   The colour is a picture: read values from `legend.json` (`stops`, `vmin`, `vmax`, `headline`).
-* Numbers (GEBCO depth ≥ 1,000 m): unmeasured 203.9 M km², median |diff| **60.5 m**, RMS 190.9 m, p95 402.5 m,
-  35.1 % > 100 m, 16.6 % > 200 m, 3.0 % > 500 m. Measured 84.8 M km²: median 46.5 m, RMS 174.1 m, p95 365.5 m.
-  By TID of the unmeasured cell: 40 (gravity) median 59.5 m, 41 (interpolated) 46.5 m.
+* Numbers (GEBCO depth ≥ 1,000 m): unmeasured 203.9 M km², median |diff| **60.1 m**, RMS 190.9 m, p95 402.3 m,
+  35.1 % > 100 m, 16.6 % > 200 m, 3.0 % > 500 m. Measured 84.8 M km²: median 46.3 m, RMS 174.1 m, p95 365.6 m.
+  By TID of the unmeasured cell: 40 (gravity) median 59.9 m, 41 (interpolated) 46.5 m.
+  Medians and percentiles are area-weighted and exact on the 0.1 m grid of the difference (AUST `z` is stored in
+  0.1 m steps, GEBCO 1′ in whole metres): `wquantiles` bins are centred on multiples of 0.1 m, so each value
+  is a difference that occurs in the data (the earlier whole-metre bins reported 60.5 / 402.5 / 46.5 m).
 * Honest reading: (1) measured cells are **not** an independent validation; AUST was trained on NCEI soundings that GEBCO
   also contains, and AUST does not replace its prediction with the soundings, so there the difference is mostly AUST's
   own (in-sample) prediction error. (2) In unmeasured cells both depths are satellite-gravity predictions from
   overlapping inputs (SIO-type gravity; GEBCO's base is SRTM15+), so where they disagree at least one is wrong, and where
   they agree both can still be wrong: the difference is a lower bound on the real uncertainty, not an error estimate.
-  (3) Unmeasured cells disagree only ~30 % more than measured ones (median 60.5 vs 46.5 m), so a large part of the map is
+  (3) Unmeasured cells disagree only ~30 % more than measured ones (median 60.1 vs 46.3 m), so a large part of the map is
   AUST's own 1′ prediction noise; patterns at 10–100 km scale (zoom 0–3) are more meaningful than single pixels.
 
 ### Seal dives deeper than the chart (`data/seals.geojson`, `data/seals-coverage.geojson`)

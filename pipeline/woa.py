@@ -14,6 +14,7 @@ Climatology: WOA23 "decav91C0" = the 1991-2020 climate normal, objectively analy
                                         102 levels, deflate compressed (lazily fetched by the viewer on click)
   fetch-bottom : annual 0.25 deg t_an + s_an at all 102 levels, in slabs -> data/raw/woa23/levels/  ~ 850 MB
   months : rebuild only map/t_m<MM>.bin from the raw monthly files and merge them into manifest.json
+          (despike: 5 x 5 spatial rule per month, then the annual-cycle rule across the 12 months)
   bottom : the "at the seafloor" layers from the deepest level with both T and S in each cell (above any deep-tail
           artefact, see bottom_fields):
           t_bottom = potential temperature theta (TEOS-10 pt0), s_bottom = practical salinity,
@@ -29,6 +30,7 @@ compression alone, and sigma0 can rank abyssal waters in the wrong order (Antarc
 North Atlantic Deep Water in sigma0, heavier in sigma4).
 
 usage: .venv/bin/python pipeline/woa.py [fetch|build|months|fetch-bottom|bottom|check|all]
+       fetch options: --months-only (only t01..t12), --source http (NCEI file server instead of THREDDS)
 """
 from __future__ import annotations
 
@@ -83,8 +85,14 @@ CITATIONS = {
 
 # ---------------------------------------------------------------- fetch
 
-def dods_url(v: str, res: str, tt: str) -> str:
+def dods_url(v: str, res: str, tt: str, source: str = "opendap") -> str:
+    """OPeNDAP URL of one WOA23 netCDF file, or (source="http") the same file on NCEI's HTTPS file server read
+    with netCDF-C byte-range requests ("#mode=bytes"): only the HDF5 chunks that hold the requested slice are
+    downloaded (t_an is chunked 19 levels x 240 x 480, so the surface of a 584 MB monthly file costs ~30 MB).
+    The file server is a fallback for when the THREDDS server is down (2026-11-24/25: 502, then timeouts)."""
     rr = "04" if res == "0.25" else "01"
+    if source == "http":
+        return f"{FILE_URL}/{VARS[v]}/netcdf/{PERIOD}/{res}/woa23_{PERIOD}_{v}{tt}_{rr}.nc#mode=bytes"
     return f"{DODS}/{VARS[v]}/netcdf/{PERIOD}/{res}/woa23_{PERIOD}_{v}{tt}_{rr}.nc"
 
 
@@ -111,22 +119,27 @@ def coords(url: str) -> dict:
         return {k: ds.variables[k][:].astype(float).tolist() for k in ("lat", "lon", "depth")}
 
 
-def fetch() -> None:
+def fetch(months_only: bool = False, source: str = "opendap") -> None:
+    """Download the subsets listed in the module docstring (resumable: existing files are kept). months_only: only
+    the twelve monthly surface temperatures; source: "opendap" (THREDDS) or "http" (file server, byte ranges)."""
     RAW.mkdir(parents=True, exist_ok=True)
     meta_p = RAW / "coords.json"
     if not meta_p.exists():
-        c = {"q": coords(dods_url("t", "0.25", "00")), "one": coords(dods_url("t", "1.00", "00"))}
+        c = {"q": coords(dods_url("t", "0.25", "00", source)), "one": coords(dods_url("t", "1.00", "00", source))}
         meta_p.write_text(json.dumps(c))
     c = json.loads(meta_p.read_text())
     depths = c["q"]["depth"]
     jobs: list[tuple[Path, str, str, int | slice]] = []
-    for v in VARS:
-        for d in MAP_DEPTHS:
-            jobs.append((RAW / f"{v}_an_025_annual_{d:04d}m.npy", dods_url(v, "0.25", "00"), f"{v}_an", depths.index(d)))
+    if not months_only:
+        for v in VARS:
+            for d in MAP_DEPTHS:
+                jobs.append((RAW / f"{v}_an_025_annual_{d:04d}m.npy", dods_url(v, "0.25", "00", source), f"{v}_an",
+                             depths.index(d)))
     for m in range(1, 13):
-        jobs.append((RAW / f"t_an_025_m{m:02d}_0000m.npy", dods_url("t", "0.25", f"{m:02d}"), "t_an", 0))
-    for v in VARS:
-        jobs.append((RAW / f"{v}_an_1deg_annual_all.npy", dods_url(v, "1.00", "00"), f"{v}_an", slice(None)))
+        jobs.append((RAW / f"t_an_025_m{m:02d}_0000m.npy", dods_url("t", "0.25", f"{m:02d}", source), "t_an", 0))
+    if not months_only:
+        for v in VARS:
+            jobs.append((RAW / f"{v}_an_1deg_annual_all.npy", dods_url(v, "1.00", "00", source), f"{v}_an", slice(None)))
     for i, (path, url, var, k) in enumerate(jobs, 1):
         if path.exists():
             continue
@@ -240,6 +253,53 @@ def despike(a: np.ndarray, limit: float = SPIKE_C, hot: float = HOT_C, hot_limit
     return out, int(bad.sum())
 
 
+CYCLE_SPIKE_C = 5.0  # a monthly value this far above (or below) BOTH adjacent months of its cell is an artefact ...
+CYCLE_GROW_C = 2.5   # ... and so is every same-month cell joined to it through cells more than this far off both
+
+
+def cycle_despike(stack: np.ndarray, seed: float = CYCLE_SPIKE_C, grow: float = CYCLE_GROW_C) -> tuple[np.ndarray, np.ndarray]:
+    """Annual-cycle rule for the twelve monthly surface layers, stack[month, y, x] (January first): blank one-month
+    spikes of a cell's own seasonal cycle. excess = how far a month is above both its neighbours (December and
+    January are neighbours), or below both, whichever is positive; NaN where either neighbour is missing.
+
+    A seed is a cell whose excess is more than `seed`; all cells of the same month that are 8-connected to a seed
+    through cells with an excess of more than `grow` are blanked with it (the rim of the same patch). The case that
+    motivated it is a 548-cell patch on the NE Greenland shelf (75.9-80.6 N, 20.9-9.1 W) in January: 3-13 degC
+    under sea ice whose December and February values are -1.3 to -1.8 degC (18.125 W 78.625 N: 13.36 degC between
+    -1.31 and -1.76), too broad for the 5 x 5 rule of `despike`; after this rule the warmest January cell left
+    there is 1.75 degC. On the 2026-11 raw layers the rule blanks 5,503 of 8,133,874 cell-months (0.07 %) in 64
+    patches, nearly all at ice edges and in data-poor shelf seas: north of Svalbard in June (892 cells, 3.9 degC
+    between -1.9 and -1.8), the Barents Sea off Novaya Zemlya in January, the North Caspian in June-August,
+    Hudson Bay in April and July, the Canadian Arctic Archipelago, the Sea of Okhotsk, the Patagonian shelf in
+    December (20.7 between 7.3 and 11.6 degC) and, cold, the upper Gulf of California in July (9.7 between 19.2 and
+    24.5 degC).
+
+    Why a climatological month cannot do this: a 30-year monthly mean follows a smooth annual cycle; for a
+    sinusoid of amplitude a, the warmest month exceeds both neighbours by a (1 - cos 30 deg) = 0.13 a, under 2 degC
+    even for the largest seasonal ranges (Bohai, North Caspian). In the shipped 2026-11 layers the largest excess
+    in well-sampled seas with strong seasons, fronts or upwelling is 2.5 degC (Gulf Stream), 2.0 (North Sea),
+    3.2 (Baltic), 3.3 (Kuroshio), 4.6 (Yellow Sea/Bohai), 4.9 (Black Sea), 4.8 (Mediterranean, Gulf of Gabes
+    in August), 4.4 (Peru): all below `seed`; the only cell blanked in those seas is the Gulf of Sirte in
+    January (11.5 degC between 20.2 and 17.4).
+    Limitation: an artefact that spans two consecutive months is not a one-month spike and is not caught.
+    Returns the cleaned copy and the mask of blanked cells."""
+    from scipy import ndimage
+
+    prev, nxt = np.roll(stack, 1, axis=0), np.roll(stack, -1, axis=0)
+    with np.errstate(invalid="ignore"):
+        excess = np.fmax(np.minimum(stack - prev, stack - nxt), np.minimum(prev - stack, nxt - stack))
+        excess = np.where(np.isfinite(stack) & np.isfinite(prev) & np.isfinite(nxt), excess, -np.inf)
+    bad = np.zeros(stack.shape, bool)
+    eight = np.ones((3, 3), bool)
+    for m in range(stack.shape[0]):
+        lab, _ = ndimage.label(excess[m] > grow, structure=eight)
+        seeds = np.unique(lab[excess[m] > seed])
+        bad[m] = np.isin(lab, seeds[seeds > 0])
+    out = stack.copy()
+    out[bad] = np.nan
+    return out, bad
+
+
 def north_up(a: np.ndarray) -> np.ndarray:
     """WOA rows run south -> north; the web files run north -> south (row 0 = northernmost)."""
     return a[..., ::-1, :]
@@ -277,14 +337,38 @@ def monthly_sst(m: int) -> np.ndarray:
     return sst
 
 
+def monthly_ssts() -> tuple[np.ndarray, dict]:
+    """The twelve cleaned monthly surface layers (south -> north) and the number of cells each rule blanked."""
+    spatial = []
+    layers = []
+    for m in range(1, 13):
+        raw = load(f"t_an_025_m{m:02d}_0000m.npy")
+        sst = monthly_sst(m)
+        spatial.append(int((np.isfinite(raw) & ~np.isfinite(sst)).sum()))
+        layers.append(sst)
+    stack, bad = cycle_despike(np.stack(layers))
+    cycle = bad.sum(axis=(1, 2)).astype(int).tolist()
+    print(f"annual-cycle rule (> {CYCLE_SPIKE_C} degC off both adjacent months, grown through > {CYCLE_GROW_C} degC): "
+          f"{sum(cycle)} cells blanked, per month {cycle}", flush=True)
+    return stack, {"spatial_5x5": spatial, "annual_cycle": cycle}
+
+
+MONTHLY_RULES = (f"blanked: cells more than {SPIKE_C:g} degC off the median of their wet 5 x 5 neighbourhood, or above "
+                 f"{HOT_C:g} degC and more than {HOT_SPIKE_C:g} degC warmer than it; then one-month spikes of the "
+                 f"annual cycle: more than {CYCLE_SPIKE_C:g} degC above or below both adjacent months, with the "
+                 f"same-month cells joined to them through cells more than {CYCLE_GROW_C:g} degC off both")
+
+
 def months() -> None:
     """Rebuild only the twelve monthly surface-temperature layers and merge them into the existing manifest."""
     man_p = OUT / "manifest.json"
     man = json.loads(man_p.read_text())
+    stack, blanked = monthly_ssts()
     for m in range(1, 13):
         key = f"t_m{m:02d}"
-        man["map"]["layers"][key] = write_map_layer(key, monthly_sst(m))
+        man["map"]["layers"][key] = write_map_layer(key, stack[m - 1])
         print(f"{key}: max {man['map']['layers'][key]['hi']} degC", flush=True)
+    man["map"]["monthly"].update({"despike": MONTHLY_RULES, "blanked_cells": blanked})
     man_p.write_text(json.dumps(man, ensure_ascii=False, separators=(",", ":")))
     print(f"merged monthly layers into {man_p}")
 
@@ -314,8 +398,9 @@ def build() -> None:
         put_map(f"d_{d}", dens)
         print(f"map {d:>5} m: T {np.nanmin(t):.2f}..{np.nanmax(t):.2f}  S {np.nanmin(s):.2f}..{np.nanmax(s):.2f}  "
               f"sigma0 {np.nanmin(dens):.2f}..{np.nanmax(dens):.2f}", flush=True)
+    stack, blanked = monthly_ssts()
     for m in range(1, 13):
-        put_map(f"t_m{m:02d}", monthly_sst(m))
+        put_map(f"t_m{m:02d}", stack[m - 1])
 
     # 1 deg water columns, 30 x 30 deg regions
     T = load("t_an_1deg_annual_all.npy")  # (102, 180, 360), south -> north
@@ -364,7 +449,8 @@ def build() -> None:
         "map": {"res_deg": 0.25, "width": 1440, "height": 720, "north": 90.0, "west": -180.0, "rows": "north_to_south",
                 "encoding": "zlib-deflated uint16 as two byte planes (all low bytes, then all high bytes); "
                             "0 = no data; value = lo + (q - 1) * step",
-                "depths": MAP_DEPTHS, "monthly": {"var": "t", "depth": 0, "months": list(range(1, 13))},
+                "depths": MAP_DEPTHS, "monthly": {"var": "t", "depth": 0, "months": list(range(1, 13)),
+                                                   "despike": MONTHLY_RULES, "blanked_cells": blanked},
                 "layers": layers},
         "columns": {"res_deg": 1.0, "width": 360, "height": 180, "chunk_deg": n, "depths": dep1.tolist(),
                     "encoding": "zlib-deflated little-endian int16 [var t,s,d][level][row][col] per chunk; "
@@ -604,9 +690,13 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("step", nargs="?", default="all",
                     choices=["fetch", "build", "months", "fetch-bottom", "bottom", "check", "all"])
-    step = ap.parse_args().step
+    ap.add_argument("--months-only", action="store_true", help="fetch: only the twelve monthly surface layers")
+    ap.add_argument("--source", choices=["opendap", "http"], default="opendap",
+                    help="fetch: THREDDS OPeNDAP (default) or the HTTPS file server with byte-range reads")
+    args = ap.parse_args()
+    step = args.step
     if step in ("fetch", "all"):
-        fetch()
+        fetch(args.months_only, args.source)
     if step in ("fetch-bottom", "all"):
         fetch_bottom()
     if step in ("build", "all"):

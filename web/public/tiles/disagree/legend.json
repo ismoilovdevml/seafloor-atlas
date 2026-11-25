@@ -39,11 +39,11 @@
  ],
  "mask": "ocean (GEBCO TID != 0 and 1' elevation < 0), GEBCO depth >= 1000 m, measured fraction < 0.5, 75 S - 75 N, Caspian and Baikal excluded",
  "headline": {
-  "unmeasured_median_abs_m": 60.5,
-  "unmeasured_p95_abs_m": 402.5,
+  "unmeasured_median_abs_m": 60.1,
+  "unmeasured_p95_abs_m": 402.3,
   "unmeasured_share_gt_100m": 0.3513,
   "unmeasured_share_gt_200m": 0.1664,
-  "measured_median_abs_m": 46.5,
+  "measured_median_abs_m": 46.3,
   "depthFromM": 1000.0
  },
  "tileSize": 512,
