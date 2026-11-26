@@ -18,7 +18,7 @@ const DOI_CONCEPT = '10.5281/zenodo.24228190';
 const VERSION = '1.3.0';
 const DOI_VERSION = '10.5281/zenodo.24287662';
 const DOI_DATASET = '10.5281/zenodo.24287579'; // cell-level record (netCDF + tables), CC BY 4.0
-const UPDATED = '2026-11-16';
+const UPDATED = '2026-11-26';
 
 export const KEY = {
   oceanArea: '361.7 million km²',
@@ -45,7 +45,7 @@ const clip = (s, n = 158) => (s.length <= n ? s : `${s.slice(0, s.lastIndexOf(' 
 const CSS = `:root{color-scheme:dark;--bg:#07101d;--panel:#0d1a2c;--line:rgba(160,200,230,.16);--ink:#e8f0f7;--muted:#a9bccd;--accent:#9fe3c8}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 a{color:var(--accent)}main{max-width:820px;margin:0 auto;padding:24px 16px 64px}header.top{display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:820px;margin:0 auto;padding:16px}
-header.top a.brand{color:var(--ink);text-decoration:none;font:500 20px Georgia,serif}.cta{display:inline-block;background:var(--accent);color:#06261c;font-weight:600;text-decoration:none;padding:10px 18px;border-radius:999px}
+header.top a.brand{display:flex;align-items:center;gap:10px;color:var(--ink);text-decoration:none;font:500 20px Georgia,serif}.cta{display:inline-block;background:var(--accent);color:#06261c;font-weight:600;text-decoration:none;padding:10px 18px;border-radius:999px}
 h1{font:500 clamp(30px,5vw,44px)/1.1 Georgia,"Times New Roman",serif;margin:8px 0 14px}h2{font:500 26px/1.2 Georgia,serif;margin:40px 0 10px}h3{font-size:18px;margin:22px 0 4px}
 .lede{font-size:19px;color:var(--muted)}figure{margin:22px 0}figure img{width:100%;height:auto;border-radius:12px;border:1px solid var(--line);display:block}figcaption{color:var(--muted);font-size:14px;margin-top:6px}
 table{border-collapse:collapse;width:100%;font-size:15px}td,th{border-bottom:1px solid var(--line);padding:8px 6px;text-align:left;vertical-align:top}td:last-child{white-space:nowrap;font-weight:600}
@@ -64,7 +64,7 @@ export function relativize(html, path) {
 
 function page({ path, title, description, image, imageAlt, body, jsonld = [] }) {
   const url = `${SITE}${path}`;
-  const img = image ? `${SITE}${image}` : `${SITE}/og-image.png`;
+  const img = image ? `${SITE}${image}` : `${SITE}/og-image.png?v=2`;
   return relativize(`<!doctype html>
 <html lang="en">
 <head>
@@ -73,18 +73,19 @@ function page({ path, title, description, image, imageAlt, body, jsonld = [] }) 
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}">
 <link rel="canonical" href="${url}">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23374f8a'/%3E%3Cpath d='M1 18c5-2 8 3 15 1s9-6 15-3v4a15 15 0 0 1-30 0z' fill='%23140a22'/%3E%3C/svg%3E">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="manifest" href="/site.webmanifest">
 <meta property="og:type" content="website"><meta property="og:site_name" content="Seafloor Atlas">
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}">
 <meta property="og:url" content="${url}"><meta property="og:image" content="${img}">
 <meta property="og:image:alt" content="${esc(imageAlt || title)}">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${img}">
-<meta name="theme-color" content="#07101d">
+<meta name="theme-color" content="#0B2A6F">
 <style>${CSS}</style>
 ${jsonld.map(ld).join('\n')}
 </head>
 <body>
-<header class="top"><a class="brand" href="/">Seafloor Atlas</a><a class="cta" href="/">Open the 3D globe</a></header>
+<header class="top"><a class="brand" href="/"><img src="/favicon.svg" alt="" width="28" height="28">Seafloor Atlas</a><a class="cta" href="/">Open the 3D globe</a></header>
 <main>
 ${body}
 </main>

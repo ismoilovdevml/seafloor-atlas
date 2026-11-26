@@ -1,4 +1,5 @@
-// Render the social preview image (Open Graph / Twitter card), 1200x630, into web/public/og-image.png.
+// Render the older map-only social preview (1200x630). The live web/public/og-image.png is the logo-pack version;
+// running this script replaces it.
 // usage: node scripts/og_image.mjs [baseUrl=https://seaflooratlas.org/] [out=public/og-image.png]
 // The page is loaded with the UI hidden, the "what's actually measured" veil on, and a title card drawn on top.
 // Then shrink it below 300 KB (Telegram / WhatsApp drop larger previews; test/assets.test.ts checks): a 256-colour

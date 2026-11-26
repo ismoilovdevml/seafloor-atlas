@@ -1,14 +1,26 @@
-# Seafloor Atlas
+<div align="center">
+
+<a href="https://seaflooratlas.org/">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/img/brand/seafloor-atlas-logo-dark.svg">
+    <img src="docs/img/brand/seafloor-atlas-logo-light.svg" alt="Seafloor Atlas" width="400">
+  </picture>
+</a>
+
+**An interactive 3D globe of the whole ocean floor, and how much of it has actually been measured.**
+
+Built from open data: the shape of the seafloor, which 30.8 % ships have surveyed, how sure we are of the rest,
+the water above it, the life in it and what people have built on it.
+
+[**seaflooratlas.org**](https://seaflooratlas.org/) · runs in the browser, no server, no cookies
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24228190.svg)](https://doi.org/10.5281/zenodo.24228190)
 
-An interactive 3D globe of the whole ocean floor, built from open data. It shows the shape of the seafloor, **how much of it has actually been measured**, how sure we are of the rest, the water above it, the life in it and what people have built on it.
+</div>
 
-**Open it: https://seaflooratlas.org/** (runs in the browser, no server, no tracking)
+<a href="https://seaflooratlas.org/"><img src="docs/img/hero.jpg" alt="Seafloor Atlas: the globe with the measured seafloor bright and the estimated seafloor dark"></a>
 
-![Seafloor Atlas](docs/img/hero.jpg)
-
-New here? Press **Tour**: Ping, a small sonar buoy, walks you through the atlas in 12 short chapters. It moves the camera, switches the layers on and points at each control as it explains it. Every number it quotes comes from the data, with the source underneath. Start at any chapter with `#tour=N`. The tour also speaks Uzbek: it switches by itself in an Uzbek browser, or add `&lang=uz`.
+New here? Press **Tour**: Ping, a small sonar buoy, walks you through the atlas in 15 short chapters. It moves the camera, switches the layers on and points at each control as it explains it. Every number it quotes comes from the data, with the source underneath. Start at any chapter with `#tour=N`. The tour also speaks Uzbek: it switches by itself in an Uzbek browser, or add `&lang=uz`.
 
 ![Guided tour](docs/img/tour.jpg)
 
@@ -147,6 +159,7 @@ Gazetteer, PB2002, Marine Regions ──► features.py, plates.py, regions.py �
 * **"Measured"** = GEBCO type codes 10–17 (sonar, lidar, soundings). **"Ocean"** = type ≠ 0 and below sea level.
 * **Checks:** the COG mirror used for speed is identical to the official GEBCO server at 6 test sites; Challenger Deep reads −10,922 m at zoom 7 (official −10,927 m); the headline percentages are reproduced by two independent scripts; the viewer is tested in headless Chrome (90 checks: every layer, story, tool, deep link, phone layout, no console errors).
 * **Tiles:** Web Mercator 512 px lossless WebP (depth as Terrarium RGB). Zoom 0–5 on Cloudflare Pages (GitHub Pages mirror); zoom 6–7 as PMTiles on [Hugging Face](https://huggingface.co/datasets/ismoilovdev/seafloor-atlas-tiles), read with HTTP range requests. Formats: [docs/data-contract.md](docs/data-contract.md). Prior work and how this differs: [docs/prior-work.md](docs/prior-work.md).
+* **Visits** are counted with Cloudflare Web Analytics: no cookies, no personal data, no cross-site tracking.
 
 ## Run it
 

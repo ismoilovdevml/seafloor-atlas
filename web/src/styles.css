@@ -99,12 +99,8 @@ kbd { font: 600 11.5px/1 var(--sans); color: var(--ink-3); border: 1px solid var
   height: 40px; padding: 0 12px 0 9px; margin-left: -4px; border-radius: var(--r-ctl);
   background: rgba(11, 17, 30, 0.72); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
 }
-/* the mark is the depth ramp itself, shelf to abyss, as a sounding disc */
-.brand-mark {
-  width: 20px; height: 20px; border-radius: 50%; flex: none;
-  background: radial-gradient(circle at 34% 30%, #d4ecc6 0 12%, #86ccb5 24%, #3f84a6 48%, #33386f 72%, #140a22 100%);
-  box-shadow: 0 0 0 1px rgba(255, 179, 92, 0.35);
-}
+/* the logo mark: a submersible lighting the seabed (public/favicon.svg, the small-size cut) */
+.brand-mark { width: 24px; height: 24px; flex: none; display: block; }
 
 .search { position: relative; flex: 0 1 360px; min-width: 180px; }
 .search input {
