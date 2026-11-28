@@ -3,8 +3,8 @@
 // (docs/data-contract.md, "Marine life"). The viewer reprojects them to one Web Mercator canvas, like the WOA layer.
 import { buildLut, mercRowLat } from './water';
 
-export type MarineMode = 'aquamaps' | 'es50' | 'records';
-export const MARINE_MODES: MarineMode[] = ['aquamaps', 'es50', 'records'];
+export type MarineMode = 'aquamaps' | 'es50' | 'records' | 'complete';
+export const MARINE_MODES: MarineMode[] = ['aquamaps', 'es50', 'records', 'complete'];
 export interface GridDef { ncol: number; nrow: number; dlon: number; dlat: number; west: number; north: number }
 export interface LayerDef { file: string; grid: string; dtype: 'uint8' | 'uint16' | 'uint32'; bytes: number; value: string }
 export interface GroupDef { id: string; title: string; taxa: string; file: string; records: number; species: number; cells: number; speciesPerCell: boolean; topSpecies: string }
@@ -75,6 +75,8 @@ export const SCALES: Record<MarineMode | 'group', ScaleSpec> = {
   es50: { kind: 'linear', lo: 1, hi: 50, stops: VIRIDIS, unit: 'expected species in 50 records', ticks: [1, 10, 20, 30, 40, 50] },
   records: { kind: 'log', lo: 0, hi: 6, stops: MAGMA, unit: 'OBIS records per cell', ticks: [1, 100, 10000, 1000000] },
   group: { kind: 'log', lo: 0, hi: 5, stops: MAGMA, unit: 'OBIS records per cell', ticks: [1, 100, 10000, 100000] },
+  // share of the Chao1 estimate already recorded (H3 cells, from Ocean Life Atlas's whole-OBIS build), in per cent
+  complete: { kind: 'linear', lo: 0, hi: 100, stops: VIRIDIS, unit: '% of the likely species recorded', ticks: [0, 25, 50, 75, 100] },
 };
 /** 0..1 position of a value on a scale (clamped). */
 export function scalePos(s: ScaleSpec, v: number): number {
@@ -142,6 +144,7 @@ export function describe(mode: MarineMode | 'group', st: CellState): string {
   if (st === null) return 'no data';
   if (st === 'masked') return mode === 'es50' ? 'not enough records' : 'no records';
   if (mode === 'es50') return st.v.toFixed(1);
+  if (mode === 'complete') return `${Math.round(st.v)} % of the likely species recorded`;
   return `${Math.round(st.v).toLocaleString('en-US')}${mode === 'aquamaps' ? ' species' : ''}`;
 }
 

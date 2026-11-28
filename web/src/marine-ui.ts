@@ -17,6 +17,8 @@ const VIEW: Record<MarineMode, { layer: string; ocean: string | null; title: str
   aquamaps: { layer: 'aquamaps_richness', ocean: null, title: 'Where species live (AquaMaps model)', short: 'Predicted species (AquaMaps)' },
   es50: { layer: 'es50_gh3', ocean: 'ocean_gh3', title: 'Species diversity, corrected', short: 'Diversity (ES50)' },
   records: { layer: 'records_gh4', ocean: 'ocean_gh4', title: 'Where nobody has looked', short: 'OBIS records' },
+  // not a grid: H3 hexagons drawn as a fill layer (completeness-h3.json); see showComplete
+  complete: { layer: '', ocean: null, title: 'How completely the species are known', short: 'Completeness (Chao1)' },
 };
 interface GroupFile { stats: Record<string, unknown>; top: { aphiaId: number; name: string; common?: string; records: number; iucn?: string | null }[]; cells: { data: number[][] } }
 type CellInfo = { r: number; s: number; e: number | null; top: [number, string, number][] };
@@ -118,8 +120,10 @@ export class MarineUI {
       this.on = s.on;
     }
     this.renderControls();
-    if (this.on) { this.ensureLayer(); this.busy = this.draw(); await this.busy; }
-    if (this.added) this.host.map.setLayoutProperty('marine', 'visibility', this.on ? 'visible' : 'none');
+    const hex = this.on && this.mode === 'complete' && !this.group;
+    if (this.on) { this.ensureLayer(); this.busy = hex ? this.showComplete() : this.draw(); await this.busy; }
+    if (this.added) this.host.map.setLayoutProperty('marine', 'visibility', this.on && !hex ? 'visible' : 'none');
+    if (this.host.map.getLayer('marine-complete')) this.host.map.setLayoutProperty('marine-complete', 'visibility', hex ? 'visible' : 'none');
     this.host.onChange();
   }
 
@@ -141,12 +145,14 @@ export class MarineUI {
       const lab = t >= 1e6 ? `${t / 1e6}M` : t >= 1000 ? `${t / 1000}k` : String(t);
       return `<span class="${x <= 0 ? 'first' : x >= 100 ? 'last' : ''}" style="left:${x.toFixed(1)}%">${lab}</span>`;
     }).join('');
-    $('marine-unit').textContent = g ? 'OBIS records per 1.4° cell' : this.mode === 'aquamaps' ? 'predicted species per 0.5° cell (AquaMaps model)'
+    $('marine-unit').textContent = g ? 'OBIS records per 1.4° cell' : this.mode === 'complete' ? 'species recorded out of the Chao1 estimate, per hexagon of about 12,400 km²'
+      : this.mode === 'aquamaps' ? 'predicted species per 0.5° cell (AquaMaps model)'
       : this.mode === 'es50' ? 'expected species among 50 random records, per 1.4° cell' : 'OBIS records per cell of about 40 × 20 km';
     const masked = g || this.mode !== 'aquamaps';
     $('marine-masked').hidden = !masked;
-    ($('marine-masked').querySelector('.veil-chip') as HTMLElement).style.background = this.mode === 'es50' && !g ? NOT_ENOUGH : NO_RECORDS;
-    $('marine-masked-t').textContent = this.mode === 'es50' && !g ? 'Fewer than 50 records: not enough data' : 'No record: nobody has looked, or nothing was reported';
+    const few = (this.mode === 'es50' || this.mode === 'complete') && !g;
+    ($('marine-masked').querySelector('.veil-chip') as HTMLElement).style.background = few ? NOT_ENOUGH : NO_RECORDS;
+    $('marine-masked-t').textContent = this.mode === 'complete' && !g ? 'Too few records to estimate' : few ? 'Fewer than 50 records: not enough data' : 'No record: nobody has looked, or nothing was reported';
   }
 
   private ensureLayer() {
@@ -155,6 +161,39 @@ export class MarineUI {
     map.addSource('marine', { type: 'canvas', canvas: this.canvas, coordinates: MERC_WORLD, animate: false });
     map.addLayer({ id: 'marine', type: 'raster', source: 'marine', paint: { 'raster-opacity': OPACITY, 'raster-fade-duration': 0, 'raster-resampling': 'nearest' } }, 'hillshade');
     this.added = true;
+  }
+
+  /** Inventory completeness per H3 hexagon (resolution 3): species recorded / Chao1 estimate, from every OBIS record
+   *  (pipeline from Ocean Life Atlas, scripts/build_h3_completeness.py there). Loaded on first use (~4 MB, ~1 MB on
+   *  the wire). Hexagons with too few records for an estimate are grey. */
+  private completeP: Promise<void> | null = null;
+  private showComplete(): Promise<void> {
+    this.completeP ??= (async () => {
+      const r = await fetch(`${this.host.base}completeness-h3.json`);
+      if (!r.ok) throw new Error(`completeness: HTTP ${r.status}`);
+      const d = (await r.json()) as { cells: { r: number[]; s: number; n: number; c: number | null }[] };
+      const features: GeoJSON.Feature[] = d.cells.map((x) => {
+        const ring: [number, number][] = [];
+        for (let i = 0; i < x.r.length; i += 2) ring.push([x.r[i], x.r[i + 1]]);
+        ring.push(ring[0]);
+        return { type: 'Feature', properties: { c: x.c == null ? -1 : Math.round(x.c * 100), s: x.s, n: x.n }, geometry: { type: 'Polygon', coordinates: [ring] } };
+      });
+      const map = this.host.map;
+      map.addSource('marine-complete', { type: 'geojson', data: { type: 'FeatureCollection', features } });
+      const stops = SCALES.complete.stops.flatMap((c, i, a) => [(100 * i) / (a.length - 1), c]);
+      map.addLayer({ id: 'marine-complete', type: 'fill', source: 'marine-complete', paint: {
+        'fill-color': ['case', ['<', ['get', 'c'], 0], NOT_ENOUGH, ['interpolate', ['linear'], ['get', 'c'], ...stops]] as never,
+        'fill-opacity': OPACITY,
+      } }, 'hillshade');
+    })().catch((e) => { this.completeP = null; console.warn(e); });
+    return this.completeP;
+  }
+  /** The hexagon under a point, from the rendered layer. */
+  private hexAt(lon: number, lat: number): { c: number; s: number; n: number } | null {
+    const map = this.host.map;
+    if (!map.getLayer('marine-complete')) return null;
+    const f = map.queryRenderedFeatures(map.project([lon, lat]), { layers: ['marine-complete'] })[0];
+    return f ? (f.properties as { c: number; s: number; n: number }) : null;
   }
 
   private framesLeft = 0;
@@ -207,6 +246,10 @@ export class MarineUI {
       const o = oc && c ? oc.values[c.row * oc.def.ncol + c.col] : 0;
       return { label: `${g.title}, records`, value: describe('group', cellState('group', raw, o)) };
     }
+    if (this.mode === 'complete') {
+      const hx = this.hexAt(lon, lat);
+      return { label: VIEW.complete.short, value: !hx ? 'no records' : hx.c < 0 ? `too few records (${hx.s} species)` : `${hx.c} % of the likely species (${hx.s} recorded)` };
+    }
     const v = VIEW[this.mode], gr = this.ready.get(v.layer), oc = v.ocean ? this.ready.get(v.ocean) : null;
     if (!gr) return { label: v.short, value: '…' };
     const c = cellAt(gr.def, lon, lat), oCell = oc ? cellAt(oc.def, lon, lat) : null;
@@ -254,6 +297,8 @@ export class MarineUI {
       const k = names.get(id);
       facts.push([k?.common ? `${k.common} (${name})` : name, `${n.toLocaleString('en-US')} records${k?.iucn ? `, ${IUCN_LABEL[k.iucn] ?? k.iucn}` : ''}`]);
     }
+    const hx = this.hexAt(lon, lat);
+    if (hx && hx.c >= 0) facts.push(['How completely the species are known', `${hx.c} % of the likely species recorded (Chao1, hexagon of ~12,400 km²)`]);
     const am = this.ready.get('aquamaps_richness');
     const amv = am ? cellAt(am.def, lon, lat) : null;
     const pred = am && amv ? am.values[amv.row * am.def.ncol + amv.col] : 0;
@@ -263,7 +308,9 @@ export class MarineUI {
       lead: info ? `${info.s.toLocaleString('en-US')} species from ${info.r.toLocaleString('en-US')} OBIS records${info.e != null ? `, ES50 ${info.e.toFixed(1)}` : ''}${pred ? `; AquaMaps predicts ${pred.toLocaleString('en-US')}` : ''}`
         : `No species records in this cell${pred ? `; AquaMaps predicts ${pred.toLocaleString('en-US')} species` : ''}`,
       facts,
-      links: [{ href: 'https://www.aquamaps.org', label: 'AquaMaps' }, { href: 'https://obis.org', label: 'OBIS' }],
+      // every animal recorded here, with photos, on land and at sea: the sister site
+      links: [{ href: `https://fauna.bristleconelab.org/#at=${cLat.toFixed(2)},${cLon.toFixed(2)}`, label: 'Who lives here: Fauna Atlas' },
+        { href: 'https://www.aquamaps.org', label: 'AquaMaps' }, { href: 'https://obis.org', label: 'OBIS' }],
       note: info?.top.length ? 'Most-recorded species, which shows what people looked for as much as what lives here.' : undefined,
       source: 'OBIS (2026) www.obis.org; OBIS speciesgrids (OBIS + GBIF), CC BY-NC 4.0; AquaMaps (www.aquamaps.org, version 10/2019), CC BY-NC 3.0',
     };
